@@ -1,0 +1,13 @@
+# Magic BI — MVP Semana 1
+# Django 5.2 LTS + DRF + Celery, conforme docs/AgenteRotinaContabil-arquitetura-tecnica.md
+django~=5.2
+djangorestframework
+celery[redis]
+redis
+django-environ
+pydantic-ai-slim[groq]  # orquestração Opção A (docs/magicbi-hermes-comunicador.md §7) sobre Groq
+httpx
+structlog
+psycopg[binary]  # necessário para Postgres via docker-compose
+pytest
+pytest-django

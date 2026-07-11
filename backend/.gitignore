@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Django
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+
+# Segredos
+.env
+*.pem
+*.pfx
+
+# Node (painel React entra em fase futura)
+node_modules/
+dist/
+
+# IDE / SO
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
