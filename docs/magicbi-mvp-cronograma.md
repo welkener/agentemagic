@@ -21,7 +21,7 @@
 | ✅ Entra no MVP | ❌ Fica para depois do go |
 |---|---|
 | Fiscus: emissão de NFS-e (homologação → produção) | NF-e de produto (middleware) |
-| Credenciamento simplificado via WhatsApp (CNPJ → termos → procuração) | Credenciamento com certificado (PSC/cofre) |
+| Credenciamento simplificado via WhatsApp (CNPJ → termos → **certificado em nuvem/PSC**, não mais só procuração — spike resolvido 12/jul/2026, ver `magicbi-custodia-fiscal.md`) | Cofre próprio de A1 (Sigillum) |
 | **Agente ERP — Conta Azul real** (OAuth2; consultas Tier 0 + rascunho Tier 1) | Escrita Tier 2–3 em qualquer ERP |
 | **Agente ERP — Bling real** (2º adaptador, prova o padrão) | Tiny/Omie reais (ficam em mock/backlog) |
 | Adaptadores **mock** de NFS-e e ERP genérico (+ Tiny/Omie simulados p/ demo) | TOTVS/SAP e ERPs de grande porte |
@@ -71,9 +71,17 @@ Sem   1        2        3        4        5        6        7        8
 - [ ] Idempotência por `message_id` + modelo `Auditoria` append-only
 - [ ] Contrato `AdapterBase` + **adaptador NFS-e mock** + **adaptador ERP mock**
       (pedidos/estoque/financeiro fake, com dados realistas de uma empresa exemplo)
-- [ ] **Iniciar cadastro na homologação da NFS-e Nacional (Produção Restrita)**
-- [ ] **Spike da procuração eletrônica** — confirmar se a outorga e-CAC/gov.br cobre a
-      emissão pela API (único ⚠ que muda arquitetura; plano B: certificado em nuvem PSC)
+- [ ] **Iniciar cadastro na homologação da NFS-e Nacional (Produção Restrita)** — URLs
+      reais confirmadas: `adn.producaorestrita.nfse.gov.br` / `sefin.producaorestrita.nfse.gov.br`
+      (ver `magicbi-custodia-fiscal.md`)
+- [x] **Spike da procuração eletrônica — RESOLVIDO (12/jul/2026): não cobre a API.**
+      Confirmado por fonte oficial (FENACON oficiou a Receita em 12/06/2026 pedindo
+      exatamente essa lacuna — "em desenvolvimento pelo Serpro, sem previsão"). A API do
+      ADN/Sefin exige **mTLS com certificado ICP-Brasil do prestador em toda chamada**.
+      **Plano B agora é o plano único**: certificado em nuvem (PSC) desde o piloto — não
+      é mais uma decisão da Semana 3, é pré-requisito. **Nova ação Dias 1–2**: contratar
+      um PSC (BirdID/Soluti, VIDaaS/Valid ou SafeID — comparar preço e API de assinatura
+      remota) junto com as outras contas
 
 **Gate S1:** mensagem no WhatsApp de teste → Django local → resposta do Lumen, com auditoria gravada; apps Conta Azul/Bling solicitados.
 
@@ -100,11 +108,18 @@ Sem   1        2        3        4        5        6        7        8
 "como tá meu contas a receber?" volta resumo correto em < 10 s, com os tiers bloqueando o que deve.
 
 ### Semana 3 — NFS-e real em homologação + credenciamento
-- [ ] Adaptador NFS-e Nacional real apontando para Produção Restrita
-- [ ] Tratamento de rejeição real (campos IBS/CBS, dados inválidos) com mensagem clara + retry
+- [ ] Adaptador NFS-e Nacional real apontando para Produção Restrita — payload é
+      **híbrido**: chamada REST em JSON, mas a DPS/NFS-e em si é **XML assinado
+      (XMLDSig), gzip + base64** dentro do JSON — não é um dict simples como o mock
+      (`apps/adapters/nfse_nacional.py` precisa de rework: geração de XML conforme XSD
+      oficial + assinatura via PSC, não Bearer token)
+- [ ] Tratamento de rejeição real (campos IBS/CBS — grupo `IBSCBS` na DPS, NT
+      SE/CGNFS-e 004/007, XSDs de out/2025 e fev/2026) com mensagem clara + retry
 - [ ] Credenciamento v0 no chat: CNPJ → consulta pública → confirmação de dados →
-      link único para termos → guia passo a passo da procuração (com prints)
-- [ ] Decisão do spike: procuração confirmada **ou** acionar plano B (PSC)
+      link único para termos → **vínculo do certificado em nuvem (PSC) via app da AC**
+      (não mais só procuração — ela vira só o consentimento LGPD/adesão)
+- [x] Spike resolvido na Semana 1: certificado em nuvem confirmado como caminho único
+      para a API (não "decisão", já é fato)
 
 **Gate S3:** nota emitida na homologação do governo, ponta a ponta, partindo de uma frase no WhatsApp.
 
@@ -218,7 +233,8 @@ Sem   1        2        3        4        5        6        7        8
 | Aprovação do app Conta Azul/Bling demorar | Solicitar no dia 1; semanas 2–3 rodam no mock; se atrasar muito, inverter S4↔S6 (Bling primeiro) |
 | Conta Azul sem sandbox | Cliente cobaia da Rotina com consentimento por escrito + escopo read-only até S5 |
 | Cadastro da homologação NFS-e demorar | Iniciar no dia 1; mock cobre as 2 primeiras semanas |
-| Procuração não cobrir a API (spike falhar) | Plano B pronto: certificado em nuvem PSC — muda o passo 4 do credenciamento, não o produto |
+| ~~Procuração não cobrir a API~~ — **confirmado que não cobre (12/jul/2026)** | Não é mais risco, é fato: certificado em nuvem PSC é o caminho desde o piloto — contratar PSC vira ação do Dia 1, não plano B condicional |
+| Onboarding com certificado (PSC) ter mais atrito que procuração pura | Testar o fluxo de vínculo do certificado com 1 MEI cobaia antes de abrir pra coorte toda; medir tempo real vs. meta de <48h (métrica já existente no doc) |
 | Coorte total estourar o número de teste da Meta | Upgrade planejado p/ número real na S6 (Meta direto, sem BSP) |
 | Duas frentes (fiscal + ERP) dispersarem o dev solo | Semanas 3–4 são sequenciais de propósito (fiscal primeiro, depois ERP); nunca as duas em paralelo na mesma semana |
 | Escopo inchar ("já que estamos, adiciona X") | Tudo que não prova as 2 hipóteses vai para o backlog da Fase 3 |

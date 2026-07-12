@@ -3,14 +3,28 @@ Adaptador REAL da NFS-e Nacional (Emissor Nacional/ADN) — Produção Restrita 
 produção (Semana 3 do MVP). Mesma interface do mock (`nfse_mock.py`); troca
 automática pelo resolver (`resolver.py`) quando o cliente está credenciado.
 
-⚠ Auth ainda em spike (`magicbi-custodia-fiscal.md` §1): confirmar se a
-outorga de procuração e-CAC/gov.br cobre a emissão via API é o item que muda
-esta implementação. Por ora assume um identificador de sessão/token obtido no
-credenciamento, guardado em `Credencial` (tipo=procuracao,
-integracao="nfse_nacional"), enviado como Bearer. Se o spike apontar para
-certificado em nuvem (PSC), troca-se só a resolução da credencial — o
-contrato do adaptador não muda. `base_url` fica no Django admin
-(`AplicativoIntegracao`): Produção Restrita e produção têm hosts diferentes.
+⚠⚠ NÃO ESTÁ PRONTO PARA PRODUÇÃO — pesquisado e confirmado em 12/jul/2026
+(`magicbi-custodia-fiscal.md` §1, fonte: FENACON/gov.br), mas dois pontos
+seguem exigindo trabalho antes de emitir de verdade:
+
+1. **Auth é mTLS, não Bearer.** A API do ADN/Sefin exige certificado ICP-Brasil
+   (A1/A3) do prestador na conexão TLS (autenticação mútua) — confirmado, não
+   é mais hipótese. Procuração eletrônica NÃO cobre chamada de API (só o
+   portal web). O caminho é certificado em nuvem (PSC — BirdID/Soluti/VIDaaS/
+   SafeID, ainda não escolhido); a credencial resolvida aqui precisa virar um
+   certificado cliente (ou uma chamada de assinatura remota ao PSC) em vez do
+   header `Authorization` abaixo, que é só um placeholder de transporte.
+2. **Payload é híbrido, não JSON puro.** A chamada REST é JSON, mas o
+   documento fiscal em si (DPS/NFS-e) é **XML assinado digitalmente
+   (XMLDSig), comprimido em GZip e codificado em Base64** dentro do corpo
+   JSON — `dados` aqui precisaria virar XML conforme o XSD oficial antes do
+   envio, não ser mandado como dict solto.
+
+URLs reais confirmadas (`base_url` no Django admin, `AplicativoIntegracao`):
+Produção Restrita `https://adn.producaorestrita.nfse.gov.br` /
+`https://sefin.producaorestrita.nfse.gov.br`; Produção
+`https://adn.nfse.gov.br` / `https://sefin.nfse.gov.br`. Doc oficial:
+gov.br/nfse → Biblioteca → Documentação Técnica.
 """
 from __future__ import annotations
 
@@ -42,7 +56,7 @@ class NfseNacionalAdapter(AdapterBase):
         return {"emitir_nfse", "consultar_nfse", "criar_rascunho_nfse"}
 
     def _credencial(self, cliente) -> Credencial:
-        return resolver_credencial(cliente, "nfse_nacional")
+        return resolver_credencial(cliente, "nfse_nacional", tipo=Credencial.Tipo.CERTIFICADO)
 
     def consultar(self, recurso: str, filtros: dict, ctx) -> ResultadoAcao:
         if recurso != "nfse":
@@ -58,7 +72,9 @@ class NfseNacionalAdapter(AdapterBase):
             return ResultadoAcao(ok=False, erro_padronizado="INTEGRACAO_NAO_CONFIGURADA")
 
         try:
-            # ⚠ path de exemplo — confirmar na doc do ADN/Sefin em homologação.
+            # ⚠⚠ placeholder de transporte — a API real exige mTLS (cert=)
+            # com o certificado do PSC, não um Bearer token; e o path exato de
+            # consulta por protocolo não está confirmado (ver docstring do módulo).
             resposta = httpx.get(
                 f"{app.base_url.rstrip('/')}/nfse/{protocolo}",
                 headers={"Authorization": f"Bearer {credencial.valor}"},
@@ -113,8 +129,11 @@ class NfseNacionalAdapter(AdapterBase):
             return ResultadoAcao(ok=False, erro_padronizado="INTEGRACAO_NAO_CONFIGURADA")
 
         try:
-            # ⚠ payload/path de exemplo — confirmar schema DPS oficial (campos
-            # IBS/CBS incluídos) na doc do ADN em Produção Restrita.
+            # ⚠⚠ placeholder — o endpoint POST /nfse é confirmado, mas o corpo
+            # real é {"dpsXmlGZipB64": "<XML da DPS assinado, gzip, base64>"},
+            # não um dict solto; `dados` precisa virar XML (schema oficial,
+            # inclui o grupo IBSCBS — NT SE/CGNFS-e 004/007) e ser assinado via
+            # PSC antes de chegar aqui. Auth é mTLS (cert=), não Bearer.
             resposta = httpx.post(
                 f"{app.base_url.rstrip('/')}/nfse",
                 json={"dps": dados},

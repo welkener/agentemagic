@@ -30,15 +30,15 @@ def resolver_app(nome: str) -> AplicativoIntegracao:
     return app
 
 
-def resolver_credencial(cliente, integracao: str) -> Credencial:
+def resolver_credencial(cliente, integracao: str, tipo: str = Credencial.Tipo.OAUTH) -> Credencial:
     credencial = (
-        Credencial.objects.filter(cliente=cliente, integracao=integracao, tipo=Credencial.Tipo.OAUTH)
+        Credencial.objects.filter(cliente=cliente, integracao=integracao, tipo=tipo)
         .order_by("-atualizado_em")
         .first()
     )
     if credencial is None:
         raise ErroIntegracaoNaoConfigurada(
-            f"Cliente {cliente} não tem credencial OAuth de '{integracao}' cadastrada no admin."
+            f"Cliente {cliente} não tem credencial ({tipo}) de '{integracao}' cadastrada no admin."
         )
     return credencial
 

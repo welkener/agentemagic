@@ -49,8 +49,11 @@ def resolver_adapter_erp(cliente, integracoes_candidatas=()):
 
 
 def resolver_adapter_nfse(cliente):
+    # Certificado em nuvem (PSC), não procuração — a API exige mTLS do
+    # prestador; procuração eletrônica não autoriza chamadas de API
+    # (confirmado 12/jul/2026, ver docs/magicbi-custodia-fiscal.md §1).
     credenciado = Credencial.objects.filter(
-        cliente=cliente, integracao="nfse_nacional", tipo=Credencial.Tipo.PROCURACAO
+        cliente=cliente, integracao="nfse_nacional", tipo=Credencial.Tipo.CERTIFICADO
     ).exists()
     app_ativo = AplicativoIntegracao.objects.filter(nome="nfse_nacional", ativo=True).exists()
 

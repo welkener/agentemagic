@@ -284,11 +284,22 @@ reverse-engineering) como `meta-cloud-api` — não decidido, não urgente.
 - A configuração inicial do app pede **2FA**. Guardar **refresh token criptografado** no cofre;
   renovar access token; tratar `AUTH_EXPIRADA` reabrindo o consentimento. ⚠ verificar escopos exatos.
 
-### 8.3 Identidade fiscal (NFS-e)
-- **Procuração eletrônica (gov.br / e-CAC)** com escopo limitado — **recomendado para começar**: o
-  cliente autoriza a aplicação a agir por ele, sem custódia de certificado.
-- Alternativa: **certificado em nuvem** (AC guarda o certificado; recebemos token de assinatura por
-  sessão). **Evitar** armazenar `.pfx` do cliente.
+### 8.3 Identidade fiscal (NFS-e) — atualizado 12/jul/2026
+
+**A API do Emissor Nacional/ADN exige mTLS com certificado ICP-Brasil (A1/A3) do
+prestador em toda chamada — confirmado, não é mais hipótese.** Procuração eletrônica
+(gov.br/e-CAC) **não autoriza chamadas de API** hoje: a própria FENACON oficiou a
+Receita Federal em 12/06/2026 pedindo essa lacuna, que está "em desenvolvimento pelo
+Serpro, sem data estimada" (ver `magicbi-custodia-fiscal.md` para a fonte e a matriz de
+decisão revisada).
+
+- **Caminho único desde o piloto**: **certificado em nuvem (PSC)** — a AC guarda o
+  certificado; a aplicação pede assinatura remota via API do PSC, cliente autoriza pelo
+  app da AC (ou autorização de longa duração para lote). **Evitar** armazenar `.pfx` do
+  cliente sempre.
+- Procuração eletrônica continua útil, mas só para: (a) consentimento LGPD/adesão no
+  onboarding, (b) fallback humano do contador operando o portal web se a API cair
+  (§10.2), nunca como credencial de chamada de API.
 
 ### 8.4 Autenticação interna
 - **Serviço-a-serviço**: mTLS ou tokens assinados de curta duração entre componentes.
@@ -400,7 +411,7 @@ ficar indisponível:
 
 | ID | Categoria | Risco | Prob. | Impacto | Severidade | Mitigação / contingência |
 |---|---|---|---|---|---|---|
-| R1 | Fiscal/Custódia | Vazamento de credencial fiscal do MEI | Baixa | Altíssimo | **Crítica** | Procuração eletrônica; cofre KMS; nunca `.pfx`; least privilege; auditoria |
+| R1 | Fiscal/Custódia | Vazamento de credencial fiscal do MEI | Baixa | Altíssimo | **Crítica** | Certificado em nuvem (PSC) — nunca custodiamos o .pfx; cofre KMS para o resto; least privilege; auditoria |
 | R2 | Fiscal/Operacional | Erro de classificação tributária (CNAE/alíquota) | Média | Alto | Alta | Validação determinística; contador no loop; nada de inferência livre |
 | R3 | ERP | Escrita indevida em pedido | Média | Alto | Alta | Tiers 0–1 no piloto; idempotência; confirmação humana |
 | R4 | Disponibilidade | Queda do WhatsApp / BSP | Média | Médio | Média | Painel web + e-mail/SMS + fila; (evolução) 2º BSP |
@@ -443,15 +454,23 @@ ficar indisponível:
 - App + **Postgres gerenciado** + **Redis** + Secrets/KMS, em região Brasil (ou PaaS): **~US$50–150/mês
   (R$300–900)** no piloto. HSM dedicado só em escala (custo bem maior — usar KMS no piloto).
 
-### 12.4 Fiscal
-- **Procuração eletrônica: gratuita** (gov.br). Certificado em nuvem (se usado): ~R$200–500/ano por
-  certificado — em B2B2C o contador pode já possuí-lo.
+### 12.4 Fiscal — atualizado 12/jul/2026 (custo deixou de ser opcional)
+- **Certificado em nuvem (PSC): ~R$100–500/ano por certificado** (comparar BirdID/Soluti,
+  VIDaaS/Valid, SafeID) — **obrigatório por cliente desde o piloto**, não mais "se usado":
+  a API do Emissor Nacional exige mTLS do prestador em toda chamada (procuração não
+  cobre API — ver §8.3/§9.3 e `magicbi-custodia-fiscal.md`). Para 15–25 MEIs do piloto:
+  ~R$125–1.250/mês amortizado, a depender do PSC e se o contador já possui certificado
+  próprio reaproveitável para parte da coorte. **Revisar o orçamento total do piloto
+  (§12.5) para incluir esta linha, que antes era R$0.**
+- Procuração eletrônica: gratuita (gov.br), mas agora só cobre consentimento/fallback
+  humano, não é mais o caminho de custódia para emissão via API.
 - **Middleware "NF como serviço"** só na **fase 2** (NF-e de produto): ~R$0,10–0,50/nota ou mensalidade
   pequena. **Não entra no piloto.**
 
-### 12.5 Total estimado do piloto (serviços/infra, sem pessoas)
-**~R$600–2.800/mês.** O custo dominante é o **fee do BSP + tokens de IA**, não a mensageria do
-WhatsApp (que é majoritariamente gratuita por ser iniciada pelo cliente). O esforço de
+### 12.5 Total estimado do piloto (serviços/infra, sem pessoas) — revisado 12/jul/2026
+**~R$725–4.050/mês** (era ~R$600–2.800; +R$125–1.250 dos certificados PSC, agora obrigatórios
+— §12.4). O custo dominante segue sendo o **fee do BSP**, mas os certificados PSC deixam de
+ser marginais e viram a 2ª ou 3ª maior linha, a depender do PSC escolhido. O esforço de
 **desenvolvimento** (pessoas) é à parte — estimado em **~2–3 pessoas por ~10–12 semanas**.
 
 ### 12.6 Em escala (por cliente ativo)
