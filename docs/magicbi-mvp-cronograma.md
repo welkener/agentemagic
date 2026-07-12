@@ -120,8 +120,16 @@ Sem   1        2        3        4        5        6        7        8
 **Gate S4:** conectar uma empresa real via OAuth e responder "quanto tenho a receber essa semana?" com dado verdadeiro do Conta Azul.
 
 ### Semana 5 — Painel mínimo + teste interno ("friends & family")
-- [ ] Painel React mínimo: fila de aprovação + trilha de auditoria + status das conexões
-      (procuração ok? token Conta Azul válido?)
+- [x] **Fila de aprovação + trilha de auditoria + status das conexões — adiantado
+      (12/jul/2026) via Django admin**, antes do React: ações "Aprovar e emitir" /
+      "Rejeitar" na `Intencao` chamam o mesmo `agente_nf/services.py` do fluxo por
+      WhatsApp (uma só máquina de estados, dois canais de confirmação); `Auditoria` e
+      `Credencial`/`AplicativoIntegracao` (status das conexões) já visíveis lá.
+      **Falta ainda**: login por magic link (hoje é usuário/senha do Django) e a versão
+      React propriamente dita — o admin é interino, não o Grimório final.
+- [ ] Painel React mínimo (Grimório completo entra depois do go, isto é só a versão
+      "bonita" do que o admin já faz — avaliar se compensa antes do go, dado que o
+      admin já cobre o requisito funcional)
 - [ ] Login por magic link para o contador da Rotina
 - [ ] Deploy em VPS/PaaS barato (região Brasil) para sair do localhost
 - [ ] Teste interno: você + 1–2 pessoas da Rotina usando fiscal E ERP por 3 dias

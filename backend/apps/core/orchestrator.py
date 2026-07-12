@@ -25,9 +25,9 @@ import structlog
 from django.conf import settings
 from pydantic import BaseModel, Field
 
-from apps.adapters.resolver import resolver_adapter_nfse
 from apps.agents.agente_erp.services import AgenteErp
 from apps.agents.agente_nf.models import Intencao
+from apps.agents.agente_nf.services import cancelar_emissao, confirmar_emissao
 from apps.audit.services import registrar
 from apps.governance.tiers import tier_da_intencao, verificar_tier
 
@@ -81,9 +81,8 @@ def _groq_disponivel() -> bool:
 class Orquestrador:
     """Núcleo de decisão: resolve perfil, aplica tier e despacha ao subagente."""
 
-    def __init__(self, nfse_adapter=None):
+    def __init__(self):
         self._agente_erp = AgenteErp()
-        self._nfse_fixo = nfse_adapter  # testes injetam; produção resolve por cliente
 
     def processar(self, mensagem: str, cliente, message_id: str | None = None) -> str:
         """Processa uma mensagem do WhatsApp e devolve o texto de resposta.
@@ -234,7 +233,7 @@ class Orquestrador:
     def _resolver_confirmacao(self, intencao: Intencao, mensagem: str) -> str:
         texto = mensagem.lower().strip()
         if any(p in texto for p in _PALAVRAS_CANCELAMENTO):
-            intencao.transicionar(Intencao.Estado.CANCELADO, motivo="cliente cancelou")
+            cancelar_emissao(intencao, motivo="cliente cancelou")
             return "Combinado, cancelei a emissão. Se precisar, é só chamar de novo. 👍"
 
         if not any(p in texto for p in _PALAVRAS_CONFIRMACAO):
@@ -243,22 +242,18 @@ class Orquestrador:
                 "pendente ou *não* para cancelar."
             )
 
-        intencao.transicionar(Intencao.Estado.EMITINDO, motivo="cliente confirmou")
-        nfse = self._nfse_fixo or resolver_adapter_nfse(intencao.cliente)
-        resultado = nfse.emitir("nfse", intencao.payload, {"cliente": intencao.cliente})
+        resultado = confirmar_emissao(intencao, motivo="cliente confirmou")
 
         if resultado.ok:
-            intencao.transicionar(Intencao.Estado.CONCLUIDO, motivo="emissão autorizada")
             return (
                 "Nota emitida com sucesso! 🎉\n"
-                f"Protocolo: {resultado.dados['protocolo']}\n"
-                f"DANFSE: {resultado.dados['danfse_url']}"
+                f"Protocolo: {resultado.protocolo}\n"
+                f"DANFSE: {resultado.danfse_url}"
             )
 
-        intencao.transicionar(Intencao.Estado.REJEITADO, motivo=resultado.erro_padronizado or "rejeicao")
         return (
             "A nota foi rejeitada pela Sefin 😕 "
-            f"(motivo: {resultado.erro_padronizado}). Ajusto os dados e você confirma de novo?"
+            f"(motivo: {resultado.erro}). Ajusto os dados e você confirma de novo?"
         )
 
     def _mensagem_para_intencao_existente(self, intencao: Intencao) -> str:
