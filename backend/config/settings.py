@@ -132,7 +132,17 @@ FIELD_ENCRYPTION_KEY = env("FIELD_ENCRYPTION_KEY", default="")
 # ---------------------------------------------------------------------------
 # Logs estruturados (structlog)
 # ---------------------------------------------------------------------------
+import sys  # noqa: E402
+
 import structlog  # noqa: E402
+
+# As mensagens do produto usam emoji (🧾🎉😕 etc.). O console do Windows abre
+# stdout/stderr no codepage legado (cp1252) por padrão, que não representa
+# esses caracteres — sem isto, logar qualquer resposta com emoji derruba a
+# request inteira com UnicodeEncodeError. `backslashreplace` nunca lança.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="backslashreplace")
 
 structlog.configure(
     processors=[
