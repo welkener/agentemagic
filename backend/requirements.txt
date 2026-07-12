@@ -6,6 +6,7 @@ celery[redis]
 redis
 django-environ
 pydantic-ai-slim[groq]  # orquestração Opção A (docs/magicbi-hermes-comunicador.md §7) sobre Groq
+groq  # cliente direto p/ transcrição de áudio (Whisper) — D6, apps/channel_whatsapp/transcricao.py
 httpx
 structlog
 psycopg[binary]  # Postgres — único banco suportado (dev local ou docker-compose)

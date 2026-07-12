@@ -73,6 +73,8 @@ class WebhookWhatsAppView(View):
                 continue
             telefone = mensagem.get("from", "")
             texto = (mensagem.get("text") or {}).get("body", "")
+            # D6 — voz: sem "text", extrai o media_id; a transcrição roda na task.
+            media_id = (mensagem.get("audio") or {}).get("id") if mensagem.get("type") == "audio" else None
 
             # Idempotência: só a primeira chegada de cada message_id enfileira.
             _, criado = MensagemProcessada.objects.get_or_create(
@@ -82,7 +84,7 @@ class WebhookWhatsAppView(View):
                 logger.info("webhook_mensagem_duplicada", message_id=message_id)
                 continue
 
-            processar_mensagem.delay(message_id, telefone, texto)
+            processar_mensagem.delay(message_id, telefone, texto, media_id=media_id)
 
         # Ack imediato — o processamento pesado ficou na fila.
         return JsonResponse({"status": "recebido"})

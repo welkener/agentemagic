@@ -45,6 +45,34 @@ def _assinar(corpo: bytes) -> str:
     return f"sha256={mac.hexdigest()}"
 
 
+def _payload_audio(message_id="wamid.AUDIO001", telefone="5511999998888", media_id="MEDIA123"):
+    return {
+        "object": "whatsapp_business_account",
+        "entry": [
+            {
+                "id": "123",
+                "changes": [
+                    {
+                        "field": "messages",
+                        "value": {
+                            "messaging_product": "whatsapp",
+                            "messages": [
+                                {
+                                    "id": message_id,
+                                    "from": telefone,
+                                    "timestamp": "1751900000",
+                                    "type": "audio",
+                                    "audio": {"id": media_id, "mime_type": "audio/ogg; codecs=opus"},
+                                }
+                            ],
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+
+
 def _post_assinado(client, payload):
     corpo = json.dumps(payload).encode()
     return client.post(
@@ -118,3 +146,20 @@ def test_message_id_duplicado_e_ignorado(client, cliente):
     assert _post_assinado(client, payload).status_code == 200
     assert MensagemProcessada.objects.filter(message_id="wamid.DUPLICADA").count() == 1
     assert Auditoria.objects.count() == eventos_apos_primeira
+
+
+@pytest.mark.django_db
+def test_mensagem_de_audio_sem_groq_pede_para_escrever(client, cliente):
+    """D6: sem WHATSAPP_TOKEN/GROQ_API_KEY (settings_test), a transcrição não
+    roda de verdade — o fluxo degrada pedindo pro cliente escrever, sem travar."""
+    resposta = _post_assinado(client, _payload_audio())
+    assert resposta.status_code == 200
+
+    assert MensagemProcessada.objects.filter(message_id="wamid.AUDIO001").exists()
+    eventos = list(Auditoria.objects.values_list("evento", "dados"))
+    nomes_eventos = [e for e, _ in eventos]
+    assert "whatsapp_transcricao_falhou" in nomes_eventos
+    assert "whatsapp_mensagem_recebida" not in nomes_eventos  # nunca chegou a processar texto vazio
+
+    resposta_enviada = next(dados for evento, dados in eventos if evento == "whatsapp_resposta_enviada")
+    assert "áudio" in resposta_enviada["resposta"]

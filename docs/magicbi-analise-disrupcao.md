@@ -173,7 +173,7 @@ em nenhum player. Combina Tier 0 (projeção) com D1 (agir sobre a recomendaçã
 com heurística determinística (recebíveis confirmados − despesas recorrentes), não
 precisa de ML no dia 1.
 
-### D6. Voice-first fiscal (paridade urgente, não diferencial)
+### D6. Voice-first fiscal (paridade urgente, não diferencial) — ✅ implementado 12/jul/2026
 Áudio→nota é a aposta da Zucchetti/BNDES lançando **agora**. Para o público MEI
 (WhatsApp = áudio), aceitar áudio é higiene de produto em 2026. Custo baixo: transcrição
 (API) na borda → o resto do pipeline já é texto. Entra no MVP como item barato;

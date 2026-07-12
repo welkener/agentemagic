@@ -88,9 +88,13 @@ Sem   1        2        3        4        5        6        7        8
 - [ ] Confirmação Tier 1 com botões ("✅ Emitir / ✏️ Corrigir / ❌ Cancelar") — nota e rascunho
 - [ ] DANFSE fake (PDF) no chat; consultas ERP mock respondidas em linguagem natural
 - [ ] Motor de tiers ativo: qualquer intenção Tier 2–3 recusada com explicação educada
-- [ ] **Áudio → texto (D6)**: aceitar mensagem de voz transcrevendo na borda (API de
-      transcrição) e seguindo o pipeline de texto normal — barato, e é paridade com o
-      áudio→nota da Zucchetti/BNDES que lança agora (ver `magicbi-analise-disrupcao.md` §4)
+- [x] **Áudio → texto (D6)** — implementado 12/jul/2026: webhook detecta `type=audio`,
+      baixa a mídia da Graph API e transcreve com **Whisper da própria Groq**
+      (`whisper-large-v3-turbo`, mesma chave/conta do roteamento — sem outro fornecedor),
+      seguindo o pipeline de texto normal depois. Sem token/chave configurados, degrada
+      pedindo pro cliente escrever (nunca trava nem inventa conteúdo). Paridade com o
+      áudio→nota da Zucchetti/BNDES (ver `magicbi-analise-disrupcao.md` §4).
+      `apps/channel_whatsapp/transcricao.py` + `services.baixar_midia`.
 
 **Gate S2:** no mock — "emite nota de 500 pro João" vira nota com PDF em < 2 min E
 "como tá meu contas a receber?" volta resumo correto em < 10 s, com os tiers bloqueando o que deve.
