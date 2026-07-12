@@ -25,7 +25,7 @@ import structlog
 from django.conf import settings
 from pydantic import BaseModel, Field
 
-from apps.adapters.nfse_mock import NfseMockAdapter
+from apps.adapters.resolver import resolver_adapter_nfse
 from apps.agents.agente_erp.services import AgenteErp
 from apps.agents.agente_nf.models import Intencao
 from apps.audit.services import registrar
@@ -81,9 +81,9 @@ def _groq_disponivel() -> bool:
 class Orquestrador:
     """Núcleo de decisão: resolve perfil, aplica tier e despacha ao subagente."""
 
-    def __init__(self):
+    def __init__(self, nfse_adapter=None):
         self._agente_erp = AgenteErp()
-        self._nfse = NfseMockAdapter()
+        self._nfse_fixo = nfse_adapter  # testes injetam; produção resolve por cliente
 
     def processar(self, mensagem: str, cliente, message_id: str | None = None) -> str:
         """Processa uma mensagem do WhatsApp e devolve o texto de resposta.
@@ -244,7 +244,8 @@ class Orquestrador:
             )
 
         intencao.transicionar(Intencao.Estado.EMITINDO, motivo="cliente confirmou")
-        resultado = self._nfse.emitir("nfse", intencao.payload, {"cliente": intencao.cliente})
+        nfse = self._nfse_fixo or resolver_adapter_nfse(intencao.cliente)
+        resultado = nfse.emitir("nfse", intencao.payload, {"cliente": intencao.cliente})
 
         if resultado.ok:
             intencao.transicionar(Intencao.Estado.CONCLUIDO, motivo="emissão autorizada")

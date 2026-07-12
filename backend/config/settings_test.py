@@ -1,14 +1,14 @@
 """
-Configurações de teste — sqlite em memória e Celery em modo eager
-(tarefas executam de forma síncrona dentro do próprio teste).
+Configurações de teste — Postgres local (mesmo motor do dev/produção; sqlite
+descontinuado para não mascarar comportamento específico de Postgres, ex.:
+SELECT FOR UPDATE na auditoria). O runner de testes cria/derruba
+"test_<NAME>" sozinho — não precisa criar esse banco manualmente.
+Celery roda em modo eager (síncrono, dentro do próprio teste).
 """
 from .settings import *  # noqa: F401,F403
 
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": ":memory:",
-    }
+    "default": env.db("DATABASE_URL", default="postgres://postgres:123456@localhost:5432/magicbi"),
 }
 
 # Tarefas Celery rodam inline nos testes.
@@ -22,3 +22,6 @@ WHATSAPP_VERIFY_TOKEN = "token-verificacao-teste"
 WHATSAPP_TOKEN = ""
 WHATSAPP_PHONE_NUMBER_ID = ""
 GROQ_API_KEY = ""
+# Chave de teste fixa (nunca reaproveitar em produção) — permite testar
+# CampoTextoCifrado sem depender de variável de ambiente.
+FIELD_ENCRYPTION_KEY = "df5bR-gm_9bHB30ETfhliXsyHxx33q0GoUHQ8csiW_0="

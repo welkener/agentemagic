@@ -8,6 +8,7 @@ django-environ
 pydantic-ai-slim[groq]  # orquestração Opção A (docs/magicbi-hermes-comunicador.md §7) sobre Groq
 httpx
 structlog
-psycopg[binary]  # necessário para Postgres via docker-compose
+psycopg[binary]  # Postgres — único banco suportado (dev local ou docker-compose)
+cryptography  # cifra segredos por campo (Credencial/AplicativoIntegracao) até o cofre em nuvem
 pytest
 pytest-django

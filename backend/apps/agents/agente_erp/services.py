@@ -1,27 +1,40 @@
 """
-Agente ERP (esqueleto Semana 1) — recebe uma intenção de consulta e chama o
-adaptador de ERP pela interface única, respeitando o motor de tiers.
+Agente ERP — recebe uma intenção de consulta e chama o adaptador de ERP pela
+interface única, respeitando o motor de tiers.
 
-No piloto o agenteERP fica em Tier 0–1 (leitura + rascunho); a resposta em
-linguagem natural rica entra na Semana 2 com o LLM.
+O adaptador é resolvido por cliente (`resolver.py`): real (Conta Azul/Bling)
+se houver credencial OAuth ativa para uma das `ferramentas_habilitadas` do
+perfil, mock caso contrário — nunca falha silenciosamente, a escolha vai pro
+log estruturado. Passar `adapter=` no construtor força um adaptador fixo
+(usado pelos testes).
 """
 from __future__ import annotations
 
 import structlog
 
-from apps.adapters.erp_mock import ErpMockAdapter
+from apps.adapters.resolver import resolver_adapter_erp
 from apps.audit.services import registrar
 from apps.governance.tiers import tier_da_intencao, verificar_tier
 
 logger = structlog.get_logger(__name__)
+
+_INTEGRACOES_ERP_CONHECIDAS = ("conta_azul", "bling")
 
 
 class AgenteErp:
     """Serviço que traduz intenções de consulta em chamadas ao adaptador."""
 
     def __init__(self, adapter=None):
-        # O adaptador real (Conta Azul/Bling) é injetável; padrão = mock.
-        self.adapter = adapter or ErpMockAdapter()
+        # Se injetado (testes), este adaptador é usado para todo cliente.
+        self._adapter_fixo = adapter
+
+    def _resolver_adapter(self, perfil, cliente):
+        if self._adapter_fixo is not None:
+            return self._adapter_fixo
+        candidatas = [
+            f for f in getattr(perfil, "ferramentas_habilitadas", []) if f in _INTEGRACOES_ERP_CONHECIDAS
+        ]
+        return resolver_adapter_erp(cliente, candidatas)
 
     def consultar(self, intencao: str, recurso: str, filtros: dict, perfil, cliente=None) -> str:
         """Executa uma consulta (Tier 0) e devolve resposta em texto simples."""
@@ -32,8 +45,9 @@ class AgenteErp:
                 "Fale com seu contador para habilitá-la. 🙏"
             )
 
+        adapter = self._resolver_adapter(perfil, cliente)
         ctx = {"cliente": cliente, "perfil": perfil}
-        resultado = self.adapter.consultar(recurso, filtros, ctx)
+        resultado = adapter.consultar(recurso, filtros, ctx)
         registrar(
             "agente_erp_consulta",
             {
@@ -52,7 +66,15 @@ class AgenteErp:
                 "Não consegui consultar essa informação agora "
                 f"(motivo: {resultado.erro_padronizado}). Pode tentar de novo?"
             )
-        return self._formatar(recurso, resultado.dados)
+        try:
+            return self._formatar(recurso, resultado.dados)
+        except (KeyError, TypeError):
+            # Adaptador real com payload que a formatação ainda não conhece —
+            # ⚠ mapear o formato oficial da API antes de ativar em produção
+            # (ContaAzulAdapter/BlingAdapter só normalizam erros por ora, não
+            # o formato dos dados — ver apps/adapters/oauth2.py).
+            logger.warning("formatacao_erp_incompativel", recurso=recurso)
+            return "Consegui os dados, mas ainda não sei formatar essa resposta direito. Já registrei para ajustar."
 
     # ------------------------------------------------------------------
     # Formatação simples (Semana 1) — a resposta natural vem com o LLM (S2)

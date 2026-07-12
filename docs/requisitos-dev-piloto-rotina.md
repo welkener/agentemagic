@@ -157,6 +157,18 @@ flowchart LR
 Cada componente abaixo é uma unidade de trabalho com responsabilidades, entradas/saídas e cuidados.
 
 ### 7.1 Canal WhatsApp (ingestão)
+
+**Decisão confirmada (11/jul/2026): integração direta com a Cloud API oficial da Meta,
+sem Evolution API/EvolutionGo/Baileys.** Avaliado a pedido: a **Evolution API** está ativa
+e suporta um modo sobre a Cloud API oficial, mas seu core business (e o de qualquer
+fork, incluindo a reescrita em Go **Evolution Go**) é o protocolo não-oficial
+**Baileys/whatsmeow** (WhatsApp Web reverso), com risco de banimento documentado e ativo
+em 2026 (issues públicas de bans em massa). Usar essa camada mesmo só no "modo oficial"
+adiciona infraestrutura (deploy próprio, banco, filas) sem reduzir risco — e cria risco
+de configuração incorreta acidentalmente cair no modo Baileys. **Mantém-se a decisão já
+tomada em `magicbi-hermes-comunicador.md` §3** (regra 2, "canal só pelo BSP oficial"). Se
+for útil reduzir boilerplate depois, considerar um wrapper fino só-da-API-oficial (não
+reverse-engineering) como `meta-cloud-api` — não decidido, não urgente.
 - **Webhook de entrada**: endpoint HTTPS público que recebe mensagens. Validar o `verify_token`
   no handshake e a assinatura `X-Hub-Signature-256` (HMAC com o App Secret) em cada POST.
 - **Janela de 24h**: a conversa iniciada pelo cliente abre uma janela de serviço de 24h em que
@@ -195,25 +207,48 @@ Cada componente abaixo é uma unidade de trabalho com responsabilidades, entrada
 - Cadastro e testes em **homologação ("Produção Restrita")**; só depois produção.
 - Emissão via REST/JSON do Emissor Nacional; tratamento de rejeição (incl. IBS/CBS) e retry.
 - **Regras tributárias configuráveis** (jamais *hardcoded*) — a legislação está em adequação.
+- **Mapeado (11/jul/2026)**: `apps/adapters/nfse_nacional.py` — `NfseNacionalAdapter`, mesmo
+  contrato do mock, auth via `Credencial` (tipo=procuração), `base_url` configurável pelo admin
+  (`AplicativoIntegracao`). ⚠ paths/payload de exemplo — confirmar schema DPS oficial (campos
+  IBS/CBS) na doc do ADN antes de ativar; auth ainda depende do spike da procuração
+  (`magicbi-custodia-fiscal.md` §1). O núcleo escolhe mock vs. real automaticamente por cliente
+  (`apps/adapters/resolver.py`) — sem credencial cadastrada, cai no mock sem quebrar o fluxo.
 
 ### 7.5 Adaptador Conta Azul
 - Fluxo **OAuth2 authorization code** por cliente; refresh token no cofre; renovação automática.
 - Mapear endpoints de Vendas/Estoque/Financeiro/Notas para a interface interna.
 - **Cache de leitura** de curto prazo (ex.: posição de estoque/financeiro) para degradação graciosa
   quando a API estiver indisponível.
+- **Mapeado (11/jul/2026)**: `apps/adapters/conta_azul.py` (`ContaAzulAdapter`) e
+  `apps/adapters/bling.py` (`BlingAdapter`, 2º ERP) compartilham `apps/adapters/oauth2.py`
+  (`AdapterErpOAuth2Base`) — renovação automática de access_token via refresh_token, erros
+  traduzidos ao catálogo interno (`AUTH_EXPIRADA`/`RATE_LIMIT`/`INDISPONIVEL`). ⚠ paths dos
+  endpoints são exemplo — confirmar na doc oficial de cada API antes de ativar; **a
+  normalização da resposta ao formato interno (`_formatar` em `agente_erp/services.py`) ainda
+  não está mapeada** (o adaptador real devolve o JSON cru da API) — próximo passo assim que
+  houver credencial de sandbox para inspecionar o payload real. Cache de leitura: ainda não
+  implementado no adaptador real (mock não precisa).
 
 ### 7.6 Motor de aprovação por tier
 - Classifica cada ação em Tier 0–3 e aplica o gate: Tier 0 executa; Tier 1 pede confirmação 1-clique;
   Tier 2/3 (fora do piloto) exigem aprovação humana / confirmação fora do WhatsApp.
 
 ### 7.7 Idempotência e fila
-- Chave de idempotência derivada do `message_id` do WhatsApp em **toda escrita** (nota/rascunho).
+- Chave de idempotência derivada do `message_id` do WhatsApp em **toda escrita** (nota/rascunho) —
+  **implementado** no fluxo de emissão (`apps/core/orchestrator.py`, `Intencao.chave_idempotencia`).
 - Fila (Redis + BullMQ, ou SQS) com **retry exponencial**, **circuit breaker** por integração e
   **dead-letter queue** (DLQ) para mensagens que falham além do limite.
 
 ### 7.8 Cofre de credenciais
-- Secrets Manager + KMS (envelope encryption). Tokens OAuth e procuração isolados, com rotação.
-- **Nunca** armazenar `.pfx` cru. Acesso por *least privilege* e auditado.
+- **Produção**: Secrets Manager + KMS (envelope encryption). Tokens OAuth e procuração isolados,
+  com rotação.
+- **MVP/piloto (implementado 11/jul/2026, antes do deploy em nuvem)**: sem Secrets Manager ainda,
+  os segredos (refresh token, client_secret dos apps Conta Azul/Bling) ficam cifrados em repouso
+  com **Fernet** (`apps/credentials/crypto.py`, chave `FIELD_ENCRYPTION_KEY` fora do banco),
+  digitados **só pelo Django admin** (`Credencial`/`AplicativoIntegracao` — campos de segredo são
+  *write-only*, nunca reexibem o valor salvo). É a troca de backend de armazenamento prevista —
+  o contrato do model não muda quando o Secrets Manager entrar.
+- **Nunca** armazenar `.pfx` cru. Acesso por *least privilege* (login do Django admin) e auditado.
 
 ### 7.9 Trilha de auditoria
 - Tabela **append-only**: quem, quando, ação, payload (com PII minimizada/mascarada), resultado,
@@ -286,18 +321,30 @@ Cada componente abaixo é uma unidade de trabalho com responsabilidades, entrada
 - **DPA** com a Rotina e com cada **subprocessador** (BSP do WhatsApp, nuvem, eventual middleware
   fiscal). Indicar **encarregado/DPO**. **Plano de resposta a incidentes** com prazos de notificação.
 
-**Subprocessador Groq (atualizado 11/jul/2026 — troca de Anthropic por Groq):**
-- A Groq processa **conteúdo da mensagem** (texto do cliente) para roteamento/extração de campos,
-  não CNAE/alíquota/decisão fiscal (guard determinístico — nunca sai do núcleo). Infraestrutura de
-  inferência primariamente nos EUA: ⚠ **confirmar** política de retenção/treinamento da Groq para
-  clientes de API (tipicamente não usa dados de API para treinar, mas precisa confirmar no contrato
-  vigente) e mecanismo de transferência internacional adequado à LGPD (cláusulas contratuais
-  padrão/SCC) antes de produção.
-- **Ação de kickoff**: adicionar a Groq ao inventário de subprocessadores do DPA com a Rotina (no
-  lugar da Anthropic); revisar minuta do termo de adesão do cliente final para citar o provedor de
-  IA corretamente (ver `magicbi-cronograma.md`, Fase 0).
-- Minimização: só o texto da mensagem (e transcrição de áudio, se D6 entrar) trafega para a Groq —
-  nunca CNPJ/CPF, tokens OAuth ou credenciais, que não passam pelo LLM em nenhuma etapa.
+**Subprocessador Groq (confirmado 11/jul/2026 — política de retenção pesquisada nos documentos
+legais oficiais da Groq: [DPA](https://console.groq.com/docs/legal/customer-data-processing-addendum),
+["Your Data in GroqCloud"](https://console.groq.com/docs/your-data),
+[Services Agreement](https://console.groq.com/docs/legal/services-agreement)):**
+- **Treinamento: não.** O DPA declara explicitamente que a Groq nunca acessa Customer Data para
+  treinar modelos.
+- **Retenção: baixa por padrão, zero sob demanda.** Prompts/completions não são retidos, exceto
+  logs de erro/abuso por até 30 dias. Existe **Zero Data Retention (ZDR)**, disponível a qualquer
+  cliente (não só enterprise) — **ação de kickoff: ativar ZDR nas Data Controls da conta Groq**
+  antes de produção.
+- **Transferência internacional: EUA confirmado.** Dados retidos ficam em buckets GCP nos EUA. O
+  DPA já prevê SCCs — mas cobre **CCPA, GDPR, FADP (Suíça) e PDPL (Arábia Saudita); LGPD/Brasil não
+  consta** em nenhum documento legal da Groq. **Pendência real**: negociar cláusula específica ou
+  anexo LGPD com a Groq, ou basear a transferência em consentimento informado do titular +
+  documentação de necessidade (art. 33 LGPD), até a Groq formalizar cobertura LGPD.
+- DPA formal existe (vigente desde 15/10/2025), com prazo de exclusão pós-rescisão de até 180
+  dias; SOC 2 Type II alegado (fonte secundária, não confirmada no Trust Center diretamente).
+- **Ação de kickoff**: ativar ZDR; adicionar a Groq ao inventário de subprocessadores do DPA com a
+  Rotina (no lugar da Anthropic); revisar minuta do termo de adesão citando o provedor de IA e a
+  transferência para os EUA; se possível, contatar a Groq para anexo/cláusula LGPD específica.
+- Minimização (mitigação enquanto a cláusula LGPD não existe): só o texto da mensagem (nome do
+  tomador, valor, descrição do serviço — nunca CNPJ/CPF, tokens OAuth ou credenciais) trafega para
+  a Groq; CNAE/alíquota nunca saem do núcleo (`Cliente.cnae_padrao`, guard determinístico em
+  `apps/core/orchestrator.py`).
 
 ---
 

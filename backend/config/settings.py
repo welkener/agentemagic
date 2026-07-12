@@ -72,9 +72,10 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
-# Banco: DATABASE_URL (Postgres no compose); padrão sqlite para dev rápido.
+# Banco: só Postgres (sqlite descontinuado — evita divergência de comportamento,
+# ex.: SELECT FOR UPDATE na auditoria). Local (postgres/123456) ou docker-compose.
 DATABASES = {
-    "default": env.db("DATABASE_URL", default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}"),
+    "default": env.db("DATABASE_URL", default="postgres://postgres:123456@localhost:5432/magicbi"),
 }
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -120,6 +121,13 @@ WHATSAPP_PHONE_NUMBER_ID = env("WHATSAPP_PHONE_NUMBER_ID", default="")
 # orquestrador cai no roteamento determinístico por palavra-chave (offline).
 # ---------------------------------------------------------------------------
 GROQ_API_KEY = env("GROQ_API_KEY", default="")
+
+# ---------------------------------------------------------------------------
+# Chave de cifra de campo (Credencial/AplicativoIntegracao — apps/credentials/
+# crypto.py). Gerar com `Fernet.generate_key()`; nunca reaproveitar entre
+# ambientes. Sem ela, salvar um segredo levanta ErroChaveDeCifraAusente.
+# ---------------------------------------------------------------------------
+FIELD_ENCRYPTION_KEY = env("FIELD_ENCRYPTION_KEY", default="")
 
 # ---------------------------------------------------------------------------
 # Logs estruturados (structlog)
