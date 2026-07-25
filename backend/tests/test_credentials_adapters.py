@@ -101,20 +101,22 @@ def test_resolver_nfse_sem_credencial_cai_no_mock(cliente):
 
 
 @pytest.mark.django_db
-def test_resolver_nfse_com_credencial_e_app_usa_real(cliente):
-    # Certificado em nuvem (PSC), não procuração — a API do ADN exige mTLS do
-    # prestador (confirmado 12/jul/2026, ver docs/magicbi-custodia-fiscal.md §1).
+@pytest.mark.parametrize("tipo", [Credencial.Tipo.CERTIFICADO_PSC, Credencial.Tipo.CERTIFICADO_PFX])
+def test_resolver_nfse_com_credencial_e_app_usa_real(cliente, tipo):
+    # Certificado (nuvem/PSC ou .pfx), não procuração — a API do ADN exige mTLS
+    # do prestador (confirmado 12/jul/2026, ver docs/magicbi-custodia-fiscal.md
+    # §1). Os dois modos de certificado contam (decisão 25/jul/2026).
     AplicativoIntegracao.objects.create(
         nome=AplicativoIntegracao.Nome.NFSE_NACIONAL, base_url="https://adn.exemplo.gov.br", ativo=True
     )
-    Credencial.objects.create(cliente=cliente, tipo=Credencial.Tipo.CERTIFICADO, integracao="nfse_nacional")
+    Credencial.objects.create(cliente=cliente, tipo=tipo, integracao="nfse_nacional")
 
     assert isinstance(resolver_adapter_nfse(cliente), NfseNacionalAdapter)
 
 
 @pytest.mark.django_db
 def test_resolver_nfse_com_procuracao_nao_e_suficiente(cliente):
-    """Procuração eletrônica não autoriza chamada de API — só CERTIFICADO conta."""
+    """Procuração eletrônica não autoriza chamada de API — só certificado (PSC/.pfx) conta."""
     AplicativoIntegracao.objects.create(
         nome=AplicativoIntegracao.Nome.NFSE_NACIONAL, base_url="https://adn.exemplo.gov.br", ativo=True
     )

@@ -45,6 +45,20 @@ def decifrar(dados_cifrados: bytes) -> str:
     return _fernet().decrypt(bytes(dados_cifrados)).decode("utf-8")
 
 
+def cifrar_bytes(dados: bytes) -> bytes:
+    """Igual a `cifrar()`, mas para conteúdo binário (ex.: upload de .pfx) —
+    nunca assume utf-8."""
+    if not dados:
+        return b""
+    return _fernet().encrypt(dados)
+
+
+def decifrar_bytes(dados_cifrados: bytes) -> bytes:
+    if not dados_cifrados:
+        return b""
+    return _fernet().decrypt(bytes(dados_cifrados))
+
+
 class CampoTextoCifrado(models.BinaryField):
     """TextField que cifra/decifra de forma transparente com Fernet."""
 

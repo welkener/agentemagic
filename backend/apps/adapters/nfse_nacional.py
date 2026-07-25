@@ -56,7 +56,14 @@ class NfseNacionalAdapter(AdapterBase):
         return {"emitir_nfse", "consultar_nfse", "criar_rascunho_nfse"}
 
     def _credencial(self, cliente) -> Credencial:
-        return resolver_credencial(cliente, "nfse_nacional", tipo=Credencial.Tipo.CERTIFICADO)
+        # Aceita CERTIFICADO_PSC ou CERTIFICADO_PFX — qual modo cada cliente
+        # usa é decisão de credenciamento, não de código (ver
+        # docs/magicbi-custodia-fiscal.md, decisão 25/jul/2026).
+        return resolver_credencial(
+            cliente,
+            "nfse_nacional",
+            tipo=(Credencial.Tipo.CERTIFICADO_PSC, Credencial.Tipo.CERTIFICADO_PFX),
+        )
 
     def consultar(self, recurso: str, filtros: dict, ctx) -> ResultadoAcao:
         if recurso != "nfse":

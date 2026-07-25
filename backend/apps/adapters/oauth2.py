@@ -30,9 +30,15 @@ def resolver_app(nome: str) -> AplicativoIntegracao:
     return app
 
 
-def resolver_credencial(cliente, integracao: str, tipo: str = Credencial.Tipo.OAUTH) -> Credencial:
+def resolver_credencial(
+    cliente, integracao: str, tipo: str | tuple[str, ...] = Credencial.Tipo.OAUTH
+) -> Credencial:
+    """`tipo` aceita um único tipo ou uma tupla de tipos aceitáveis — usado pela
+    NFS-e, que aceita credencial CERTIFICADO_PSC **ou** CERTIFICADO_PFX (ver
+    `docs/magicbi-custodia-fiscal.md` — modelo de custódia por cliente, não por código)."""
+    filtro = {"tipo__in": tipo} if isinstance(tipo, (tuple, list)) else {"tipo": tipo}
     credencial = (
-        Credencial.objects.filter(cliente=cliente, integracao=integracao, tipo=tipo)
+        Credencial.objects.filter(cliente=cliente, integracao=integracao, **filtro)
         .order_by("-atualizado_em")
         .first()
     )

@@ -48,12 +48,17 @@ def resolver_adapter_erp(cliente, integracoes_candidatas=()):
     return ErpMockAdapter()
 
 
+_TIPOS_CERTIFICADO_NFSE = (Credencial.Tipo.CERTIFICADO_PSC, Credencial.Tipo.CERTIFICADO_PFX)
+
+
 def resolver_adapter_nfse(cliente):
-    # Certificado em nuvem (PSC), não procuração — a API exige mTLS do
-    # prestador; procuração eletrônica não autoriza chamadas de API
-    # (confirmado 12/jul/2026, ver docs/magicbi-custodia-fiscal.md §1).
+    # Certificado (nuvem/PSC ou arquivo .pfx), não procuração — a API exige
+    # mTLS do prestador; procuração eletrônica não autoriza chamadas de API
+    # (confirmado 12/jul/2026, ver docs/magicbi-custodia-fiscal.md §1). Os
+    # dois modos de certificado contam — qual usar é decisão de
+    # credenciamento por cliente, não de código (decisão 25/jul/2026).
     credenciado = Credencial.objects.filter(
-        cliente=cliente, integracao="nfse_nacional", tipo=Credencial.Tipo.CERTIFICADO
+        cliente=cliente, integracao="nfse_nacional", tipo__in=_TIPOS_CERTIFICADO_NFSE
     ).exists()
     app_ativo = AplicativoIntegracao.objects.filter(nome="nfse_nacional", ativo=True).exists()
 
