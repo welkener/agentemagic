@@ -18,6 +18,7 @@ staticfiles/
 .env
 *.pem
 *.pfx
+servidor.txt
 
 # Node (painel React entra em fase futura)
 node_modules/

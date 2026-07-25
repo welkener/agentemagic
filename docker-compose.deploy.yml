@@ -1,0 +1,52 @@
+# Magic BI — deploy enxuto pro servidor de teste (demonstração/homologação
+# com o contador). Diferente do docker-compose.yml (dev local, com Redis +
+# worker): aqui CELERY_TASK_ALWAYS_EAGER=True roda as tasks inline, sem
+# precisar de Redis/worker separados — servidor compartilhado com RAM/disco
+# apertados (ver docs/magicbi-ondas-desenvolvimento.md). Reaproveita a
+# instância Evolution já existente no mesmo servidor (projeto aosatende) via
+# EVOLUTION_BASE_URL apontando pro host, não pro compose.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: magicbi
+      POSTGRES_USER: magicbi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U magicbi -d magicbi"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build: ./backend
+    restart: unless-stopped
+    command: sh -c "python manage.py collectstatic --noinput && python manage.py migrate && python manage.py runserver 0.0.0.0:8000 --insecure"
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+      DJANGO_DEBUG: "False"
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS}
+      DATABASE_URL: postgres://magicbi:${POSTGRES_PASSWORD}@postgres:5432/magicbi
+      CELERY_TASK_ALWAYS_EAGER: "True"
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY}
+      MAGICLINK_SIGNING_KEY: ${MAGICLINK_SIGNING_KEY}
+      PAINEL_BASE_URL: ${PAINEL_BASE_URL}
+      EVOLUTION_BASE_URL: ${EVOLUTION_BASE_URL}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-no-reply@magicbi.local}
+    ports:
+      - "8020:8000"
+    volumes:
+      - media:/app/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  media:

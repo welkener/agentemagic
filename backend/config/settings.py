@@ -94,6 +94,7 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"  # `collectstatic` — servido via `runserver --insecure` no piloto
 
 # Upload de logo do escritório (apps/painel). Em produção, trocar por storage
 # em nuvem (S3/equivalente) — local só serve pro piloto/dev.
