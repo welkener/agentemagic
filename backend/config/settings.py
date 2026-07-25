@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "apps.credentials",
     "apps.security",
     "apps.channel_whatsapp",
+    "apps.channel_evolution",  # SÓ TESTE LOCAL — nunca produção (ver apps/channel_evolution/apps.py)
     "apps.audit",
     "apps.governance",
     "apps.agents.agente_nf",
@@ -122,6 +123,18 @@ WHATSAPP_PHONE_NUMBER_ID = env("WHATSAPP_PHONE_NUMBER_ID", default="")
 # orquestrador cai no roteamento determinístico por palavra-chave (offline).
 # ---------------------------------------------------------------------------
 GROQ_API_KEY = env("GROQ_API_KEY", default="")
+
+# ---------------------------------------------------------------------------
+# Evolution API — canal de TESTE LOCAL apenas, nunca produção (protocolo não-
+# oficial Baileys/whatsmeow, risco de banimento — decisão já registrada em
+# docs/magicbi-hermes-comunicador.md §3 e docs/requisitos-dev-piloto-rotina.md
+# §7.1). Serve só para o time/escritório testar o fluxo ponta a ponta antes
+# de configurar a Cloud API oficial da Meta. Sem estas 3 variáveis, o envio
+# degrada pra log (apps/channel_evolution/services.py) — fica testável offline.
+# ---------------------------------------------------------------------------
+EVOLUTION_BASE_URL = env("EVOLUTION_BASE_URL", default="")
+EVOLUTION_API_KEY = env("EVOLUTION_API_KEY", default="")
+EVOLUTION_INSTANCE = env("EVOLUTION_INSTANCE", default="")
 
 # ---------------------------------------------------------------------------
 # Chave de cifra de campo (Credencial/AplicativoIntegracao — apps/credentials/
