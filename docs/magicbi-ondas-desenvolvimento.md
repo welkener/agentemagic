@@ -158,9 +158,14 @@ criado sem retrabalho no Conta Azul.
 
 Pode rodar **em paralelo** com a Onda 3 (frentes diferentes: infra vs. integração).
 
-- [ ] Login do painel por Magic Link com **`django-sesame`** (caso de uso é literalmente
-      login de `auth.User` — não confundir com o `apps/security` da Onda 1, que é vínculo
-      de sessão de WhatsApp, não login de painel)
+- [x] **Login do painel por Magic Link com `django-sesame` — concluído 25/jul/2026.**
+      `AUTHENTICATION_BACKENDS` + `sesame.views.LoginView` em `/entrar/`; comando
+      `python manage.py enviar_link_contador <email_ou_username>` gera e manda o link
+      (reaproveita o mesmo `EMAIL_BACKEND`/`PAINEL_BASE_URL` do Magic Link do wa_id, mas
+      é fluxo separado — aqui é login de `auth.User`, não vínculo de sessão de WhatsApp).
+      4 testes novos (`tests/test_painel_login.py`); sem tela de "esqueci a senha"
+      self-service ainda — onboarding do painel continua manual, como o resto do
+      provisionamento no MVP.
 - [ ] Deploy em VPS/PaaS região Brasil (Railway/Render, ou já AWS `sa-east-1` se o time
       preferir não trocar de plataforma depois)
 - [ ] Variáveis de ambiente e segredos fora do repo (checar que `db.sqlite3`/`.env` não

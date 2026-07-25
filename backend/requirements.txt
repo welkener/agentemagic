@@ -11,6 +11,7 @@ httpx
 structlog
 psycopg[binary]  # Postgres — único banco suportado (dev local ou docker-compose)
 cryptography  # cifra segredos por campo (Credencial/AplicativoIntegracao) até o cofre em nuvem
-pyjwt  # Magic Link (apps/security) — docs/magicbi-seguranca-sessao.md
+pyjwt  # Magic Link do wa_id↔CNPJ (apps/security) — docs/magicbi-seguranca-sessao.md
+django-sesame  # Magic Link de login do painel/Grimório (contador) — caso diferente do de cima
 pytest
 pytest-django

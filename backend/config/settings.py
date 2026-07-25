@@ -149,6 +149,20 @@ EMAIL_BACKEND = env(
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="no-reply@magicbi.local")
 
 # ---------------------------------------------------------------------------
+# django-sesame — login do PAINEL (contador/Grimório) por Magic Link.
+# Caso de uso diferente do apps/security acima: aqui é login de auth.User
+# (django-sesame resolve isso nativamente); o vínculo wa_id↔CNPJ do WhatsApp
+# é modelo de domínio próprio (PyJWT), não login de User. Ver
+# docs/magicbi-seguranca-sessao.md §5.
+# ---------------------------------------------------------------------------
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+    "sesame.backends.ModelBackend",
+]
+SESAME_MAX_AGE = MAGICLINK_TTL_MINUTOS * 60  # segundos — mesmo TTL do Magic Link do wa_id
+LOGIN_REDIRECT_URL = "/admin/"
+
+# ---------------------------------------------------------------------------
 # Logs estruturados (structlog)
 # ---------------------------------------------------------------------------
 import sys  # noqa: E402
