@@ -68,32 +68,74 @@ intenção; fluxo de 2FA ponta a ponta emitindo nota real (mock) após código c
 
 ---
 
-## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias
+## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
 
 **Por quê agora:** é o item que prova a Hipótese 1 do MVP e o que mais lacunas técnicas
-tem hoje (XML assinado, mTLS, IBS/CBS). Bibliotecas maduras cortam a maior parte do
-esforço:
+tem hoje (XML assinado, mTLS, IBS/CBS).
 
-- [ ] **Instalar `nfelib`** ([akretion/nfelib](https://github.com/akretion/nfelib)) —
-      bindings Python gerados do XSD oficial (`xsdata`) para a DPS/NFS-e nacional; evita
-      escrever o schema na mão e already cobre os campos `IBSCBS` das NTs de 2025/2026
-- [ ] **Instalar `brans-nfe`** ([badbrans/brans-nfe](https://github.com/badbrans/brans-nfe)) —
-      comunicação com o SEFIN: mTLS com o certificado ICP-Brasil do PSC, assinatura
-      XMLDSig, payload gzip+base64 — é literalmente o rework pendente de
-      `apps/adapters/nfse_nacional.py`. Avaliar se dá para usar direto ou só como
-      referência de implementação (projeto independente, sem afiliação oficial — revisar
-      o código antes de colocar em produção com dado fiscal real)
-- [ ] Contratar 1 PSC (BirdID/Soluti é o mais documentado; comparar VIDaaS/SafeID) e
-      testar a API de assinatura remota **isoladamente** antes de plugar no adapter
-- [ ] Reescrever `NfseNacionalAdapter.emitir()` usando as duas libs acima + credencial
-      tipo PSC (não mais "procuração")
+**⚠ Achado técnico novo (25/jul/2026) — reabre uma decisão que parecia fechada.**
+Instalei e inspecionei as duas libs (ambas existem de verdade no PyPI, `pip install
+nfelib brans-nfe` funciona):
+
+- **`nfelib`** ([akretion/nfelib](https://github.com/akretion/nfelib)) — confirma
+  como esperado: bindings Python gerados do XSD oficial (`xsdata`), cobre DPS/NFS-e
+  nacional/NF-e/CT-e/MDF-e/BP-e. Sem ressalvas, encurta bastante o trabalho de
+  schema.
+- **`brans-nfe`** ([badbrans/brans-nfe](https://github.com/badbrans/brans-nfe)) — API
+  rica e bem desenhada (`NfseClient`, `Certificado`, `Prestador`, `Tomador`,
+  `Servico`, `construir_dps`, `assinar_xml`...), **mas** `Certificado` é construído a
+  partir de bytes de um **arquivo .pfx local** (`Certificado.from_pfx_bytes(pfx, senha)`)
+  — a lib assume que a chave privada existe em memória no nosso processo. Pior: não é
+  só a assinatura do XML (`assinar_xml(xml, certificado)`) que precisa disso —
+  **`NfseClient.__init__(certificado, ambiente, ...)` usa o mesmo objeto pro mTLS da
+  conexão HTTP com o ADN/Sefin**. Ou seja: a API do governo não exige certificado só
+  pra *assinar o documento*, exige certificado **na própria camada de transporte
+  (handshake TLS)** — é mais fundamental do que `magicbi-custodia-fiscal.md` havia
+  registrado.
+
+**Por que isso importa pra decisão de custódia:** o piloto decidiu PSC (certificado
+em nuvem, chave nunca sai da AC) justamente pra nunca ter a chave privada em memória
+no nosso processo. Um PSC "tradicional" (só assina hash sob demanda via API REST) **não
+resolve mTLS de transporte** — o handshake TLS precisa da chave em tempo real na pilha
+de rede, não é um hash isolado que dá pra mandar pra uma API externa assinar. Isso só
+funciona se o PSC específico oferecer uma dessas duas coisas:
+1. **Engine PKCS#11 / CSP** que expõe o certificado em nuvem como se fosse local pro
+   OpenSSL (alguns PSCs — vale confirmar se BirdID/Soluti oferecem isso — mascaram a
+   chamada de rede atrás da interface PKCS#11, então o Python/OpenSSL "acha" que está
+   assinando local mas na real está chamando a nuvem); ou
+2. **Proxy mTLS terminado no lado do PSC** (menos comum, mais raro de existir pronto).
+
+- [ ] **Novo item de pesquisa, antes de qualquer código**: confirmar com BirdID/Soluti
+      (e VIDaaS/SafeID como alternativa) se o produto deles oferece um desses dois
+      modelos pra mTLS de aplicação servidor-a-servidor (não é o caso de uso comum do
+      PSC, que é normalmente assinatura de documento avulso tipo contrato/procuração
+      — usar o Bird ID Pro/Hub de Integrações como ponto de partida da pergunta)
+- [ ] Se nenhum PSC suportar mTLS remoto: a arquitetura de custódia precisa de uma
+      revisão consciente antes da Onda 2 seguir — as opções ficam entre (a) aceitar
+      internalizar a chave só no microsserviço isolado de emissão (o desenho já
+      previsto pro Sigillum em escala, mas antecipado só pro MVP, com os mesmos
+      cuidados de envelope encryption); ou (b) usar o PSC só pra ASSINATURA da DPS
+      (que talvez seja negociável separadamente do transporte, se o Sefin aceitar
+      alguma forma de client cert "genérico" + assinatura no payload — precisa
+      confirmar na doc técnica do ADN, não assumir). **Isto é uma decisão de negócio/
+      arquitetura, não só técnica — envolve risco e recomendo validar com o usuário
+      antes de escrever o adapter real.**
+- [ ] Uso de `nfelib` para os bindings XSD segue de pé independente da decisão acima —
+      não tem ressalva, pode ser adotado já
+- [ ] `brans-nfe` continua útil como **referência de implementação e para a construção/
+      serialização da DPS** (`construir_dps`, `serializar_dps`, `gzip_b64`) mesmo que a
+      parte de `Certificado`/mTLS precise de uma camada diferente por cima
+- [ ] Reescrever `NfseNacionalAdapter.emitir()` só depois da decisão de custódia acima
+      estar clara — não antes, pra não construir em cima de uma premissa errada
 - [ ] Tratamento de rejeição real com mensagem clara (grupo `IBSCBS`, NT SE/CGNFS-e
       004/007)
 - [ ] Cadastro em `adn.producaorestrita.nfse.gov.br` / `sefin.producaorestrita.nfse.gov.br`
-      (Produção Restrita = ambiente de homologação do governo — ver §5 abaixo)
+      (Produção Restrita = ambiente de homologação do governo — ver §5 abaixo) — pode
+      ser feito em paralelo à pesquisa acima, não depende dela
 
 **Gate da onda:** nota emitida de ponta a ponta em Produção Restrita, partindo de uma
-frase no WhatsApp, com o certificado PSC de teste.
+frase no WhatsApp, com o modelo de custódia final escolhido (PSC com mTLS remoto
+confirmado, ou microsserviço isolado como fallback).
 
 ---
 

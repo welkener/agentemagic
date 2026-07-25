@@ -1,5 +1,20 @@
 # Magic BI — Custódia de identidade fiscal: análise e decisão
 
+> **⚠ Achado técnico novo (25/jul/2026) — reabre parte da decisão da Opção 2 (PSC).**
+> Ao inspecionar a biblioteca `brans-nfe` (ver `magicbi-ondas-desenvolvimento.md` §2)
+> ficou claro que a exigência de certificado ICP-Brasil do ADN/Sefin **não é só pra
+> assinatura do XML da DPS — é também pra autenticação mTLS na camada de transporte
+> HTTP**. Isso é mais restritivo do que "PSC assina um hash sob demanda via API":
+> mTLS de aplicação normalmente precisa da chave privada disponível em tempo real na
+> pilha de rede do cliente, não é algo que dá pra terceirizar tão facilmente quanto
+> assinar um documento avulso. **Ação necessária antes de fechar o PSC**: confirmar
+> explicitamente com o fornecedor (BirdID/Soluti, VIDaaS/SafeID) se ele oferece uma
+> forma de expor o certificado em nuvem para mTLS de aplicação servidor-a-servidor
+> (ex.: engine PKCS#11/CSP que faz o OpenSSL local "achar" que está assinando
+> localmente) — não é o caso de uso comum de PSC (que é assinatura de documento tipo
+> contrato/procuração). Se nenhum PSC suportar isso, a matriz abaixo (§3) precisa de
+> revisão consciente com o usuário antes do adapter NFS-e real ser escrito.
+
 > Responde à pergunta central: **"cofre com o .pfx do cliente ou procuração?"**
 > Resposta curta: **não é um OU — é uma matriz por tipo de documento e por fase.**
 > Procuração onde ela existe (serviços da Receita/NFS-e), assinatura remota em nuvem
