@@ -203,6 +203,35 @@ Groq/free tier em `magicbi-hermes-comunicador.md` §7):
 
 ---
 
+## 1.8 Onda "servidor de teste" — ✅ concluída 25/jul/2026
+
+Deploy real no servidor compartilhado (`192.140.50.108`, credenciais em
+`backend/servidor.txt`, gitignorado) pra demonstração com o contador.
+
+- [x] `docker-compose.deploy.yml` (raiz do repo) — só `postgres` + `web`,
+      `CELERY_TASK_ALWAYS_EAGER=True` (sem Redis/worker — servidor com RAM/disco
+      apertados, ver §0). `STATIC_ROOT` + `runserver --insecure` pro admin renderizar
+      com CSS mesmo com `DEBUG=False`.
+- [x] **Reaproveitada a instância Evolution do projeto `aosatende`** (mesmo servidor,
+      `evoapicloud/evolution-api:v2.3.7`, porta `8081`) — mas **numa instância nova e
+      isolada** (`magicbi-rotina-teste`), nunca reaproveitando as 2 instâncias que já
+      existiam lá (pertencem a outros clientes reais — uma com quase 9 mil mensagens de
+      produção). Webhook da instância nova apontado pra
+      `http://192.140.50.108:8020/webhook/evolution`.
+- [x] `apps/painel` deployado em `http://192.140.50.108:8020/painel/`; `Escritorio`
+      "Rotina Contábil" cadastrado (cores da marca, sem logo ainda — subir pelo admin
+      quando tiver o arquivo).
+- [x] Verificado ponta a ponta no servidor real (webhook simulado com `apikey` real) —
+      pipeline completo funcionando; único "erro" esperado foi o envio de resposta
+      falhar por timeout porque a instância Evolution ainda não tinha WhatsApp
+      conectado (QR não escaneado ainda) — confirma que só falta o passo humano de
+      parear o número.
+
+**Pendente do lado do usuário:** escanear o QR code da instância `magicbi-rotina-teste`
+com o WhatsApp que vai ser usado no teste (QR expira rápido — pedir um novo na hora).
+
+---
+
 ## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
 
 **Por quê agora:** é o item que prova a Hipótese 1 do MVP e o que mais lacunas técnicas
