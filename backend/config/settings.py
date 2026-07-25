@@ -22,6 +22,13 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", default="dev-inseguro-troque-em-producao")
 DEBUG = env("DJANGO_DEBUG")
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
+# Atrás de proxy reverso com TLS (nginx-proxy-manager no servidor de teste — o
+# app em si só fala HTTP; o proxy termina o HTTPS e repassa X-Forwarded-Proto).
+# Sem isto, Django acha que a requisição é HTTP puro e rejeita POST (CSRF) vindo
+# de um domínio HTTPS.
+CSRF_TRUSTED_ORIGINS = env.list("DJANGO_CSRF_TRUSTED_ORIGINS", default=[])
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
