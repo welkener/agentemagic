@@ -251,6 +251,18 @@ lado:
 - Confirmado ponta a ponta via HTTPS + domínio: login funciona, webhook processa
   (fiscal e ERP), só falta o WhatsApp real ser conectado via QR.
 
+**Feedback do usuário (mesmo dia): "ta feio... pelo menos temos que restilizar o
+admin".** O Django admin (usado como fila de aprovação/CRUD, ver
+`AgenteRotinaContabil-arquitetura-tecnica.md`) estava 100% no tema azul/verde padrão do
+Django. Restilizado via CSS custom properties (mesmo mecanismo que o tema padrão do
+admin já usa desde Django 3.2+ — não reescreve nenhum template de CRUD):
+`templates/admin/base_site.html` (cabeçalho com `site_header` dinâmico) +
+`static/admin/css/magicbi_admin.css` (paleta navy/periwinkle). Validado com screenshot
+real (Edge headless, sem chromium-cli disponível nesse ambiente Windows) antes/depois —
+cabeçalho, botões e sidebar agora usam a marca. O `/painel/` já tinha branding por
+escritório desde a Onda 1.6; agora os dois ambientes (admin + painel) ficam
+visualmente coerentes.
+
 ---
 
 ## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
