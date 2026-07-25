@@ -30,10 +30,11 @@ def confirmar_emissao(intencao: Intencao, motivo: str) -> ResultadoConfirmacao:
     resultado = nfse.emitir("nfse", intencao.payload, {"cliente": intencao.cliente})
 
     if resultado.ok:
+        intencao.protocolo = resultado.dados.get("protocolo") or ""
+        intencao.danfse_url = resultado.dados.get("danfse_url") or ""
+        intencao.save(update_fields=["protocolo", "danfse_url"])
         intencao.transicionar(Intencao.Estado.CONCLUIDO, motivo="emissão autorizada")
-        return ResultadoConfirmacao(
-            ok=True, protocolo=resultado.dados.get("protocolo"), danfse_url=resultado.dados.get("danfse_url")
-        )
+        return ResultadoConfirmacao(ok=True, protocolo=intencao.protocolo, danfse_url=intencao.danfse_url)
 
     intencao.transicionar(Intencao.Estado.REJEITADO, motivo=resultado.erro_padronizado or "rejeicao")
     return ResultadoConfirmacao(ok=False, erro=resultado.erro_padronizado)

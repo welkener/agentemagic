@@ -14,11 +14,21 @@ from .services import cancelar_emissao, confirmar_emissao
 
 @admin.register(Intencao)
 class IntencaoAdmin(admin.ModelAdmin):
-    list_display = ("id", "cliente", "tipo_acao", "estado", "criado_em", "atualizado_em")
+    """Duplica como a visão "notas emitidas" pra demonstração/homologação —
+    filtrar por `estado=CONCLUIDO` já mostra protocolo/DANFSE de cada nota
+    real emitida (mock ou adapter real, o campo é preenchido nos dois casos
+    desde que `confirmar_emissao` rode — ver `services.py`)."""
+
+    list_display = ("id", "cliente", "tipo_acao", "estado", "valor_formatado", "protocolo", "criado_em")
     list_filter = ("estado", "tipo_acao")
-    search_fields = ("cliente__nome", "cliente__cnpj", "chave_idempotencia")
+    search_fields = ("cliente__nome", "cliente__cnpj", "chave_idempotencia", "protocolo")
     readonly_fields = [f.name for f in Intencao._meta.fields]
     actions = ["aprovar_e_emitir", "rejeitar_pendentes"]
+
+    @admin.display(description="valor")
+    def valor_formatado(self, obj):
+        valor = obj.payload.get("valor")
+        return f"R$ {valor:.2f}" if valor is not None else "—"
 
     def has_add_permission(self, request):
         return False

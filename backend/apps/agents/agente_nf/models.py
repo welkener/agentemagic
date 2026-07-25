@@ -52,6 +52,12 @@ class Intencao(models.Model):
     estado = models.CharField(
         max_length=24, choices=Estado.choices, default=Estado.RECEBIDO
     )
+    protocolo = models.CharField(
+        max_length=100, blank=True, default="", help_text="Preenchido na emissão bem-sucedida (CONCLUIDO)."
+    )
+    danfse_url = models.URLField(
+        blank=True, default="", help_text="Link do DANFSE — preenchido na emissão bem-sucedida."
+    )
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 

@@ -9,7 +9,6 @@ igual ao canal oficial), e reaproveita a mesma idempotência por
 import json
 
 import structlog
-from django.conf import settings
 from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
@@ -17,15 +16,16 @@ from django.views.decorators.csrf import csrf_exempt
 
 from apps.channel_whatsapp.models import MensagemProcessada
 
+from .services import resolver_credenciais
 from .tasks import processar_mensagem_evolution
 
 logger = structlog.get_logger(__name__)
 
 
 def _autorizado(payload: dict) -> bool:
-    """Sem EVOLUTION_API_KEY configurada (dev sem o valor ainda definido),
-    não há o que conferir — aceita e loga. Configurada, tem que bater."""
-    chave_esperada = settings.EVOLUTION_API_KEY
+    """Sem api_key configurada (admin ou `.env`), não há o que conferir —
+    aceita e loga. Configurada, tem que bater."""
+    chave_esperada = resolver_credenciais().api_key
     if not chave_esperada:
         return True
     return payload.get("apikey") == chave_esperada

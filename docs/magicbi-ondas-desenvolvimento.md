@@ -31,8 +31,9 @@ Confirmado em `backend/apps/` (24/jul/2026, ver commits até `0f5b08b`):
 | **`apps/security` (Onda 1)** | ✅ Concluído 25/jul/2026 — `SessaoWhatsapp`/`TokenMagicLink`/`Codigo2FA`, gate no orquestrador, 2FA de 3 turnos |
 | **Login do painel (Onda 4, parcial)** | ✅ Concluído 25/jul/2026 — `django-sesame` + comando `enviar_link_contador` |
 | **Custódia de certificado (PSC/.pfx/procuração)** | ✅ Concluído 25/jul/2026 — `apps/credentials/` (models, `certificados.py`, `services.py`, admin com upload) — cadastro pronto; falta só a assinatura/transmissão de fato (pendência de mTLS, §2) |
-| **Canal Evolution API (teste local)** | ✅ Concluído 25/jul/2026 — `apps/channel_evolution/`, SÓ para teste, nunca produção |
-| **Não existe ainda** | Painel React; deploy fora do localhost; qualquer chamada real a NFS-e/Conta Azul/Bling em ambiente vivo; assinatura/transmissão real da NFS-e (bloqueada na pendência de mTLS) |
+| **Canal Evolution API (teste local)** | ✅ Concluído 25/jul/2026 — `apps/channel_evolution/`, SÓ para teste, nunca produção; configurável pelo painel (`ConfiguracaoEvolution`) |
+| **Dashboard do Grimório (`/painel/`) + branding por escritório** | ✅ Concluído 25/jul/2026 — `apps/painel/`, `Escritorio` (nome/logo/cores), validado com smoke test real (não só pytest) |
+| **Não existe ainda** | Painel React (o Grimório mínimo em Django cobre a demonstração); deploy fora do localhost; qualquer chamada real a NFS-e/Conta Azul/Bling em ambiente vivo; assinatura/transmissão real da NFS-e (bloqueada na pendência de mTLS) |
 
 **Leitura:** a fundação é sólida — o gargalo não é desenhar mais nada, é **trocar 3 mocks
 por integrações reais** (NFS-e, Conta Azul, sessão/segurança) e sair do localhost. É
@@ -113,6 +114,66 @@ instância Evolution já existente antes de configurar a Cloud API oficial da Me
    mTLS) e o fluxo ERP (cai no mock de Conta Azul/Bling até haver credencial OAuth real).
 7. **Nunca** apontar essa mesma instância Evolution para clientes reais fora do time —
    é só para teste interno, a produção exige a Cloud API oficial (risco de banimento).
+
+**⚠ Achado do smoke test (25/jul/2026): sem `GROQ_API_KEY`, o fluxo fiscal nunca
+completa por linguagem natural.** O roteamento por palavra-chave (fallback) classifica
+a intenção certa ("emite nota..." → Fiscus), mas a **extração de campos** (tomador/
+valor/descrição) sem Groq devolve sempre vazio — o cliente fica preso em "Quase lá!
+Ainda preciso de: tomador, valor..." para sempre, mesmo mandando os dados na mensagem.
+O fluxo ERP (`consultar_estoque` etc.) **funciona 100% sem Groq** (só depende de
+roteamento por palavra-chave, não de extração). **Para a demonstração real com o
+contador, `GROQ_API_KEY` precisa estar configurada** (`.env` ou painel — ainda não é
+configurável pelo painel, só `.env` por enquanto).
+
+---
+
+## 1.6 Onda "painel + validação real" — ✅ concluída 25/jul/2026
+
+Pedido do usuário: "deixe o painel do contador funcionando, para demonstração e
+homologação... nada de hardcode... deixe os dois agentes funcionais para demonstração
+com o contador via evolution para validar."
+
+- [x] **Grimório mínimo — dashboard em `/painel/`** (`apps/painel/`): visão consolidada
+      só-leitura pra demonstração — cards (notas emitidas hoje/mês, aguardando aprovação,
+      sessões ativas, clientes ativos), status dos canais (Meta/Evolution), certificados
+      fiscais vinculados (com alerta de CNPJ divergente), notas emitidas recentes
+      (protocolo + link do DANFSE) e atividade capturada (últimos eventos da trilha de
+      auditoria). Login por Magic Link (`django-sesame`, Onda 4) já leva direto pra cá —
+      `LOGIN_REDIRECT_URL` mudou de `/admin/` pra `/painel/`.
+- [x] **Configuração do WhatsApp pelo painel, não só `.env`**: novo model
+      `ConfiguracaoEvolution` (`apps/channel_evolution/`) — `base_url`/`instancia`/
+      `api_key` (cifrada) editáveis no admin; `.env` continua como fallback/bootstrap.
+      Ação de admin "Testar conexão" chama `GET /instance/connectionState/{instance}`
+      da Evolution e mostra o estado real (`open`/`close`/`connecting`).
+- [x] **`Escritorio` (tenant) — nada hardcoded**: Magic BI é SaaS multi-tenant
+      (`docs/magicbi-marca-e-nomes.md` §1 — a Rotina é o primeiro parceiro, não o único).
+      Novo model `Escritorio` (`apps/painel/models.py`): nome, logo (upload,
+      `Pillow`/`ImageField`), cor primária e de acento (hex, configuráveis). O dashboard
+      nunca mais tem "Rotina Contábil"/navy/dourado fixos no template — sem escritório
+      cadastrado, cai num branding genérico **"Magic BI"** (a marca da plataforma, não de
+      um escritório específico). Testado explicitamente: `"Rotina Contábil" not in corpo`
+      quando não há `Escritorio` ativo.
+- [x] **Notas emitidas persistidas de verdade**: `Intencao` ganhou `protocolo` e
+      `danfse_url`, preenchidos em `confirmar_emissao()` — antes só existiam na mensagem
+      de resposta do WhatsApp, não ficavam consultáveis no banco/painel.
+- [x] **Smoke test real (não só pytest)** — rodei `runserver` de verdade (porta 8010,
+      `CELERY_TASK_ALWAYS_EAGER=True`) e bati com HTTP real em `/webhook/evolution`:
+      - **agenteERP: funcional ponta a ponta** — "qual meu estoque?" → resposta correta
+        do mock em <1s, via HTTP real, sem nenhum mock de teste no meio.
+      - **Fiscus (confirmação + emissão): funcional ponta a ponta** — intenção em
+        `AGUARDANDO_APROVACAO` → "sim" via webhook → `CONCLUIDO` com `protocolo`/
+        `danfse_url` reais gravados no banco (o achado do `GROQ_API_KEY` acima é sobre a
+        *extração inicial* por linguagem natural, não sobre confirmação/emissão, que
+        não depende de Groq).
+      - Login + `/painel/` conferido via sessão real autenticada (`requests` + cookies) —
+        mostrou a nota emitida, o cliente de teste e as métricas corretas.
+      - **Lição operacional**: o banco local (`postgres`/`5432` nativo) não tinha as
+        migrações novas desta sessão aplicadas — só o banco de teste do pytest (efêmero)
+        estava em dia. Rodar `python manage.py migrate` sempre que uma sessão adiciona
+        migração antes de testar contra o banco de dev real (já é o passo 1 do runbook
+        acima, mas vale reforçar).
+- [x] 9 testes novos em `tests/test_painel.py` (dashboard, branding, certificado
+      divergente); suíte completa **113/113 verde**.
 
 ---
 

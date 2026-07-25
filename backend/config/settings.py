@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     "apps.clients",
     "apps.credentials",
     "apps.security",
+    "apps.painel",
     "apps.channel_whatsapp",
     "apps.channel_evolution",  # SÓ TESTE LOCAL — nunca produção (ver apps/channel_evolution/apps.py)
     "apps.audit",
@@ -93,6 +94,11 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+
+# Upload de logo do escritório (apps/painel). Em produção, trocar por storage
+# em nuvem (S3/equivalente) — local só serve pro piloto/dev.
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -173,7 +179,7 @@ AUTHENTICATION_BACKENDS = [
     "sesame.backends.ModelBackend",
 ]
 SESAME_MAX_AGE = MAGICLINK_TTL_MINUTOS * 60  # segundos — mesmo TTL do Magic Link do wa_id
-LOGIN_REDIRECT_URL = "/admin/"
+LOGIN_REDIRECT_URL = "/painel/"  # Grimório (dashboard) — não o admin cru
 
 # ---------------------------------------------------------------------------
 # Logs estruturados (structlog)

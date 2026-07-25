@@ -13,5 +13,6 @@ psycopg[binary]  # Postgres — único banco suportado (dev local ou docker-comp
 cryptography  # cifra segredos por campo (Credencial/AplicativoIntegracao) até o cofre em nuvem
 pyjwt  # Magic Link do wa_id↔CNPJ (apps/security) — docs/magicbi-seguranca-sessao.md
 django-sesame  # Magic Link de login do painel/Grimório (contador) — caso diferente do de cima
+Pillow  # upload de logo do escritório no painel (apps/painel) — SaaS multi-tenant, nada de marca hardcoded
 pytest
 pytest-django
