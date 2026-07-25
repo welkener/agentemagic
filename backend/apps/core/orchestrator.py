@@ -50,9 +50,12 @@ _PALAVRAS_CONFIRMACAO = ("sim", "confirmar", "confirmo", "pode emitir", "ok", "�
 _PALAVRAS_CANCELAMENTO = ("não", "nao", "cancelar", "cancela", "❌")
 
 # Palavras-chave → (nome da intenção no catálogo de tiers, recurso do agenteERP)
+# "relatório"/"vendas" caem em pedidos — é a leitura mais próxima que o
+# catálogo atual cobre pra um pedido genérico de relatório (ver
+# docs/magicbi-ondas-desenvolvimento.md, achado do smoke test 25/jul/2026).
 _REGRAS_ERP = [
     (("estoque",), ("consultar_estoque", "estoque")),
-    (("pedido", "pedidos"), ("consultar_pedido", "pedidos")),
+    (("pedido", "pedidos", "relatório", "relatorio", "venda", "vendas"), ("consultar_pedido", "pedidos")),
     (("receber",), ("consultar_contas_receber", "contas_receber")),
     (("pagar",), ("consultar_contas_pagar", "contas_pagar")),
     (("caixa", "fluxo"), ("consultar_fluxo_caixa", "fluxo_caixa")),
@@ -152,8 +155,8 @@ class Orquestrador:
         if _groq_disponivel():
             try:
                 return self._classificar_via_groq(mensagem)
-            except Exception:
-                logger.warning("groq_roteador_indisponivel_fallback_palavra_chave")
+            except Exception as exc:
+                logger.warning("groq_roteador_indisponivel_fallback_palavra_chave", erro=str(exc))
         return self._classificar_por_palavra_chave(mensagem)
 
     def _classificar_via_groq(self, mensagem: str) -> str:
@@ -341,8 +344,8 @@ class Orquestrador:
         if _groq_disponivel():
             try:
                 return self._extrair_via_groq(mensagem)
-            except Exception:
-                logger.warning("groq_extracao_indisponivel_fallback_menu")
+            except Exception as exc:
+                logger.warning("groq_extracao_indisponivel_fallback_menu", erro=str(exc))
         return DadosNotaExtraidos()
 
     def _extrair_via_groq(self, mensagem: str) -> DadosNotaExtraidos:

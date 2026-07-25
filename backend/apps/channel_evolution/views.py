@@ -62,7 +62,14 @@ class WebhookEvolutionView(View):
         mensagem = dados.get("message") or {}
         texto = mensagem.get("conversation") or (mensagem.get("extendedTextMessage") or {}).get("text", "")
 
-        if not message_id or not texto:
+        # D6 — voz: a Evolution não manda o áudio no próprio webhook, só o
+        # `audioMessage` indicando que existe; o binário vem depois via
+        # POST /chat/getBase64FromMediaMessage/{instance}, buscado na task
+        # (`tasks._transcrever_audio`) pela `key.id` da própria mensagem —
+        # não é um `media_id` separado como no canal Meta.
+        media_id = message_id if "audioMessage" in mensagem else None
+
+        if not message_id or (not texto and not media_id):
             return JsonResponse({"status": "ignorado"})
 
         _, criado = MensagemProcessada.objects.get_or_create(
@@ -72,5 +79,5 @@ class WebhookEvolutionView(View):
             logger.info("evolution_mensagem_duplicada", message_id=message_id)
             return JsonResponse({"status": "recebido"})
 
-        processar_mensagem_evolution.delay(message_id, telefone, texto)
+        processar_mensagem_evolution.delay(message_id, telefone, texto, media_id=media_id)
         return JsonResponse({"status": "recebido"})

@@ -10,6 +10,8 @@ import json
 import pytest
 
 from apps.audit.models import Auditoria
+from apps.channel_evolution.models import ConfiguracaoEvolution
+from apps.channel_evolution.services import baixar_midia
 from apps.channel_whatsapp.models import MensagemProcessada
 
 URL = "/webhook/evolution"
@@ -100,3 +102,47 @@ def test_texto_extendido_tambem_e_lido(client, cliente):
     resposta = _post(client, payload)
     assert resposta.status_code == 200
     assert MensagemProcessada.objects.exists()
+
+
+# ---------------------------------------------------------------------------
+# D6 — voz (áudio) via Evolution
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_mensagem_de_audio_sem_configuracao_pede_para_escrever(client, cliente):
+    """Sem ConfiguracaoEvolution/`.env`, baixar_midia degrada — mesmo padrão
+    do canal oficial, nunca trava nem inventa conteúdo."""
+    payload = _payload_mensagem(message_id="3EB0AUDIO001", texto="")
+    payload["data"]["message"] = {"audioMessage": {"mimetype": "audio/ogg; codecs=opus", "seconds": 4}}
+    resposta = _post(client, payload)
+    assert resposta.status_code == 200
+
+    assert MensagemProcessada.objects.filter(message_id="3EB0AUDIO001").exists()
+    eventos = list(Auditoria.objects.values_list("evento", "dados"))
+    nomes_eventos = [e for e, _ in eventos]
+    assert "whatsapp_transcricao_falhou" in nomes_eventos
+    resposta_enviada = next(dados for evento, dados in eventos if evento == "whatsapp_resposta_enviada")
+    assert "áudio" in resposta_enviada["resposta"]
+
+
+@pytest.mark.django_db
+def test_mensagem_so_de_audio_sem_texto_nao_e_ignorada(client, cliente):
+    """Diferente de uma mensagem vazia qualquer: `audioMessage` sozinho (sem
+    `conversation`) tem que acionar o pipeline, não cair no filtro de ignorado."""
+    payload = _payload_mensagem(message_id="3EB0AUDIO002", texto="")
+    payload["data"]["message"] = {"audioMessage": {"mimetype": "audio/ogg", "seconds": 2}}
+    resposta = _post(client, payload)
+    assert resposta.status_code == 200
+    assert MensagemProcessada.objects.filter(message_id="3EB0AUDIO002").exists()
+
+
+@pytest.mark.django_db
+def test_baixar_midia_sem_configuracao_devolve_none(db):
+    assert baixar_midia("qualquer-id") is None
+
+
+@pytest.mark.django_db
+def test_baixar_midia_endpoint_inalcancavel_degrada(db):
+    config = ConfiguracaoEvolution(nome="teste", base_url="http://127.0.0.1:1", instancia="inst", ativo=True)
+    config.api_key = "chave"
+    config.save()
+    assert baixar_midia("qualquer-id") is None

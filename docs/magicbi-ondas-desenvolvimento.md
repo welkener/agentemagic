@@ -177,6 +177,32 @@ com o contador via evolution para validar."
 
 ---
 
+## 1.7 Onda "GROQ_API_KEY real" — ✅ concluída 25/jul/2026
+
+Usuário configurou a chave de produção e pediu pra validar modelos gratuitos + os dois
+agentes por voz/texto via Evolution. Achados e ajustes (detalhe completo do catálogo
+Groq/free tier em `magicbi-hermes-comunicador.md` §7):
+
+- [x] **D6 (voz) agora funciona também no canal Evolution**, não só no Meta — antes
+      era só texto nesse canal (escopo deliberado da Onda 1.5); `apps/channel_evolution/
+      services.py: baixar_midia()` usa `POST /chat/getBase64FromMediaMessage/{instance}`
+      (diferente do Meta: busca pela própria chave da mensagem, não um `media_id`
+      separado) + reaproveita `apps.channel_whatsapp.transcricao` (mesmo Whisper).
+- [x] **Achado real do smoke test**: "envie um relatório das vendas" caía na resposta
+      genérica do Lumen — nem Groq nem o fallback por palavra-chave reconheciam
+      "relatório"/"vendas" como sinônimo de nenhuma intenção. Corrigido: mapeado pra
+      `consultar_pedido` em `apps/core/orchestrator.py` (`_REGRAS_ERP`).
+- [x] **Logging corrigido**: os dois `except Exception:` que escondiam o motivo real de
+      falha do Groq (roteador e extração) agora logam `erro=str(exc)` — antes só
+      diziam "indisponível, caiu no fallback" sem dizer por quê.
+- [x] Confirmado (doc oficial): `llama-3.1-8b-instant`, `openai/gpt-oss-120b` e
+      `whisper-large-v3-turbo` cabem no **free tier** da Groq — provavelmente cobre o
+      piloto inteiro sem custo, watchpoint é monitorar o consumo real.
+- [x] 1 teste novo (`tests/test_orchestrator.py`) + os de áudio na Onda anterior;
+      suíte completa **117/117 verde**.
+
+---
+
 ## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
 
 **Por quê agora:** é o item que prova a Hipótese 1 do MVP e o que mais lacunas técnicas

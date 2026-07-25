@@ -24,6 +24,15 @@ def test_consulta_erp_continua_funcionando(cliente):
 
 
 @pytest.mark.django_db
+def test_relatorio_de_vendas_cai_em_pedidos(cliente):
+    """Achado do smoke test 25/jul/2026: "relatório"/"vendas" viravam a
+    resposta genérica do Lumen por não terem sinônimo — agora mapeiam pra
+    consultar_pedido (ver docs/magicbi-ondas-desenvolvimento.md)."""
+    resposta = Orquestrador().processar("envie um relatorio das vendas", cliente)
+    assert "pedidos" in resposta.lower()
+
+
+@pytest.mark.django_db
 def test_emitir_nota_pede_campos_faltantes(cliente):
     resposta = Orquestrador().processar("quero emitir uma nota", cliente)
     assert "tomador" in resposta

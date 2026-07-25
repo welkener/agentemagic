@@ -1,4 +1,5 @@
-"""Envio de mensagem via Evolution API — canal de TESTE LOCAL apenas (ver apps.py)."""
+"""Envio/recepção de mídia via Evolution API — canal de TESTE LOCAL apenas (ver apps.py)."""
+import base64
 from dataclasses import dataclass
 
 import httpx
@@ -62,6 +63,38 @@ def enviar_mensagem(telefone: str, texto: str) -> bool:
     except httpx.HTTPError as exc:
         logger.error("evolution_envio_falhou", telefone=telefone, erro=str(exc))
         return False
+
+
+def baixar_midia(message_id: str) -> tuple[bytes, str] | None:
+    """Baixa o áudio de uma mensagem via `POST /chat/getBase64FromMediaMessage/{instance}`.
+
+    Diferente do canal Meta (que tem um `media_id` próprio resolvido em dois
+    passos via Graph API), a Evolution busca a mídia pela **chave da própria
+    mensagem** (`message_id`). Sem configuração, devolve None — D6 degrada
+    igual ao canal oficial (pede pro cliente escrever, nunca trava).
+    """
+    cred = resolver_credenciais()
+    if not cred.configurada:
+        logger.info("evolution_download_midia_indisponivel (sem configuração)", message_id=message_id)
+        return None
+
+    url = f"{cred.base_url.rstrip('/')}/chat/getBase64FromMediaMessage/{cred.instancia}"
+    try:
+        resposta = httpx.post(
+            url,
+            json={"message": {"key": {"id": message_id}}},
+            headers={"apikey": cred.api_key},
+            timeout=30.0,
+        )
+        resposta.raise_for_status()
+        info = resposta.json()
+        b64 = info.get("base64")
+        if not b64:
+            return None
+        return base64.b64decode(b64), info.get("mimetype", "audio/ogg")
+    except (httpx.HTTPError, ValueError, TypeError) as exc:
+        logger.error("evolution_download_midia_falhou", message_id=message_id, erro=str(exc))
+        return None
 
 
 def testar_conexao() -> tuple[bool, str]:

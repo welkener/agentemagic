@@ -187,3 +187,27 @@ fornecedor. Ver nota de LGPD/subprocessador em
 **Relação com o Hermes:** não muda. Pydantic AI é a Opção A (MVP e fallback permanente);
 o Hermes/Lumen entra na Fase 3 como runtime da persona, por cima da mesma fronteira MCP.
 Se o Hermes decepcionar, a borda Pydantic AI já atende produção.
+
+**Confirmado no free tier (25/jul/2026, via doc oficial `console.groq.com/docs/rate-limits`):**
+os 3 modelos já escolhidos cabem no plano gratuito da Groq (rate-limited, não
+pay-per-token, sem custo até bater o limite) — `llama-3.1-8b-instant` (roteador: 30 RPM /
+14,4 mil RPD / 6 mil TPM), `openai/gpt-oss-120b` (extração: 30 RPM / 1 mil RPD / 8 mil
+TPM) e `whisper-large-v3-turbo` (transcrição/D6: 20 RPM / 2 mil RPD / 7,2 mil segundos de
+áudio por hora). Pra um piloto de 15–25 MEIs isso provavelmente cobre o volume inteiro
+sem gerar custo de Groq — ⚠ ainda assim monitorar o consumo real (o catálogo/limites
+mudam com frequência, reconfirmar antes do lançamento comercial).
+
+**Achado de smoke test real (25/jul/2026, com `GROQ_API_KEY` de produção configurada):**
+rodei o pipeline completo via HTTP real (não só pytest) contra `/webhook/evolution`.
+Extração de campos da nota (`openai/gpt-oss-120b`) funcionou perfeitamente em linguagem
+natural livre ("emite uma nota de 700 reais pro Pedro, serviço de manutenção" → campos
+corretos). O **roteador** (`llama-3.1-8b-instant`) falhou intermitentemente — 2 de 5
+chamadas retornaram `Exceeded maximum output retries (1)` do Pydantic AI — mas o
+fallback por palavra-chave cobriu sem o cliente perceber (mesmo comportamento
+documentado pra "se a API do Groq cair", só que aqui é uma falha pontual de validação
+de schema, não indisponibilidade). Corrigido nesta sessão: os dois `except Exception:`
+que capturavam a falha do Groq **não logavam o motivo** — agora logam
+(`erro=str(exc)`), então a próxima ocorrência já vem com o diagnóstico certo em vez de
+um aviso genérico. Watchpoint pra próxima sessão: se o padrão persistir com volume real,
+vale investigar se é um problema específico do schema `IntencaoClassificada` com esse
+modelo, ou só instabilidade pontual da Groq.
