@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.clients",
     "apps.credentials",
+    "apps.security",
     "apps.channel_whatsapp",
     "apps.audit",
     "apps.governance",
@@ -128,6 +129,24 @@ GROQ_API_KEY = env("GROQ_API_KEY", default="")
 # ambientes. Sem ela, salvar um segredo levanta ErroChaveDeCifraAusente.
 # ---------------------------------------------------------------------------
 FIELD_ENCRYPTION_KEY = env("FIELD_ENCRYPTION_KEY", default="")
+
+# ---------------------------------------------------------------------------
+# apps/security — Magic Link (vínculo wa_id↔CNPJ) e 2FA por código avulso.
+# Ver docs/magicbi-seguranca-sessao.md. Sem MAGICLINK_SIGNING_KEY, cai no
+# próprio SECRET_KEY (ok para MVP; recomenda-se chave dedicada em produção).
+# ---------------------------------------------------------------------------
+MAGICLINK_SIGNING_KEY = env("MAGICLINK_SIGNING_KEY", default="")
+MAGICLINK_TTL_MINUTOS = env.int("MAGICLINK_TTL_MINUTOS", default=15)
+SESSAO_TTL_DIAS = env.int("SESSAO_TTL_DIAS", default=7)
+CODIGO_2FA_TTL_MINUTOS = env.int("CODIGO_2FA_TTL_MINUTOS", default=5)
+PAINEL_BASE_URL = env("PAINEL_BASE_URL", default="http://localhost:8000")
+
+# E-mail: console em dev (imprime no terminal em vez de enviar de verdade);
+# configurar SMTP real (ou SES) antes do piloto com clientes reais.
+EMAIL_BACKEND = env(
+    "EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend"
+)
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="no-reply@magicbi.local")
 
 # ---------------------------------------------------------------------------
 # Logs estruturados (structlog)

@@ -12,6 +12,14 @@ class Cliente(models.Model):
         unique=True,
         help_text="Número no formato internacional, ex.: 5511999998888",
     )
+    email_contato = models.EmailField(
+        blank=True,
+        default="",
+        help_text=(
+            "E-mail cadastrado na Receita/ERP — canal do Magic Link e do código 2FA. "
+            "Nunca reaproveitar o WhatsApp como canal desses segredos (2º fator de canal)."
+        ),
+    )
     cnae_padrao = models.CharField(
         max_length=10,
         blank=True,
@@ -47,6 +55,16 @@ class Perfil(models.Model):
         help_text='Adaptadores/ferramentas ativos, ex.: ["erp_mock", "nfse_mock"]',
     )
     tier_maximo = models.PositiveSmallIntegerField(default=1)
+    valor_2fa_acima_de = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=(
+            "Emissões acima deste valor exigem código de 2FA por e-mail "
+            "(apps/security). Vazio = 2FA desligado para este cliente."
+        ),
+    )
 
     class Meta:
         verbose_name = "perfil"

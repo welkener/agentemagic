@@ -25,3 +25,7 @@ GROQ_API_KEY = ""
 # Chave de teste fixa (nunca reaproveitar em produção) — permite testar
 # CampoTextoCifrado sem depender de variável de ambiente.
 FIELD_ENCRYPTION_KEY = "df5bR-gm_9bHB30ETfhliXsyHxx33q0GoUHQ8csiW_0="
+
+# apps/security — chave fixa de teste + e-mail em memória (django.core.mail.outbox).
+MAGICLINK_SIGNING_KEY = "chave-de-teste-magic-link-nao-usar-em-producao"
+EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"

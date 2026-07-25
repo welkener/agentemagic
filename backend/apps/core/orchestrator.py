@@ -23,6 +23,7 @@ from typing import Literal
 
 import structlog
 from django.conf import settings
+from django.utils import timezone
 from pydantic import BaseModel, Field
 
 from apps.agents.agente_erp.services import AgenteErp
@@ -30,6 +31,14 @@ from apps.agents.agente_nf.models import Intencao
 from apps.agents.agente_nf.services import cancelar_emissao, confirmar_emissao
 from apps.audit.services import registrar
 from apps.governance.tiers import tier_da_intencao, verificar_tier
+from apps.security.models import Codigo2FA
+from apps.security.services import (
+    enviar_magic_link,
+    exige_2fa,
+    gerar_codigo_2fa,
+    sessao_ativa,
+    verificar_codigo_2fa,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -96,6 +105,9 @@ class Orquestrador:
                 "Olá! Ainda não encontrei seu cadastro aqui na Magic BI. "
                 "Fale com a Rotina Contábil para ativar seu atendimento. 😊"
             )
+
+        if not sessao_ativa(cliente):
+            return self._exigir_revalidacao(cliente)
 
         perfil = getattr(cliente, "perfil", None)
 
@@ -231,6 +243,14 @@ class Orquestrador:
         )
 
     def _resolver_confirmacao(self, intencao: Intencao, mensagem: str) -> str:
+        codigo_pendente = (
+            Codigo2FA.objects.filter(intencao=intencao, usado_em__isnull=True)
+            .order_by("-criado_em")
+            .first()
+        )
+        if codigo_pendente is not None:
+            return self._resolver_2fa(intencao, codigo_pendente, mensagem)
+
         texto = mensagem.lower().strip()
         if any(p in texto for p in _PALAVRAS_CANCELAMENTO):
             cancelar_emissao(intencao, motivo="cliente cancelou")
@@ -242,6 +262,38 @@ class Orquestrador:
                 "pendente ou *não* para cancelar."
             )
 
+        if exige_2fa(intencao):
+            registro = gerar_codigo_2fa(intencao)
+            if registro is None:
+                return (
+                    "Essa emissão passa do limite de segurança do seu perfil e "
+                    "precisa de um código extra, mas não encontrei um e-mail "
+                    "cadastrado pra te mandar. Fale com seu contador na Rotina "
+                    "pra completar o cadastro. 🙏"
+                )
+            return (
+                "Por segurança, essa emissão passa do limite configurado pro "
+                "seu perfil. Te mandei um código de 6 dígitos por e-mail — "
+                "só responder aqui com o código. 🔒"
+            )
+
+        return self._emitir(intencao)
+
+    def _resolver_2fa(self, intencao: Intencao, codigo_pendente: Codigo2FA, mensagem: str) -> str:
+        if codigo_pendente.expira_em <= timezone.now():
+            cancelar_emissao(intencao, motivo="código 2FA expirou")
+            return "O código expirou. Cancelei a emissão por segurança — pode iniciar de novo."
+
+        if verificar_codigo_2fa(codigo_pendente, mensagem):
+            return self._emitir(intencao)
+
+        if codigo_pendente.tentativas >= Codigo2FA.LIMITE_TENTATIVAS:
+            cancelar_emissao(intencao, motivo="2FA excedeu o número de tentativas")
+            return "Código incorreto demais vezes. Cancelei a emissão por segurança — pode iniciar de novo."
+
+        return "Código inválido. Confere o e-mail e tenta de novo. 🔒"
+
+    def _emitir(self, intencao: Intencao) -> str:
         resultado = confirmar_emissao(intencao, motivo="cliente confirmou")
 
         if resultado.ok:
@@ -254,6 +306,20 @@ class Orquestrador:
         return (
             "A nota foi rejeitada pela Sefin 😕 "
             f"(motivo: {resultado.erro}). Ajusto os dados e você confirma de novo?"
+        )
+
+    def _exigir_revalidacao(self, cliente) -> str:
+        enviado = enviar_magic_link(cliente, cliente.telefone_whatsapp)
+        if enviado:
+            return (
+                "Sua sessão expirou por segurança. Te mandei um link de "
+                "validação por e-mail — clique nele e volte aqui pra "
+                "continuar. 🔒"
+            )
+        return (
+            "Sua sessão expirou por segurança e não encontrei um e-mail "
+            "cadastrado pra te mandar o link. Fale com seu contador na "
+            "Rotina pra revalidar. 🙏"
         )
 
     def _mensagem_para_intencao_existente(self, intencao: Intencao) -> str:
