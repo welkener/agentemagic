@@ -1,0 +1,21 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{# Override mínimo do admin padrão — cabeçalho + CSS de marca (Magic BI, não
+   por escritório: o admin é a ferramenta interna, o branding por tenant fica
+   no Grimório em /painel/, ver apps/painel). Nenhum outro template do admin
+   é tocado — CRUD, forms e listas continuam 100% Django admin padrão. #}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'admin/css/magicbi_admin.css' %}">
+{% endblock %}
+
+{% block branding %}
+  <div id="site-name"><a href="{% url 'admin:index' %}">🪄 {{ site_header|default:"Magic BI" }}</a></div>
+  {% if user.is_anonymous %}
+    {% include "admin/color_theme_toggle.html" %}
+  {% endif %}
+{% endblock %}
+
+{% block nav-global %}{% endblock %}

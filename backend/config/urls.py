@@ -6,6 +6,10 @@ from django.urls import include, path
 from django.views.generic import RedirectView
 from sesame.views import LoginView
 
+admin.site.site_header = "Magic BI — Grimório"
+admin.site.site_title = "Magic BI"
+admin.site.index_title = "Painel administrativo"
+
 urlpatterns = [
     # Raiz sem rota própria — manda pro Grimório em vez de 404 pra quem só digita o domínio.
     path("", RedirectView.as_view(url="/painel/", permanent=False)),

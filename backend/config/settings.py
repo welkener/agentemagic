@@ -67,7 +67,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "templates"],  # override de admin/base_site.html — ver templates/admin/
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -102,6 +102,7 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"  # `collectstatic` — servido via `runserver --insecure` no piloto
+STATICFILES_DIRS = [BASE_DIR / "static"]  # CSS de marca do admin (static/admin/css/magicbi_admin.css)
 
 # Upload de logo do escritório (apps/painel). Em produção, trocar por storage
 # em nuvem (S3/equivalente) — local só serve pro piloto/dev.
