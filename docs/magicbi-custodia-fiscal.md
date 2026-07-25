@@ -67,6 +67,21 @@ impossível custodiar e o Manda a Nota só o suporta em emissão local pelo app.
 
 ---
 
+## 2.1 Implementado (25/jul/2026): os 3 modos convivem no cadastro
+
+Em vez de travar o desenvolvimento até resolver a pendência de mTLS remoto do
+PSC (§ nota do topo), a decisão foi **suportar os 3 modos de custódia desde
+já no `Credencial`** — CERTIFICADO_PSC (nuvem, provedor/identificador),
+CERTIFICADO_PFX (upload do `.pfx`, cifrado em repouso com Fernet, metadados
+extraídos automaticamente com `cryptography`) e PROCURACAO (gov.br,
+consentimento/fallback). Qual modo cada cliente usa é escolha de
+credenciamento, não trava mais em código — o adapter aceita qualquer um dos
+dois tipos de certificado. Detalhe técnico completo:
+`docs/magicbi-ondas-desenvolvimento.md` §2 e `apps/credentials/` (models,
+services, admin com upload). A pendência de mTLS remoto do PSC continua
+aberta — ela só bloqueia o adapter de fato *assinar/transmitir* via PSC, não
+o cadastro do certificado em si.
+
 ## 3. Decisão (matriz por produto e fase) — atualizada 12/jul/2026
 
 | Produto | Fase | Modelo de custódia |

@@ -23,13 +23,16 @@ Confirmado em `backend/apps/` (24/jul/2026, ver commits até `0f5b08b`):
 | Tiers 0–3 | `governance/tiers.py` |
 | Máquina de estados fiscal + orquestrador ligado ao mock | `agents/agente_nf/`, `core/orchestrator.py` |
 | Adapters mock (NFS-e, ERP) | `adapters/nfse_mock.py`, `adapters/erp_mock.py` |
-| Adapter NFS-e Nacional **mapeado, não real** | `adapters/nfse_nacional.py` — auth ainda por `Credencial` tipo procuração, que **não serve mais** (spike resolvido: API exige mTLS+certificado) |
-| Adapters Conta Azul/Bling **mapeados, não normalizados** | `adapters/conta_azul.py`, `adapters/bling.py`, `adapters/oauth2.py` — falta `_formatar` da resposta real |
+| Adapter NFS-e Nacional **mapeado, não real** | `adapters/nfse_nacional.py` — auth ainda é placeholder Bearer; falta trocar por mTLS/assinatura, bloqueado na pendência técnica do §2 |
+| Adapters Conta Azul/Bling **mapeados, não normalizados** | `adapters/conta_azul.py`, `adapters/bling.py`, `adapters/oauth2.py` — endpoints com nível de confiança marcado explicitamente (25/jul/2026); `_formatar` degrada graciosamente pro payload real desconhecido |
 | Fila de aprovação do contador | Django admin (`agents/agente_nf/admin.py`) — interino, cobre o requisito funcional |
 | Cofre MVP (Fernet) | `credentials/crypto.py` |
 | CI (GitHub Actions) | testes a cada push |
-| **`apps/security` (Onda 1)** | ✅ Concluído 25/jul/2026 — `SessaoWhatsapp`/`TokenMagicLink`/`Codigo2FA`, gate no orquestrador, 2FA de 3 turnos. 80/80 testes verdes |
-| **Não existe ainda** | Painel React; deploy fora do localhost; qualquer chamada real a NFS-e/Conta Azul/Bling em ambiente vivo (Ondas 2–4) |
+| **`apps/security` (Onda 1)** | ✅ Concluído 25/jul/2026 — `SessaoWhatsapp`/`TokenMagicLink`/`Codigo2FA`, gate no orquestrador, 2FA de 3 turnos |
+| **Login do painel (Onda 4, parcial)** | ✅ Concluído 25/jul/2026 — `django-sesame` + comando `enviar_link_contador` |
+| **Custódia de certificado (PSC/.pfx/procuração)** | ✅ Concluído 25/jul/2026 — `apps/credentials/` (models, `certificados.py`, `services.py`, admin com upload) — cadastro pronto; falta só a assinatura/transmissão de fato (pendência de mTLS, §2) |
+| **Canal Evolution API (teste local)** | ✅ Concluído 25/jul/2026 — `apps/channel_evolution/`, SÓ para teste, nunca produção |
+| **Não existe ainda** | Painel React; deploy fora do localhost; qualquer chamada real a NFS-e/Conta Azul/Bling em ambiente vivo; assinatura/transmissão real da NFS-e (bloqueada na pendência de mTLS) |
 
 **Leitura:** a fundação é sólida — o gargalo não é desenhar mais nada, é **trocar 3 mocks
 por integrações reais** (NFS-e, Conta Azul, sessão/segurança) e sair do localhost. É
@@ -65,6 +68,51 @@ vínculo `wa_id↔CNPJ`. Era rápido de construir e destravava testar com segura
 
 **Gate da onda:** ✅ passou — sessão ausente/expirada bloqueia antes do roteamento de
 intenção; fluxo de 2FA ponta a ponta emitindo nota real (mock) após código correto.
+
+---
+
+## 1.5 Onda "testar hoje" — custódia de certificado + canal local — ✅ concluída 25/jul/2026
+
+Decisão do usuário: em vez de esperar a pendência de mTLS do §2 se resolver, deixar o
+**cadastro** dos 3 modos de custódia pronto agora, e destravar teste local com uma
+instância Evolution já existente antes de configurar a Cloud API oficial da Meta.
+
+- [x] **Custódia de certificado** (`docs/magicbi-custodia-fiscal.md` §2.1) — `Credencial`
+      suporta `CERTIFICADO_PSC` (provedor/identificador), `CERTIFICADO_PFX` (upload do
+      `.pfx` no admin, cifrado com Fernet, metadados extraídos automaticamente — CNPJ,
+      razão social, validade) e `PROCURACAO` (consentimento/fallback). Upload valida o
+      arquivo (abre com a senha via `cryptography`) **antes** de gravar qualquer coisa —
+      senha errada nunca produz um registro quebrado no banco. Alerta visual no admin se
+      o CNPJ do certificado não bate com o do cliente. `resolver_adapter_nfse` e
+      `NfseNacionalAdapter` aceitam qualquer um dos 2 tipos de certificado — a assinatura/
+      transmissão de fato continua bloqueada pela pendência de mTLS (§2), mas o
+      credenciamento em si já é real e testável.
+- [x] **Canal Evolution API para teste local** (`apps/channel_evolution/`) — webhook em
+      `/webhook/evolution`, mesma pipeline de processamento do canal oficial
+      (`apps/channel_whatsapp/pipeline.py`, extraída nesta onda para não duplicar lógica).
+      **Marcado explicitamente como SÓ TESTE, nunca produção** (docstring do `apps.py`,
+      settings, commit) — a decisão de usar exclusivamente a Cloud API oficial da Meta em
+      produção continua de pé (`docs/magicbi-hermes-comunicador.md` §3); isto é só uma
+      ponte pro escritório validar o fluxo ponta a ponta com o que já existe hoje.
+- [x] 32 testes novos (custódia + canal Evolution); suíte completa 104/104 verde.
+
+### Como rodar o teste local com a Rotina (checklist operacional)
+
+1. `docker-compose up -d` (Postgres + Redis) e `python manage.py migrate`.
+2. `.env`: preencher `EVOLUTION_BASE_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_INSTANCE` da
+   instância Evolution que já existe.
+3. Expor o Django local (`cloudflared tunnel` ou similar) e cadastrar a URL pública
+   `/webhook/evolution` como webhook da instância Evolution (evento `messages.upsert`).
+4. Django admin: cadastrar `Cliente` de teste (com `telefone_whatsapp` do celular de
+   quem vai testar + `email_contato` real, necessário pro Magic Link/2FA funcionarem) e
+   `Perfil`.
+5. Mandar "oi" pelo WhatsApp vinculado à instância Evolution → deve vir a mensagem de
+   credenciamento (Magic Link) da Onda 1 — abrir o link (`/security/validar/<token>/`)
+   pra ativar a sessão antes de qualquer outra coisa funcionar.
+6. Testar o fluxo fiscal (cai no mock de NFS-e até a Onda 2 resolver a pendência de
+   mTLS) e o fluxo ERP (cai no mock de Conta Azul/Bling até haver credencial OAuth real).
+7. **Nunca** apontar essa mesma instância Evolution para clientes reais fora do time —
+   é só para teste interno, a produção exige a Cloud API oficial (risco de banimento).
 
 ---
 
@@ -246,6 +294,7 @@ confundir:
 | 2FA código avulso | `secrets` (stdlib) | Suficiente para o MVP, sem lib nova |
 | 2FA TOTP (se/quando pedir app autenticador) | `pyotp` | RFC 6238, leve |
 | Cliente HashiCorp Vault (se a Fase 6 avançar o Sigillum) | `hvac` | Cliente oficial da comunidade, cobre KV/Transit |
+| Leitura de metadados de certificado `.pfx` (CNPJ/validade) | `cryptography` (`pkcs12`) | Já é dependência do projeto; usado em vez de `brans-nfe` pra isto — abrir chave privada de cliente é sensível demais pra depender de lib não-oficial só pra extrair 3 campos |
 
 ---
 
