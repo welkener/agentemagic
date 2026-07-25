@@ -230,6 +230,27 @@ Deploy real no servidor compartilhado (`192.140.50.108`, credenciais em
 **Pendente do lado do usuário:** escanear o QR code da instância `magicbi-rotina-teste`
 com o WhatsApp que vai ser usado no teste (QR expira rápido — pedir um novo na hora).
 
+**Atualização 25/jul/2026 — domínio + HTTPS:** usuário registrou DNS
+(`painel.magicbi.com.br → 192.140.50.108`) e configurou o nginx-proxy-manager já
+existente no servidor (mesmo padrão dos outros projetos ali — `fiscalis.magicbi.com.br`,
+`nexio.magicbi.com.br`, `aosatende.magicbi.com.br`, todos sob o mesmo domínio raiz).
+Certificado Let's Encrypt emitido automaticamente pelo NPM. Ajustes feitos do nosso
+lado:
+- `CSRF_TRUSTED_ORIGINS` + `SECURE_PROXY_SSL_HEADER` adicionados em `settings.py` —
+  sem isso o login do admin quebra com erro de CSRF atrás de proxy que termina TLS.
+- `DJANGO_ALLOWED_HOSTS` e `PAINEL_BASE_URL` atualizados pro domínio (IP continua na
+  lista de hosts permitidos, então o webhook antigo apontando pro IP:8020 não quebrava
+  durante a transição).
+- Webhook da instância Evolution migrado de `http://192.140.50.108:8020/...` pra
+  `https://painel.magicbi.com.br/webhook/evolution`.
+- **Achado**: o `DJANGO_SECRET_KEY` gerado originalmente tinha `$` no meio (ex.: `...puk$u`)
+  — o parser de `.env` do Docker Compose interpreta `$u` como variável não definida e
+  troca por string vazia, corrompendo o valor real usado silenciosamente (sem erro,
+  só um aviso `"u" variable is not set`). Regerado sem `$` (usar `secrets.token_urlsafe`
+  em vez de `get_random_secret_key` para segredos que vão em `.env` de Compose).
+- Confirmado ponta a ponta via HTTPS + domínio: login funciona, webhook processa
+  (fiscal e ERP), só falta o WhatsApp real ser conectado via QR.
+
 ---
 
 ## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
