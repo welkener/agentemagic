@@ -3,9 +3,12 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
+from django.views.generic import RedirectView
 from sesame.views import LoginView
 
 urlpatterns = [
+    # Raiz sem rota própria — manda pro Grimório em vez de 404 pra quem só digita o domínio.
+    path("", RedirectView.as_view(url="/painel/", permanent=False)),
     path("admin/", admin.site.urls),
     # Webhook do WhatsApp Cloud API (GET = handshake, POST = mensagens)
     path("webhook/whatsapp", include("apps.channel_whatsapp.urls")),

@@ -39,6 +39,12 @@ def nota_emitida(cliente):
     return intencao
 
 
+def test_raiz_redireciona_pro_painel(client):
+    resposta = client.get("/")
+    assert resposta.status_code == 302
+    assert resposta.url == "/painel/"
+
+
 @pytest.mark.django_db
 def test_anonimo_e_redirecionado_pro_login(client):
     resposta = client.get(URL)
