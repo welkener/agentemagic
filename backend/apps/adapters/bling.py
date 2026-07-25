@@ -3,8 +3,17 @@ Adaptador REAL do Bling — 2º ERP, prova a arquitetura de adaptadores
 ("novo ERP = novo adaptador, sem reescrever o agente", Semana 6 do MVP).
 OAuth2 authorization-code, mesmo contrato do `AdapterBase`.
 
-⚠ `mapa_endpoints` usa paths de exemplo (API v3 do Bling) — confirmar na
-documentação oficial (developer.bling.com.br) antes de ativar em produção.
+**Pesquisa de endpoints (25/jul/2026) — sem conta sandbox disponível.**
+`developer.bling.com.br` confirma estrutura REST v3 padrão (GET/POST/PUT/
+PATCH/DELETE, OAuth2) e cita `GET /pedidos/vendas/:idPedidoVenda`,
+`POST /pedidos/vendas`, filtro por `GET /pedidos/vendas`, e menciona estoque/
+contas como recursos existentes — mas **não deu pra confirmar se o path
+relativo correto é `Api/v3/pedidos/vendas` (como está aqui) ou só
+`pedidos/vendas`** (a diferença depende do que fica em `base_url` no admin:
+se `base_url` já incluir `.../Api/v3`, o prefixo duplicado aqui quebra a
+chamada). **Não mudei o path** para não trocar uma suposição por outra sem
+verificar de verdade — testar contra a API real (ou a doc completa) assim
+que houver conta de acesso, antes de ativar em produção.
 `base_url`/`token_url` ficam no Django admin (`AplicativoIntegracao`).
 """
 from .oauth2 import AdapterErpOAuth2Base
