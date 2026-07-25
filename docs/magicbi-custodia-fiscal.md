@@ -79,7 +79,9 @@ apenas os passos sensíveis saindo para um link seguro:
 2. Identidade Informa CNPJ → consulta pública (Receita/CNPJ) → confirma razão social,
               CNAE e regime; detecta se é MEI-serviço, MEI-comércio ou ME/EPP
 3. Termos     Link único (expira em 24h) para o painel: aceite de termos de uso,
-              consentimento LGPD e contrato de adesão — assinatura eletrônica simples
+              consentimento LGPD e contrato de adesão — assinatura eletrônica simples.
+              Detalhe de engenharia (JWT 15 min, vínculo wa_id↔CNPJ, expiração de sessão,
+              2FA, anticlonagem): magicbi-seguranca-sessao.md
 4. Custódia   Ramo por perfil detectado (atualizado 12/jul/2026 — API exige certificado):
               a) MEI serviço  → vínculo do certificado em nuvem (PSC) via app da AC —
                                fluxo guiado pelo Lumen; procuração eletrônica no gov.br

@@ -1,6 +1,37 @@
 # Magic BI — Análise de disrupção (varredura de 11/jul/2026)
 
-> **Atualização mesma data:** as duas lacunas mais críticas do §1 (fluxo fiscal
+> **Atualização 24/jul/2026 — nova varredura de concorrência + bibliotecas.** Confirma
+> que o tabuleiro competitivo **não mudou de forma material** em 13 dias (bom sinal: a
+> janela de white space D1–D7 continua aberta). Achados:
+> - **Zucchetti/BNDES**: timeline confirmada continua "previsão de lançamento até o fim
+>   do 1S2026" — ainda não lançado publicamente em produção ([CartaCapital](https://www.cartacapital.com.br/do-micro-ao-macro/whatsapp-nota-fiscal-audio-microvarejistas/),
+>   [Startups.com.br](https://startups.com.br/negocios/ma/com-empurrao-de-r-15m-do-bndes-zuchetti-quer-crescer-em-ia/)).
+>   D6 (voz, já implementado 12/jul) segue como paridade preventiva, não atrasada.
+> - **Meire/Meu MEI Digital**: confirmado lançado jan/2026, unifica DAS + nota +
+>   regularização, parceria Sebrae/Receita/Serpro, foco nos 16 milhões de MEI ativos
+>   ([gov.br/secom](https://www.gov.br/secom/pt-br/acompanhe-a-secom/noticias/2026/01/governo-do-brasil-lanca-aplicativo-201cmeu-mei-digital201d-novo-aliado-dos-empreendedores-do-pais)).
+>   Reforça a leitura do §3: não competir no grátis.
+> - **Omie**: declarou publicamente "dobrar a aposta" no ERP inteiro via WhatsApp em
+>   2026, reafirmando posição de nº 1 em ERP cloud no Brasil
+>   ([Startups.com.br](https://startups.com.br/negocios/omie-vai-alem-da-interface-e-agora-permite-operar-todo-o-erp-via-whatsapp/)).
+>   Confirma a tese "incumbente ataca a própria base" — nenhuma evidência de abertura
+>   para não-clientes ainda.
+> - **Manda a Nota**: segue sem informação pública confiável de preço/tração em jul/2026
+>   (mesma conclusão da varredura anterior).
+> - **Bibliotecas que resolvem a lacuna crítica #3 do §1** (adapter NFS-e real): a
+>   combinação **`nfelib`** ([akretion/nfelib](https://github.com/akretion/nfelib) —
+>   bindings Python gerados automaticamente do XSD oficial via `xsdata`, cobre NF-e/NFS-e
+>   nacional/CT-e/MDF-e/BP-e) + **`brans-nfe`** ([badbrans/brans-nfe](https://github.com/badbrans/brans-nfe) —
+>   comunicação com o SEFIN: mTLS com certificado ICP-Brasil, assinatura XMLDSig, payload
+>   gzip+base64) resolve exatamente o rework pendente de `apps/adapters/nfse_nacional.py`
+>   sinalizado no `magicbi-mvp-cronograma.md` Semana 3 — não é preciso escrever a
+>   assinatura XML/mTLS na mão. Ver `magicbi-ondas-desenvolvimento.md` §2.
+> - A **camada de segurança de sessão** (`magicbi-seguranca-sessao.md`, novo 24/jul)
+>   transforma o risco R "categoria contaminada por golpes MEI no WhatsApp" (§6 abaixo)
+>   em diferencial verificável — nenhum concorrente de R$ 20–50/mês documenta proteção
+>   contra clonagem de número.
+
+> **Atualização 11/jul/2026:** as duas lacunas mais críticas do §1 (fluxo fiscal
 > desconectado; nenhuma chamada real a LLM) foram fechadas — orquestrador agora liga
 > roteamento + extração de campos (Groq/Pydantic AI, com fallback determinístico) à
 > máquina de estados (`Intencao`) e ao adapter NFS-e mock, com idempotência por
@@ -218,4 +249,4 @@ auditoria, núcleo determinístico) — a governança vira o argumento que permi
 | Meire (governo) absorve o básico MEI | Adoção do Meu MEI Digital | Não competir no "tira-dúvidas grátis"; vender execução + contador + gestão |
 | Omie abre o agente para não-clientes | Anúncio Omie 2S2026 | Acelerar D1/D3 (fiscal + transição, que ERP não faz) e multi-ERP (não prender a um) |
 | Magie entra em emissão fiscal | Vertical B2B da Magie ganhando features fiscais | D1 primeiro: chegar ao pagamento pelo fiscal antes do inverso |
-| Categoria contaminada por golpes "MEI no WhatsApp" | Reclame Aqui | Marca do contador (Rotina) na conversa; número verificado; transparência de preço |
+| Categoria contaminada por golpes "MEI no WhatsApp" | Reclame Aqui | Marca do contador (Rotina) na conversa; número verificado; transparência de preço; **vínculo de sessão `wa_id↔CNPJ` com anticlonagem e 2FA** (`magicbi-seguranca-sessao.md`, 24/jul/2026) — argumento concreto de confiança que nenhum bot de R$ 20–50 documenta |

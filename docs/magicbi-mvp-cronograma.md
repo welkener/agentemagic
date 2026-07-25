@@ -30,6 +30,7 @@
 | Painel mínimo: fila de aprovação + trilha de auditoria + status das conexões ERP | Grimório completo (perfis, exportações, RBAC fino) |
 | **Número de teste da Meta** (gratuito, 5 destinatários) **+ upgrade p/ número real na sem. 6** (coorte total ~10–16 pessoas) | BSP com volume/templates em escala |
 | Auditoria append-only + idempotência (inegociáveis mesmo no MVP) | Status page, segundo BSP, DR completo |
+| **Vínculo de sessão `wa_id↔CNPJ` + Magic Link + 2FA por código avulso** (`apps/security`, ver `magicbi-seguranca-sessao.md`) | 2FA por TOTP/app autenticador (pyotp) — só se o produto pedir depois |
 | Docker local + 1 VPS/PaaS barato para o piloto | AWS sa-east-1 completa (após o go) |
 
 **O que NÃO se corta nem no MVP:** validação determinística de CNAE/alíquota, idempotência
@@ -118,10 +119,18 @@ Sem   1        2        3        4        5        6        7        8
 - [ ] Credenciamento v0 no chat: CNPJ → consulta pública → confirmação de dados →
       link único para termos → **vínculo do certificado em nuvem (PSC) via app da AC**
       (não mais só procuração — ela vira só o consentimento LGPD/adesão)
+- [ ] **`apps/security` (novo, 24/jul/2026)**: `SessaoWhatsapp` (vínculo `wa_id↔CNPJ`),
+      Magic Link via JWT curto (PyJWT, 15 min) reaproveitando o mesmo link único do
+      credenciamento acima; expiração de sessão em 7 dias com revalidação automática;
+      2FA por código avulso (e-mail) para emissão acima de threshold — spec completa em
+      `magicbi-seguranca-sessao.md`. Sem isso, qualquer cliente de teste real já entra
+      exposto a troca/clonagem de número.
 - [x] Spike resolvido na Semana 1: certificado em nuvem confirmado como caminho único
       para a API (não "decisão", já é fato)
 
-**Gate S3:** nota emitida na homologação do governo, ponta a ponta, partindo de uma frase no WhatsApp.
+**Gate S3:** nota emitida na homologação do governo, ponta a ponta, partindo de uma frase
+no WhatsApp; sessão do cliente de teste vinculada via Magic Link e sobrevive a um reinício
+de conversa sem pedir credenciamento de novo.
 
 ### Semana 4 — Conta Azul real (o agente ERP sai do mock)
 - [ ] Fluxo OAuth2 authorization code por cliente; refresh token criptografado; renovação automática

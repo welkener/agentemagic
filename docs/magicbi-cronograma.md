@@ -52,10 +52,15 @@ Django 5.2 + Celery/Redis + Postgres; contrato do adaptador; webhook WhatsApp (a
 HMAC + idempotência por `message_id`); cofre (Secrets Manager/KMS); auditoria append-only
 com hash encadeado; orquestrador Opção A (function-calling tipado com Pydantic AI V2); esqueleto do painel
 Grimório (React/Vite); **fluxo de credenciamento v1** (CNPJ → termos → guia de procuração).
-Adaptadores já nascem como servidores MCP internos (prepara a Fase 3).
+**Módulo `apps/security`** (novo, 24/jul/2026): `SessaoWhatsapp` (vínculo `wa_id↔CNPJ`),
+Magic Link via JWT curto (15 min), expiração de sessão (7 dias) e 2FA por código avulso
+para ações acima de threshold configurável — detalhamento em
+`magicbi-seguranca-sessao.md`. Adaptadores já nascem como servidores MCP internos
+(prepara a Fase 3).
 
 **Gate:** mensagem no WhatsApp percorre webhook → orquestrador → resposta, com auditoria
-gravada; credenciamento de um cliente de teste completo em homologação.
+gravada; credenciamento de um cliente de teste completo em homologação, incluindo
+vínculo de sessão `wa_id↔CNPJ` via Magic Link.
 
 ## Fase 2 — Fiscus v1: NFS-e MEI (sem. 4–9)
 

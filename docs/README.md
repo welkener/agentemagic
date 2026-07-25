@@ -12,10 +12,12 @@ pessoal da empresa, sobre Hermes), **Grimório** (painel do contador), **Sigillu
 |---|---|
 | [magicbi-marca-e-nomes.md](magicbi-marca-e-nomes.md) | Marca, parceria, posicionamento vs. Manda a Nota, nomes (inspiração HP sem infringir direitos) |
 | [magicbi-custodia-fiscal.md](magicbi-custodia-fiscal.md) | Cofre .pfx vs procuração — matriz de custódia por produto/fase + credenciamento prévio via WhatsApp |
+| [magicbi-seguranca-sessao.md](magicbi-seguranca-sessao.md) | **Novo 24/jul/2026** — vínculo de sessão `wa_id↔CNPJ` (Magic Link), expiração, 2FA para ações críticas, anticlonagem de número (`apps/security`) |
 | [magicbi-hermes-comunicador.md](magicbi-hermes-comunicador.md) | Hermes como comunicador oficial: abordagem, perfis por empresa, regras operacionais, hospedagem |
 | [magicbi-cronograma.md](magicbi-cronograma.md) | Cronograma de 24 semanas até o lançamento comercial, com gates e marcos |
 | [magicbi-mvp-cronograma.md](magicbi-mvp-cronograma.md) | **MVP de 8 semanas** — Fiscus (3–5 MEIs, notas reais) + agente ERP (Conta Azul e Bling reais, Tiny/Omie mock); comprime as Fases 1–3 |
-| [magicbi-analise-disrupcao.md](magicbi-analise-disrupcao.md) | **Varredura 11/jul/2026**: estado real do backend, concorrência atualizada (Omie WhatsApp, Zucchetti voz, Meire/governo, Mei.ai), relógio regulatório set/2026–jan/2027 e white space D1–D7 |
+| [magicbi-ondas-desenvolvimento.md](magicbi-ondas-desenvolvimento.md) | **Novo 24/jul/2026** — sequenciamento tático em ondas curtas a partir do estado real do código, até o piloto interno na Rotina; bibliotecas maduras e checklist de homologação |
+| [magicbi-analise-disrupcao.md](magicbi-analise-disrupcao.md) | Varredura 11/jul/2026 + **atualização 24/jul/2026**: estado real do backend, concorrência (Omie WhatsApp, Zucchetti voz, Meire/governo, Mei.ai), relógio regulatório set/2026–jan/2027 e white space D1–D7 |
 
 ## Documentos de base (anteriores, ainda válidos)
 

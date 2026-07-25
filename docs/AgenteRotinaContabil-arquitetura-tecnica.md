@@ -7,6 +7,12 @@
 > borda conversacional, com os adaptadores expostos como MCP e o núcleo determinístico
 > mantendo a execução (ver `magicbi-hermes-comunicador.md`). Custódia detalhada em
 > `magicbi-custodia-fiscal.md`; cronograma em `magicbi-cronograma.md`.
+>
+> **Atualização 2 (24/jul/2026):** novo módulo **`apps/security`** — vínculo de sessão
+> `wa_id ↔ CNPJ` (Magic Link, expiração, 2FA para ações críticas), especificado em
+> `magicbi-seguranca-sessao.md`. É camada de **identidade** (quem está falando), distinta
+> da governança de tiers (`apps/governance`, que decide **o que** pode ser feito) e da
+> custódia fiscal (`magicbi-custodia-fiscal.md`, que decide quem assina perante o governo).
 
 Hub de backoffice que conecta o WhatsApp a APIs fiscais e a múltiplos ERPs, com dois
 subagentes:
@@ -59,6 +65,7 @@ agenterotina/                      # projeto Django
 │   │   └── nfe_middleware/        # NF-e produto via "NF como serviço" (P2)
 │   ├── clients/                   # cliente, perfil, provisionamento
 │   ├── credentials/              # referências ao cofre, renovação de token
+│   ├── security/                  # NOVO: SessaoWhatsapp (wa_id↔CNPJ), Magic Link, 2FA
 │   ├── channel_whatsapp/          # webhook Cloud API, envio/recebimento
 │   ├── audit/                     # trilha append-only, hash encadeado
 │   └── governance/                # tiers 0–3, aprovações, limites
@@ -76,6 +83,9 @@ agenterotina/                      # projeto Django
                         ▼
               apps/channel_whatsapp
                         │
+                        ▼
+              apps/security — vínculo wa_id↔CNPJ, Magic Link, 2FA
+                        │ sessão inválida → credenciamento/revalidação
                         ▼
    ┌───────────────────────────────────────────────┐
    │ apps/core — ORQUESTRADOR (determinístico)       │
@@ -323,6 +333,8 @@ Autenticação do painel: usuários do escritório (contadores), via auth do Dja
 - DPA com o escritório; minimização e consentimento de dados.
 - Modo de contingência + retry — nada de falha silenciosa.
 - Hospedar em nuvem no Brasil (ex.: AWS sa-east-1) por LGPD e latência.
+- **Vínculo de sessão `wa_id ↔ CNPJ`** com expiração e revalidação por Magic Link, e 2FA
+  para ações acima de threshold configurável — detalhado em `magicbi-seguranca-sessao.md`.
 
 ---
 
@@ -373,6 +385,9 @@ Variáveis de ambiente mínimas: `DJANGO_SECRET_KEY`, `DATABASE_URL`, `REDIS_URL
       middleware p/ NF-e, cofre próprio só em escala (`magicbi-custodia-fiscal.md`).
 - [x] Marca e nomes — **decidido**: Magic BI / Fiscus / Lumen / Grimório / Sigillum
       (`magicbi-marca-e-nomes.md`), pendente busca INPI.
+- [x] Vínculo de sessão/2FA — **decidido (24/jul/2026)**: módulo `apps/security`,
+      Magic Link via PyJWT + `SessaoWhatsapp`, 2FA por código avulso (e-mail) acima de
+      threshold (`magicbi-seguranca-sessao.md`).
 - [ ] Django 5.2 LTS (até abr/2028) vs. 6.0 — recomendação: 5.2 LTS por estabilidade.
 - [ ] Escolha do BSP do WhatsApp.
 - [ ] Backend de cofre (Secrets Manager+KMS vs. Vault).
