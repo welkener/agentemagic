@@ -64,7 +64,9 @@ class NfseMockAdapter(AdapterBase):
         """
         if documento != "nfse":
             return ResultadoAcao(ok=False, erro_padronizado="RECURSO_NAO_ENCONTRADO")
-        if not referencia:
+        if not referencia or len(str(referencia)) != 50 or not str(referencia).isdigit():
+            # Mesmo o mock exige a chave de 50 dígitos: aceitar o protocolo aqui
+            # esconderia o erro até a primeira chamada real.
             return ResultadoAcao(ok=False, erro_padronizado="FILTRO_OBRIGATORIO_AUSENTE")
         if not (motivo or "").strip():
             return ResultadoAcao(
@@ -105,10 +107,15 @@ class NfseMockAdapter(AdapterBase):
             )
 
         protocolo = f"NFSE-{uuid.uuid4().hex[:12].upper()}"
+        # Chave de acesso de 50 dígitos — é ela (não o protocolo) que o evento
+        # de cancelamento exige. O mock precisa produzi-la, senão o fluxo de
+        # cancelamento "funciona" no teste e quebra no real.
+        chave = f"{uuid.uuid4().int % (10**50):050d}"
         return ResultadoAcao(
             ok=True,
             dados={
                 "protocolo": protocolo,
+                "chave_nfse": chave,
                 "situacao": "AUTORIZADA",
                 "danfse_url": f"https://danfse.exemplo.gov.br/{protocolo}.pdf",
                 "valor": dados["valor"],

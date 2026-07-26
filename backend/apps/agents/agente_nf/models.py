@@ -58,6 +58,16 @@ class Intencao(models.Model):
     danfse_url = models.URLField(
         blank=True, default="", help_text="Link do DANFSE — preenchido na emissão bem-sucedida."
     )
+    chave_nfse = models.CharField(
+        max_length=50,
+        blank=True,
+        default="",
+        help_text=(
+            "Chave de acesso da NFS-e (50 dígitos), devolvida pela Sefin na autorização. "
+            "NÃO é o protocolo: protocolo identifica o processamento, a chave identifica "
+            "o documento — e é a chave que o evento de cancelamento exige."
+        ),
+    )
 
     # --- Cancelamento (tipo_acao="cancelar_nfse") --------------------------
     # O pedido de cancelamento é uma Intencao PRÓPRIA, que aponta pra nota

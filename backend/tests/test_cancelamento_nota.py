@@ -193,3 +193,106 @@ def test_pedido_de_cancelamento_e_auditado(cliente, nota_emitida):
     transicoes = Auditoria.objects.filter(evento="intencao_fiscal_transicao")
     do_pedido = [a for a in transicoes if a.dados.get("intencao_id") == pedido.pk]
     assert [a.dados["para"] for a in do_pedido][-1] == Intencao.Estado.CONCLUIDO
+
+
+# ---------------------------------------------------------------------------
+# Evento de cancelamento (e101101) — XML assinado, validado contra o XSD
+# ---------------------------------------------------------------------------
+class TestEventoCancelamento:
+    """`apps/fiscal/eventos.py` — o documento que vai pra Sefin."""
+
+    @staticmethod
+    def _cliente_fiscal(cliente):
+        cliente.codigo_municipio_ibge = "3550308"
+        cliente.codigo_tributacao_nacional = "010101"
+        cliente.save()
+        return cliente
+
+    CHAVE = "3" * 50
+    JUSTIFICATIVA = "Servico nao foi prestado ao tomador"
+
+    @pytest.mark.django_db
+    def test_evento_e_valido_contra_o_xsd_oficial(self, cliente):
+        from apps.fiscal import eventos
+
+        xml, _ = eventos.montar_cancelamento(
+            self._cliente_fiscal(cliente), self.CHAVE, self.JUSTIFICATIVA
+        )
+        erros = eventos.validar_evento_contra_xsd(xml)
+        assert not erros, "evento invalido: " + " | ".join(erros)
+
+    @pytest.mark.django_db
+    def test_id_do_evento_segue_o_pattern(self, cliente):
+        """`PRE[0-9]{59}` = chNFSe(50) + código do evento(6) + sequencial(3)."""
+        import re
+
+        from apps.fiscal import eventos
+
+        _, id_evento = eventos.montar_cancelamento(
+            self._cliente_fiscal(cliente), self.CHAVE, self.JUSTIFICATIVA
+        )
+        assert re.fullmatch(r"PRE[0-9]{59}", id_evento), id_evento
+
+    @pytest.mark.django_db
+    def test_protocolo_no_lugar_da_chave_e_recusado(self, cliente):
+        """O erro mais provável: mandar o protocolo de emissão, que não serve."""
+        from apps.fiscal import eventos
+
+        with pytest.raises(eventos.ErroEventoInvalido, match="50 dígitos"):
+            eventos.montar_cancelamento(
+                self._cliente_fiscal(cliente), "NFSE-ABC123", self.JUSTIFICATIVA
+            )
+
+    @pytest.mark.django_db
+    def test_justificativa_curta_e_recusada_antes_da_sefin(self, cliente):
+        """O XSD exige 15 caracteres — recusar aqui dá mensagem melhor."""
+        from apps.fiscal import eventos
+
+        with pytest.raises(eventos.ErroEventoInvalido, match="15"):
+            eventos.montar_cancelamento(self._cliente_fiscal(cliente), self.CHAVE, "erro")
+
+    @pytest.mark.django_db
+    def test_codigo_de_motivo_fora_da_tabela_e_recusado(self, cliente):
+        from apps.fiscal import eventos
+
+        with pytest.raises(eventos.ErroEventoInvalido, match="motivo inválido"):
+            eventos.montar_cancelamento(
+                self._cliente_fiscal(cliente), self.CHAVE, self.JUSTIFICATIVA, codigo_motivo="7"
+            )
+
+    @pytest.mark.django_db
+    def test_evento_assinado_continua_valido(self, cliente, tmp_path):
+        import datetime as dt
+
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.x509.oid import NameOID
+
+        from apps.fiscal import dps, eventos
+
+        k = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        n = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "TESTE")])
+        agora = dt.datetime.now(dt.timezone.utc)
+        cert = (
+            x509.CertificateBuilder().subject_name(n).issuer_name(n)
+            .public_key(k.public_key()).serial_number(x509.random_serial_number())
+            .not_valid_before(agora - dt.timedelta(days=1))
+            .not_valid_after(agora + dt.timedelta(days=365)).sign(k, hashes.SHA256())
+        )
+        pfx = serialization.pkcs12.serialize_key_and_certificates(
+            b"t", k, cert, None, serialization.BestAvailableEncryption(b"x")
+        )
+        xml, id_evento = eventos.montar_cancelamento(
+            self._cliente_fiscal(cliente), self.CHAVE, self.JUSTIFICATIVA
+        )
+        assinado = dps.assinar(xml, pfx, "x", id_evento)
+        assert not eventos.validar_evento_contra_xsd(assinado)
+
+
+@pytest.mark.django_db
+def test_emissao_guarda_a_chave_de_acesso_nao_so_o_protocolo(cliente, nota_emitida):
+    """Sem a chave, o cancelamento real é impossível — o protocolo não serve."""
+    assert len(nota_emitida.chave_nfse) == 50
+    assert nota_emitida.chave_nfse.isdigit()
+    assert nota_emitida.chave_nfse != nota_emitida.protocolo

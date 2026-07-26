@@ -34,7 +34,8 @@ def confirmar_emissao(intencao: Intencao, motivo: str) -> ResultadoConfirmacao:
     if resultado.ok:
         intencao.protocolo = resultado.dados.get("protocolo") or ""
         intencao.danfse_url = resultado.dados.get("danfse_url") or ""
-        intencao.save(update_fields=["protocolo", "danfse_url"])
+        intencao.chave_nfse = resultado.dados.get("chave_nfse") or ""
+        intencao.save(update_fields=["protocolo", "danfse_url", "chave_nfse"])
         intencao.transicionar(Intencao.Estado.CONCLUIDO, motivo="emissão autorizada")
         return ResultadoConfirmacao(ok=True, protocolo=intencao.protocolo, danfse_url=intencao.danfse_url)
 
@@ -106,9 +107,11 @@ def confirmar_cancelamento(pedido: Intencao, motivo: str) -> ResultadoConfirmaca
     pedido.transicionar(Intencao.Estado.EMITINDO, motivo=motivo)
 
     nfse = resolver_adapter_nfse(nota.cliente)
+    # A CHAVE, não o protocolo: o evento de cancelamento identifica o
+    # documento pela chave de acesso de 50 dígitos (apps/fiscal/eventos.py).
     resultado = nfse.cancelar(
         "nfse",
-        nota.protocolo,
+        nota.chave_nfse,
         pedido.payload.get("motivo", ""),
         {"cliente": nota.cliente},
     )

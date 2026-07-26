@@ -766,6 +766,57 @@ placeholder (só `emitir` migrou para mTLS); evento de cancelamento como XML ass
 
 ---
 
+## 1.15 Fiscal fechado + sistema pronto pra teste — ✅ 26/jul/2026
+
+### `consultar`/`cancelar` saíram do placeholder
+
+Os dois últimos pontos com `Authorization: Bearer` migraram pra mTLS, e o
+cancelamento virou o documento de verdade: **pedido de registro de evento**
+(`e101101`), XML próprio, assinado e gzip+base64 — não um `POST` com JSON solto.
+
+O schema (`pedRegEvento_v1.00.xsd`) impôs três coisas que não dava pra supor:
+
+- **`chNFSe` é a chave de acesso de 50 dígitos, e não o "protocolo"** que o
+  projeto vinha guardando desde a Onda 1.6. São identificadores diferentes: o
+  protocolo identifica o processamento, a chave identifica o documento — e só a
+  chave cancela. `Intencao` ganhou `chave_nfse`, e **o mock passou a produzi-la**;
+  sem isso o cancelamento "funcionaria" em teste e quebraria no real.
+- **`Id` do evento é `PRE[0-9]{59}`** = chNFSe(50) + código do evento(6) +
+  sequencial(3).
+- **`xDesc` é enumeração de valor único** (`"Cancelamento de NFS-e"`), `cMotivo`
+  só aceita 1/2/9, e `xMotivo` exige **15 caracteres no mínimo** — "erro" não
+  passa. Recusamos antes de chamar a Sefin, com mensagem que diz o que fazer.
+
+Evento validado contra o XSD, incluindo depois de assinado.
+
+### Pronto pra teste — o que faltava era o caminho, não o código
+
+Testar exigia acertar sete coisas em ordem (escritório → contador → grupo →
+cliente com cadastro fiscal → perfil → sessão → app de integração). Errar
+qualquer uma dava um erro que não dizia qual foi, e isso consumia a primeira meia
+hora de toda rodada.
+
+- **`preparar_teste`** leva do banco vazio ao estado testável em um comando,
+  idempotente, com `--limpar`. Cria o cliente com **cadastro fiscal completo** —
+  é exatamente o que faltava pra DPS válida sair.
+- **`testar_conversa`** conversa com o agente pelo terminal, **sem canal nenhum**.
+  Roda o orquestrador de verdade (mesmo gate de sessão, mesmos tiers, mesma
+  máquina de estados); só a saída muda. Antes, verificar comportamento exigia
+  WhatsApp conectado — o que misturava "o agente errou" com "o canal caiu".
+- **`docs/RUNBOOK-TESTE.md`** organiza o teste em degraus, um por camada externa
+  (canal, ERP, Sefin), pra que a falha diga qual camada quebrou. Inclui como
+  validar a DPS contra o XSD **sem chamar o governo** — se der inválido, o
+  problema é cadastro, e se resolve local.
+
+Fluxo conferido ponta a ponta pelo terminal: estoque → contas a receber → emitir
+→ confirmar → consultar → pedir cancelamento → contador aprova → nota cancelada.
+
+**227 testes.** Pendências inalteradas e listadas no runbook: cadastro na Produção
+Restrita, IBS/CBS (não existe nos bindings), WhatsApp oficial, payload do Conta
+Azul, DANFSE em PDF e onboarding pelo chat.
+
+---
+
 ## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
 
 **Por quê agora:** é o item que prova a Hipótese 1 do MVP e o que mais lacunas técnicas

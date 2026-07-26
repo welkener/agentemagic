@@ -32,6 +32,7 @@ gov.br/nfse → Biblioteca → Documentação Técnica.
 from __future__ import annotations
 
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
@@ -47,6 +48,7 @@ from apps.fiscal.dps import (
     montar_dps,
     montar_id,
 )
+from apps.fiscal.eventos import ErroEventoInvalido, montar_cancelamento
 from apps.fiscal.numeracao import proximo_numero
 
 from .base import AdapterBase
@@ -85,6 +87,32 @@ class NfseNacionalAdapter(AdapterBase):
             tipo=(Credencial.Tipo.CERTIFICADO_PSC, Credencial.Tipo.CERTIFICADO_PFX),
         )
 
+
+    # ------------------------------------------------------------------
+    def _par_mtls(self, credencial: Credencial):
+        """(cert_pem, chave_pem) do .pfx em custódia — a auth do ADN é mTLS."""
+        if credencial.tipo != Credencial.Tipo.CERTIFICADO_PFX:
+            raise ErroCertificadoIndisponivel(
+                "Só o certificado .pfx em custódia fecha o ciclo hoje — "
+                "assinatura remota via PSC ainda não está resolvida."
+            )
+        pfx, senha = credencial.pfx_bytes, credencial.pfx_senha
+        if not pfx or not senha:
+            raise ErroCertificadoIndisponivel("Credencial sem arquivo .pfx ou sem senha.")
+        return extrair_pem_para_mtls(pfx, senha)
+
+    @staticmethod
+    @contextmanager
+    def _arquivos_mtls(cert_pem: bytes, chave_pem: bytes):
+        """httpx exige o par mTLS em ARQUIVO. Diretório temporário que some ao
+        sair — chave privada de cliente nunca fica em disco além da chamada."""
+        with tempfile.TemporaryDirectory() as pasta:
+            cert = Path(pasta) / "cliente.pem"
+            chave = Path(pasta) / "cliente.key"
+            cert.write_bytes(cert_pem)
+            chave.write_bytes(chave_pem)
+            yield (str(cert), str(chave))
+
     def consultar(self, recurso: str, filtros: dict, ctx) -> ResultadoAcao:
         if recurso != "nfse":
             return ResultadoAcao(ok=False, erro_padronizado="RECURSO_NAO_ENCONTRADO")
@@ -99,21 +127,26 @@ class NfseNacionalAdapter(AdapterBase):
             return ResultadoAcao(ok=False, erro_padronizado="INTEGRACAO_NAO_CONFIGURADA")
 
         try:
-            # ⚠⚠ placeholder de transporte — a API real exige mTLS (cert=)
-            # com o certificado do PSC, não um Bearer token; e o path exato de
-            # consulta por protocolo não está confirmado (ver docstring do módulo).
-            resposta = httpx.get(
-                f"{app.base_url.rstrip('/')}/nfse/{protocolo}",
-                headers={"Authorization": f"Bearer {credencial.valor}"},
-                timeout=10.0,
+            cert_pem, chave_pem = self._par_mtls(credencial)
+        except ErroCertificadoIndisponivel as exc:
+            return ResultadoAcao(
+                ok=False, erro_padronizado="CERTIFICADO_INDISPONIVEL", dados={"motivo": str(exc)}
             )
-            resposta.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code in (401, 403):
-                return ResultadoAcao(ok=False, erro_padronizado="AUTH_EXPIRADA")
-            return ResultadoAcao(ok=False, erro_padronizado="INDISPONIVEL")
-        except httpx.HTTPError:
-            return ResultadoAcao(ok=False, erro_padronizado="INDISPONIVEL")
+
+        # ⚠ o path exato de consulta por chave não está confirmado contra a
+        # Produção Restrita — o transporte (mTLS) está, o path não.
+        with self._arquivos_mtls(cert_pem, chave_pem) as par:
+            try:
+                resposta = httpx.get(
+                    f"{app.base_url.rstrip('/')}/nfse/{protocolo}", cert=par, timeout=10.0
+                )
+                resposta.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code in (401, 403):
+                    return ResultadoAcao(ok=False, erro_padronizado="AUTH_EXPIRADA")
+                return ResultadoAcao(ok=False, erro_padronizado="INDISPONIVEL")
+            except httpx.HTTPError:
+                return ResultadoAcao(ok=False, erro_padronizado="INDISPONIVEL")
 
         return ResultadoAcao(ok=True, dados=resposta.json(), referencia_externa=protocolo)
 
@@ -133,60 +166,75 @@ class NfseNacionalAdapter(AdapterBase):
         return ResultadoAcao(ok=False, erro_padronizado="OPERACAO_NAO_SUPORTADA")
 
     def cancelar(self, documento: str, referencia: str, motivo: str, ctx) -> ResultadoAcao:
-        """Cancelamento na NFS-e Nacional = **evento assinado**, não DELETE.
+        """Cancelamento = **pedido de registro de evento** assinado, não DELETE.
 
-        ⚠⚠ Mesmo bloqueio do `emitir()`: o corpo real é um XML de evento
-        (`e101101` — Cancelamento de NFS-e) assinado com o certificado
-        ICP-Brasil e enviado gzip+base64, e a auth é mTLS (`cert=`), não o
-        Bearer que está aqui como placeholder de transporte. Além disso o
-        cancelamento tem **prazo legal** (varia por município/NT vigente):
-        fora do prazo a Sefin recusa e o caminho correto é substituição.
-        Nada disto pode ser inventado — fica marcado até a decisão de custódia
-        (docs/magicbi-custodia-fiscal.md) fechar.
+        `referencia` é a **chave de acesso da NFS-e (50 dígitos)**, não o
+        protocolo de emissão — são identificadores diferentes, e o schema só
+        aceita a chave (ver apps/fiscal/eventos.py).
+
+        ⚠ O cancelamento tem **prazo legal** que varia por município/NT. Quem
+        recusa fora do prazo é a Sefin; não inventamos prazo aqui.
         """
         if documento != "nfse":
             return ResultadoAcao(ok=False, erro_padronizado="RECURSO_NAO_ENCONTRADO")
         if not referencia:
             return ResultadoAcao(ok=False, erro_padronizado="FILTRO_OBRIGATORIO_AUSENTE")
-        if not (motivo or "").strip():
-            return ResultadoAcao(ok=False, erro_padronizado="REJEITADA_MOTIVO_AUSENTE")
 
         try:
             app = resolver_app("nfse_nacional")
-            credencial = self._credencial(_cliente_de(ctx))
+            cliente = _cliente_de(ctx)
+            credencial = self._credencial(cliente)
         except ErroIntegracaoNaoConfigurada:
             return ResultadoAcao(ok=False, erro_padronizado="INTEGRACAO_NAO_CONFIGURADA")
 
         try:
-            resposta = httpx.post(
-                f"{app.base_url.rstrip('/')}/nfse/{referencia}/eventos",
-                json={"evento": "cancelamento", "motivo": motivo},
-                headers={"Authorization": f"Bearer {credencial.valor}"},
-                timeout=15.0,
+            xml, id_evento = montar_cancelamento(cliente, referencia, motivo)
+        except ErroEventoInvalido as exc:
+            return ResultadoAcao(
+                ok=False, erro_padronizado="EVENTO_INVALIDO", dados={"motivo": str(exc)}
             )
-            resposta.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code in (401, 403):
-                return ResultadoAcao(ok=False, erro_padronizado="AUTH_EXPIRADA")
-            if exc.response.status_code == 422:
-                return ResultadoAcao(
-                    ok=False,
-                    erro_padronizado="REJEITADA_SEFIN",
-                    dados={"mensagem_sefin": exc.response.text},
-                )
-            return ResultadoAcao(ok=False, erro_padronizado="INDISPONIVEL")
-        except httpx.HTTPError:
-            return ResultadoAcao(ok=False, erro_padronizado="INDISPONIVEL")
 
-        corpo = resposta.json()
+        try:
+            cert_pem, chave_pem = self._par_mtls(credencial)
+        except ErroCertificadoIndisponivel as exc:
+            return ResultadoAcao(
+                ok=False, erro_padronizado="CERTIFICADO_INDISPONIVEL", dados={"motivo": str(exc)}
+            )
+
+        assinado = assinar(xml, credencial.pfx_bytes, credencial.pfx_senha, id_evento)
+        corpo = empacotar(assinado)
+
+        with self._arquivos_mtls(cert_pem, chave_pem) as par:
+            try:
+                resposta = httpx.post(
+                    f"{app.base_url.rstrip('/')}/nfse/{referencia}/eventos",
+                    json={"pedidoRegistroEventoXmlGZipB64": corpo},
+                    cert=par,
+                    timeout=15.0,
+                )
+                resposta.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code in (401, 403):
+                    return ResultadoAcao(ok=False, erro_padronizado="AUTH_EXPIRADA")
+                if exc.response.status_code == 422:
+                    return ResultadoAcao(
+                        ok=False,
+                        erro_padronizado="REJEITADA_SEFIN",
+                        dados={"mensagem_sefin": exc.response.text},
+                    )
+                return ResultadoAcao(ok=False, erro_padronizado="INDISPONIVEL")
+            except httpx.HTTPError:
+                return ResultadoAcao(ok=False, erro_padronizado="INDISPONIVEL")
+
+        retorno = resposta.json()
         return ResultadoAcao(
             ok=True,
             dados={
-                "protocolo_cancelamento": corpo.get("protocolo"),
-                "situacao": corpo.get("situacao", "CANCELADA"),
+                "protocolo_cancelamento": retorno.get("protocolo"),
+                "situacao": retorno.get("situacao", "CANCELADA"),
                 "nfse_cancelada": referencia,
             },
-            referencia_externa=corpo.get("protocolo"),
+            referencia_externa=retorno.get("protocolo"),
         )
 
     def emitir(self, documento: str, dados: dict, ctx) -> ResultadoAcao:
