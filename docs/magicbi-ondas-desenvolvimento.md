@@ -263,6 +263,17 @@ cabeçalho, botões e sidebar agora usam a marca. O `/painel/` já tinha brandin
 escritório desde a Onda 1.6; agora os dois ambientes (admin + painel) ficam
 visualmente coerentes.
 
+**Feedback seguinte, mesmo dia — "ainda não curti... redesenhe pra parecer uma
+aplicação... veja o que tem de mais novo no mercado".** O reskin via CSS custom
+properties (acima) não foi longe o suficiente. Pesquisei o panorama atual de temas de
+admin Django e adotei **django-unfold** (0.101.0, Tailwind CSS, coberto no blog oficial
+do Django em 2025, suporta Django 5.2/6.0 e Python 3.12-3.14, sem build JS) — mais
+moderno e ativo que Jazzmin/Grappelli. Todos os 11 `ModelAdmin` + 1 inline (7 apps)
+migrados pra `unfold.admin.*`; paleta indigo (Tailwind, família do periwinkle já usado
+no painel); reskin manual anterior removido (superado). Validado com screenshots reais
+antes de subir — login, índice e changelist agora têm cara de aplicação SaaS moderna,
+não admin genérico. `/painel/` seguiu intacto, sem conflito.
+
 ---
 
 ## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
