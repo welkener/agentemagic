@@ -51,6 +51,40 @@ logger = structlog.get_logger(__name__)
 _MODELO_ROTEADOR = "groq:llama-3.1-8b-instant"
 _MODELO_EXTRACAO = "groq:openai/gpt-oss-120b"
 
+# O roteador é um modelo pequeno (8B). "Escolha a opção mais provável do schema"
+# não basta: `emitir_nota`, `consultar_nota` e `cancelar_nota` são três coisas
+# muito diferentes que o cliente descreve com quase as mesmas palavras. Cada
+# intenção ganha uma linha, e o par que mais confunde ganha exemplo explícito.
+_PROMPT_ROTEADOR = """\
+Você classifica a intenção de mensagens de clientes de um assistente
+fiscal/financeiro no WhatsApp (micro e pequenas empresas brasileiras).
+
+Responda com UMA intenção do schema:
+
+- emitir_nota: quer criar/emitir uma NOVA nota fiscal de serviço agora.
+  Ex.: "emite uma nota de 500 pro João", "preciso fazer uma nfs-e".
+- consultar_nota: quer VER notas que já existem. Não cria nada.
+  Ex.: "quais notas eu emiti?", "cadê minha nota de ontem?", "minhas notas".
+- cancelar_nota: quer CANCELAR/anular uma nota já emitida.
+  Ex.: "cancela a nota que saiu errada", "quero anular a última nfs-e".
+- consultar_estoque: saldo/quantidade de produtos.
+- consultar_pedido: pedidos, vendas ou relatório de vendas.
+- consultar_contas_receber: o que a empresa tem A RECEBER de clientes.
+- consultar_contas_pagar: o que a empresa tem A PAGAR a fornecedores.
+- consultar_fluxo_caixa: saldo, previsão de entradas e saídas.
+- desconhecida: nada acima, ou saudação/conversa solta.
+
+Regras que resolvem os casos ambíguos:
+1. As três intenções de nota usam quase as mesmas palavras. O que decide é o
+   VERBO: criar → emitir_nota; ver/listar → consultar_nota; cancelar/anular →
+   cancelar_nota. "quero emitir minha nota" é emitir_nota, apesar do "minha".
+2. "receber" e "pagar" são intenções DIFERENTES — nunca junte as duas.
+3. Na dúvida entre uma ação e uma consulta, escolha a CONSULTA: ler não muda
+   nada, e emitir nota fiscal por engano tem custo real pro cliente.
+4. Sem certeza razoável, responda desconhecida — o assistente pergunta de novo,
+   o que é melhor que agir errado.
+"""
+
 _PALAVRAS_NOTA = ("nota", "nfse", "nfs-e", "emitir", "emite")
 _PALAVRAS_CONFIRMACAO = ("sim", "confirmar", "confirmo", "pode emitir", "ok", "👍", "✅")
 _PALAVRAS_CANCELAMENTO = ("não", "nao", "cancelar", "cancela", "❌")
@@ -195,11 +229,7 @@ class Orquestrador:
         agent = Agent(
             _MODELO_ROTEADOR,
             output_type=IntencaoClassificada,
-            system_prompt=(
-                "Você classifica a intenção de mensagens de clientes de um "
-                "assistente fiscal/financeiro no WhatsApp. Responda apenas com "
-                "a intenção mais provável, entre as opções do schema."
-            ),
+            system_prompt=_PROMPT_ROTEADOR,
         )
         resultado = agent.run_sync(mensagem)
         return resultado.output.intencao

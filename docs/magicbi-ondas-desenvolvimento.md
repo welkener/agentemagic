@@ -581,6 +581,54 @@ formato, quebra aqui, não no WhatsApp do cliente.
 
 ---
 
+## 1.12 Orquestração — prompt do roteador e cobertura do caminho LLM — ✅ concluída 26/jul/2026
+
+**A arquitetura não mudou**: segue a Opção A (orquestrador in-process determinístico, "o
+LLM propõe, o núcleo decide e executa"), com Groq/Pydantic AI em dois pontos — roteador de
+intenção (`llama-3.1-8b-instant`) e extração de campos da nota (`gpt-oss-120b`). Hermes
+como serviço externo (Opção B) continua previsto só pra Fase 3.
+
+O que estava frouxo eram duas coisas que só apareceram ao revisar o que tinha acabado de
+mudar em 1.10:
+
+### O prompt não descrevia as intenções
+
+O system prompt do roteador dizia apenas *"responda com a intenção mais provável, entre as
+opções do schema"*. Funcionava enquanto as intenções eram autoexplicativas — mas
+`emitir_nota`, `consultar_nota` e `cancelar_nota` são três ações **muito** diferentes que o
+cliente descreve com quase as mesmas palavras, e quem classifica é um modelo de 8B. Pedir
+pra ele adivinhar isso do nome do campo era contar com sorte.
+
+Agora cada intenção tem uma linha, e as regras de desempate são explícitas — inclusive um
+viés seguro deliberado: **na dúvida entre ação e consulta, escolher a consulta**, porque
+ler não muda nada e emitir nota fiscal por engano tem custo real pro cliente.
+
+### Nenhum teste passava pelo caminho que roda em produção
+
+`settings_test` não tem `GROQ_API_KEY`, então os 188 testes até aqui exercitavam **só** o
+fallback por palavra-chave. O caminho LLM — o que de fato roda com o cliente — nunca tinha
+sido executado, nem antes nem depois de eu adicionar duas intenções a ele.
+
+`tests/test_orquestracao_groq.py` (10 testes) dubla `pydantic_ai.Agent`, que é a única
+fronteira externa, e cobre sem gastar chamada real: o LLM decidindo contra o que a
+palavra-chave escolheria (prova que é ele no comando), as duas intenções novas chegando aos
+handlers certos, Groq fora do ar caindo no fallback sem derrubar a mensagem, e o guard do
+CNAE valendo **também** no caminho LLM — com o extrator devolvendo tudo que o modelo pode
+propor, o CNAE do payload continua vindo do cadastro.
+
+Um dos testes é guarda de regressão: cruza o `Literal` do schema com o texto do prompt.
+Intenção nova sem descrição quebra o CI. Conferi que ele **de fato pega** o caso (testei
+com uma intenção inventada), em vez de confiar que pegaria.
+
+**198 testes no total.**
+
+⚠ **Segue sem verificação de campo**: a qualidade real da classificação do
+`llama-3.1-8b-instant` com este prompt. O dublê garante que o caminho funciona e que o
+contrato é respeitado — não que o modelo acerte. Isso só sai medindo com mensagens reais no
+piloto (Onda 5).
+
+---
+
 ## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
 
 **Por quê agora:** é o item que prova a Hipótese 1 do MVP e o que mais lacunas técnicas
