@@ -1,152 +1,185 @@
-<!doctype html>
-<html lang="pt-br">
-<head>
-<meta charset="utf-8">
-<title>Grimório — {% if escritorio %}{{ escritorio.nome }}{% else %}Magic BI{% endif %}</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-  :root { --primaria: {{ cor_primaria }}; --acento: {{ cor_acento }}; --bg: #f4f5fa; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: #1a1a2e; }
-  header { background: var(--primaria); color: #fff; padding: 1.25rem 2rem; display: flex; justify-content: space-between; align-items: center; }
-  header .marca-wrap { display: flex; align-items: center; gap: 0.75rem; }
-  header .marca-wrap img { height: 32px; }
-  header h1 { margin: 0; font-size: 1.25rem; font-weight: 600; }
-  header .plataforma { opacity: 0.75; font-weight: 400; font-size: 0.85rem; }
-  header nav a { color: #fff; text-decoration: none; margin-left: 1.25rem; font-size: 0.85rem; opacity: 0.85; }
-  header nav a:hover { opacity: 1; text-decoration: underline; }
-  main { max-width: 1100px; margin: 0 auto; padding: 1.5rem 2rem 3rem; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-  .card { background: #fff; border-radius: 10px; padding: 1rem 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,.08); border-top: 3px solid var(--acento); }
-  .card .valor { font-size: 1.8rem; font-weight: 700; color: var(--primaria); }
-  .card .rotulo { font-size: 0.8rem; color: #666; margin-top: 0.15rem; }
-  section { background: #fff; border-radius: 10px; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-  section h2 { margin-top: 0; font-size: 1rem; color: var(--primaria); border-bottom: 1px solid #eee; padding-bottom: 0.5rem; }
-  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-  th { text-align: left; color: #888; font-weight: 600; padding: 0.4rem 0.5rem; font-size: 0.75rem; text-transform: uppercase; }
-  td { padding: 0.5rem; border-top: 1px solid #f0f0f0; }
-  .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
-  .badge.ok { background: #e3f6e8; color: #1e7a34; }
-  .badge.alerta { background: #fdeee0; color: #b4600b; }
-  .badge.neutro { background: #ececf5; color: var(--acento); }
-  .vazio { color: #999; font-size: 0.85rem; padding: 0.5rem; }
-  a.link { color: var(--acento); text-decoration: none; }
-  a.link:hover { text-decoration: underline; }
-  .aviso-teste { background: #fdeee0; color: #8a4b00; padding: 0.5rem 0.9rem; border-radius: 8px; font-size: 0.8rem; margin-bottom: 1rem; }
-</style>
-</head>
-<body>
-<header>
-  <div class="marca-wrap">
-    {% if escritorio.logo %}<img src="{{ escritorio.logo.url }}" alt="{{ escritorio.nome }}">{% endif %}
-    <h1>Grimório — {% if escritorio %}{{ escritorio.nome }}{% else %}Magic BI{% endif %}
-      <span class="plataforma">{% if escritorio %}(plataforma Magic BI){% endif %}</span></h1>
-  </div>
-  <nav>
-    <a href="/admin/">Django admin</a>
-    <a href="/admin/agente_nf/intencao/">Fila de aprovação</a>
-    <a href="/admin/audit/auditoria/">Auditoria completa</a>
-    <a href="/admin/logout/">Sair</a>
-  </nav>
-</header>
-<main>
+{# Home do admin = dashboard do Grimório. Ver apps/painel/views.py pro porquê. #}
+{# Nome próprio (não "admin/index.html") de propósito: um override de mesmo nome #}
+{# não consegue estender o original — o cached loader devolve este mesmo arquivo #}
+{# e o Django estoura "extends cannot appear more than once". Ligado ao admin #}
+{# por `admin.site.index_template` em config/urls.py. #}
+{% extends "admin/index.html" %}
 
-<div class="cards">
-  <div class="card"><div class="valor">{{ notas_hoje }}</div><div class="rotulo">notas emitidas hoje</div></div>
-  <div class="card"><div class="valor">{{ notas_mes }}</div><div class="rotulo">notas emitidas no mês</div></div>
-  <div class="card"><div class="valor">{{ notas_pendentes }}</div><div class="rotulo">aguardando aprovação</div></div>
-  <div class="card"><div class="valor">{{ sessoes_ativas }}</div><div class="rotulo">sessões WhatsApp ativas</div></div>
-  <div class="card"><div class="valor">{{ clientes_ativos }}</div><div class="rotulo">clientes ativos</div></div>
+{% load i18n unfold %}
+
+{% block content %}
+<div class="flex flex-col gap-8 mb-8">
+
+    {# ------------------------------------------------------------------ #}
+    {# Números do dia                                                     #}
+    {# ------------------------------------------------------------------ #}
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        {% component "unfold/components/card.html" with href=fila_aprovacao_url icon="receipt_long" %}
+            <span class="block font-semibold text-3xl text-font-important-light dark:text-font-important-dark">{{ notas_hoje }}</span>
+            <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">notas emitidas hoje</span>
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with href=fila_aprovacao_url icon="calendar_month" %}
+            <span class="block font-semibold text-3xl text-font-important-light dark:text-font-important-dark">{{ notas_mes }}</span>
+            <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">notas emitidas no mês</span>
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with href=fila_aprovacao_url icon="pending_actions" %}
+            <span class="block font-semibold text-3xl text-font-important-light dark:text-font-important-dark">{{ notas_pendentes }}</span>
+            <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">aguardando aprovação</span>
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with icon="chat" %}
+            <span class="block font-semibold text-3xl text-font-important-light dark:text-font-important-dark">{{ sessoes_ativas }}</span>
+            <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">sessões WhatsApp ativas{% if sessoes_pendentes %} <span class="text-orange-600 dark:text-orange-400">(+{{ sessoes_pendentes }} pendentes)</span>{% endif %}</span>
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with icon="apartment" %}
+            <span class="block font-semibold text-3xl text-font-important-light dark:text-font-important-dark">{{ clientes_ativos }}</span>
+            <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">clientes ativos</span>
+        {% endcomponent %}
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Canais WhatsApp                                                    #}
+    {# ------------------------------------------------------------------ #}
+    {% component "unfold/components/card.html" with title="Canais WhatsApp" %}
+        <div class="flex flex-col gap-3">
+            <div class="flex flex-row flex-wrap gap-2 items-center">
+                <span class="font-semibold text-sm text-font-important-light dark:text-font-important-dark">Meta Cloud API (produção)</span>
+                {% if canal_meta_configurado %}
+                    {% component "unfold/helpers/label.html" with variant="success" text="configurado" %}{% endcomponent %}
+                {% else %}
+                    {% component "unfold/helpers/label.html" with variant="warning" text="não configurado" %}{% endcomponent %}
+                {% endif %}
+            </div>
+
+            <div class="flex flex-row flex-wrap gap-2 items-center">
+                <span class="font-semibold text-sm text-font-important-light dark:text-font-important-dark">Evolution API (teste local)</span>
+                {% if canal_evolution %}
+                    {% component "unfold/helpers/label.html" with variant="success" text=canal_evolution.instancia %}{% endcomponent %}
+                    <a href="{{ evolution_url }}" class="text-primary-600 text-sm dark:text-primary-500">testar conexão →</a>
+                {% else %}
+                    {% component "unfold/helpers/label.html" with text="sem configuração ativa" %}{% endcomponent %}
+                    <a href="{{ evolution_add_url }}" class="text-primary-600 text-sm dark:text-primary-500">configurar agora →</a>
+                {% endif %}
+            </div>
+
+            <p class="bg-orange-100 rounded-default px-3 py-2 text-orange-700 text-sm dark:bg-orange-500/20 dark:text-orange-400">
+                ⚠ Evolution API é só para teste local — a produção exige a Cloud API oficial da Meta.
+            </p>
+        </div>
+    {% endcomponent %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Certificados fiscais                                               #}
+    {# ------------------------------------------------------------------ #}
+    {% component "unfold/components/card.html" with title="Certificados fiscais vinculados" %}
+        {% if certificados %}
+            <table class="border-spacing-none border-separate w-full text-sm">
+                <thead>
+                    <tr class="text-font-subtle-light dark:text-font-subtle-dark">
+                        <th class="font-semibold pb-2 text-left">Cliente</th>
+                        <th class="font-semibold pb-2 text-left">Tipo</th>
+                        <th class="font-semibold pb-2 text-left">CNPJ do certificado</th>
+                        <th class="font-semibold pb-2 text-left">Validade</th>
+                        <th class="font-semibold pb-2 text-left"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in certificados %}
+                        <tr>
+                            <td class="border-t border-base-200 py-2 dark:border-base-800">{{ c.cliente }}</td>
+                            <td class="border-t border-base-200 py-2 dark:border-base-800">{{ c.get_tipo_display }}</td>
+                            <td class="border-t border-base-200 py-2 dark:border-base-800">{{ c.certificado_cnpj|default:"—" }}</td>
+                            <td class="border-t border-base-200 py-2 dark:border-base-800">{{ c.certificado_validade|default:"—" }}</td>
+                            <td class="border-t border-base-200 py-2 dark:border-base-800">
+                                {% if c.certificado_cnpj_diverge %}
+                                    {% component "unfold/helpers/label.html" with variant="danger" text="CNPJ diverge" %}{% endcomponent %}
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="text-sm text-font-subtle-light dark:text-font-subtle-dark">
+                Nenhum certificado vinculado ainda — cadastrar em
+                <a href="{{ credenciais_url }}" class="text-primary-600 dark:text-primary-500">Credenciais</a>.
+            </p>
+        {% endif %}
+    {% endcomponent %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Notas recentes                                                     #}
+    {# ------------------------------------------------------------------ #}
+    {% component "unfold/components/card.html" with title="Notas emitidas recentemente" %}
+        {% if notas_recentes %}
+            <table class="border-spacing-none border-separate w-full text-sm">
+                <thead>
+                    <tr class="text-font-subtle-light dark:text-font-subtle-dark">
+                        <th class="font-semibold pb-2 text-left">Protocolo</th>
+                        <th class="font-semibold pb-2 text-left">Cliente</th>
+                        <th class="font-semibold pb-2 text-left">Valor</th>
+                        <th class="font-semibold pb-2 text-left">Emitida em</th>
+                        <th class="font-semibold pb-2 text-left">DANFSE</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for n in notas_recentes %}
+                        <tr>
+                            <td class="border-t border-base-200 py-2 dark:border-base-800">{{ n.protocolo|default:"—" }}</td>
+                            <td class="border-t border-base-200 py-2 dark:border-base-800">{{ n.cliente }}</td>
+                            <td class="border-t border-base-200 py-2 dark:border-base-800">R$ {{ n.payload.valor|floatformat:2 }}</td>
+                            <td class="border-t border-base-200 py-2 dark:border-base-800">{{ n.atualizado_em|date:"d/m/Y H:i" }}</td>
+                            <td class="border-t border-base-200 py-2 dark:border-base-800">
+                                {% if n.danfse_url %}
+                                    <a href="{{ n.danfse_url }}" target="_blank" class="text-primary-600 dark:text-primary-500">abrir</a>
+                                {% else %}—{% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="text-sm text-font-subtle-light dark:text-font-subtle-dark">Nenhuma nota emitida ainda.</p>
+        {% endif %}
+    {% endcomponent %}
+
+    {# ------------------------------------------------------------------ #}
+    {# Trilha de auditoria (últimos eventos)                              #}
+    {# ------------------------------------------------------------------ #}
+    {% component "unfold/components/card.html" with title="Atividade capturada (últimos eventos)" %}
+        {% if atividade_recente %}
+            <table class="border-spacing-none border-separate w-full text-sm">
+                <thead>
+                    <tr class="text-font-subtle-light dark:text-font-subtle-dark">
+                        <th class="font-semibold pb-2 text-left">Quando</th>
+                        <th class="font-semibold pb-2 text-left">Evento</th>
+                        <th class="font-semibold pb-2 text-left">Cliente</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in atividade_recente %}
+                        <tr>
+                            <td class="border-t border-base-200 py-2 dark:border-base-800">{{ a.criado_em|date:"d/m/Y H:i:s" }}</td>
+                            <td class="border-t border-base-200 py-2 dark:border-base-800">{{ a.evento }}</td>
+                            <td class="border-t border-base-200 py-2 dark:border-base-800">{{ a.cliente|default:"—" }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="text-sm text-font-subtle-light dark:text-font-subtle-dark">Nenhuma atividade registrada ainda.</p>
+        {% endif %}
+
+        <p class="mt-4">
+            <a href="{{ auditoria_url }}" class="text-primary-600 text-sm dark:text-primary-500">Ver trilha de auditoria completa →</a>
+        </p>
+    {% endcomponent %}
+
 </div>
 
-<section>
-  <h2>Canais WhatsApp</h2>
-  <table>
-    <tr>
-      <td><strong>Meta Cloud API (produção)</strong></td>
-      <td>
-        {% if canal_meta_configurado %}
-          <span class="badge ok">configurado</span>
-        {% else %}
-          <span class="badge alerta">não configurado</span>
-        {% endif %}
-      </td>
-    </tr>
-    <tr>
-      <td><strong>Evolution API (teste local)</strong></td>
-      <td>
-        {% if canal_evolution %}
-          <span class="badge ok">ativo — instância "{{ canal_evolution.instancia }}"</span>
-          — <a class="link" href="/admin/channel_evolution/configuracaoevolution/">testar conexão no admin</a>
-        {% else %}
-          <span class="badge neutro">sem configuração ativa</span>
-          — <a class="link" href="/admin/channel_evolution/configuracaoevolution/add/">configurar agora</a>
-        {% endif %}
-      </td>
-    </tr>
-  </table>
-  <p class="aviso-teste">⚠ Evolution API é só para teste local — a produção exige a Cloud API oficial da Meta.</p>
-</section>
-
-<section>
-  <h2>Certificados fiscais vinculados</h2>
-  {% if certificados %}
-  <table>
-    <tr><th>Cliente</th><th>Tipo</th><th>CNPJ do certificado</th><th>Validade</th><th></th></tr>
-    {% for c in certificados %}
-    <tr>
-      <td>{{ c.cliente }}</td>
-      <td>{{ c.get_tipo_display }}</td>
-      <td>{{ c.certificado_cnpj|default:"—" }}</td>
-      <td>{{ c.certificado_validade|default:"—" }}</td>
-      <td>{% if c.certificado_cnpj_diverge %}<span class="badge alerta">CNPJ diverge</span>{% endif %}</td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% else %}
-  <p class="vazio">Nenhum certificado vinculado ainda — cadastrar em Django admin → Credenciais.</p>
-  {% endif %}
-</section>
-
-<section>
-  <h2>Notas emitidas recentemente</h2>
-  {% if notas_recentes %}
-  <table>
-    <tr><th>Protocolo</th><th>Cliente</th><th>Valor</th><th>Emitida em</th><th>DANFSE</th></tr>
-    {% for n in notas_recentes %}
-    <tr>
-      <td>{{ n.protocolo|default:"—" }}</td>
-      <td>{{ n.cliente }}</td>
-      <td>R$ {{ n.payload.valor|floatformat:2 }}</td>
-      <td>{{ n.atualizado_em|date:"d/m/Y H:i" }}</td>
-      <td>{% if n.danfse_url %}<a class="link" href="{{ n.danfse_url }}" target="_blank">abrir</a>{% else %}—{% endif %}</td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% else %}
-  <p class="vazio">Nenhuma nota emitida ainda.</p>
-  {% endif %}
-</section>
-
-<section>
-  <h2>Atividade capturada (últimos eventos)</h2>
-  {% if atividade_recente %}
-  <table>
-    <tr><th>Quando</th><th>Evento</th><th>Cliente</th></tr>
-    {% for a in atividade_recente %}
-    <tr>
-      <td>{{ a.criado_em|date:"d/m/Y H:i:s" }}</td>
-      <td>{{ a.evento }}</td>
-      <td>{{ a.cliente|default:"—" }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% else %}
-  <p class="vazio">Nenhuma atividade registrada ainda.</p>
-  {% endif %}
-  <p><a class="link" href="/admin/audit/auditoria/">Ver trilha de auditoria completa →</a></p>
-</section>
-
-</main>
-</body>
-</html>
+{# Lista de apps do admin (CRUD) logo abaixo do dashboard. #}
+{{ block.super }}
+{% endblock %}

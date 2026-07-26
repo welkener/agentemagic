@@ -32,7 +32,7 @@ Confirmado em `backend/apps/` (24/jul/2026, ver commits até `0f5b08b`):
 | **Login do painel (Onda 4, parcial)** | ✅ Concluído 25/jul/2026 — `django-sesame` + comando `enviar_link_contador` |
 | **Custódia de certificado (PSC/.pfx/procuração)** | ✅ Concluído 25/jul/2026 — `apps/credentials/` (models, `certificados.py`, `services.py`, admin com upload) — cadastro pronto; falta só a assinatura/transmissão de fato (pendência de mTLS, §2) |
 | **Canal Evolution API (teste local)** | ✅ Concluído 25/jul/2026 — `apps/channel_evolution/`, SÓ para teste, nunca produção; configurável pelo painel (`ConfiguracaoEvolution`) |
-| **Dashboard do Grimório (`/painel/`) + branding por escritório** | ✅ Concluído 25/jul/2026 — `apps/painel/`, `Escritorio` (nome/logo/cores), validado com smoke test real (não só pytest) |
+| **Dashboard do Grimório (home do `/admin/`) + branding por escritório** | ✅ Concluído 25/jul/2026 — `apps/painel/`, `Escritorio` (nome/logo/cores), validado com smoke test real (não só pytest). **26/jul/2026: absorvido pelo índice do admin** (era página solta em `/painel/`, que agora só redireciona) |
 | **Não existe ainda** | Painel React (o Grimório mínimo em Django cobre a demonstração); deploy fora do localhost; qualquer chamada real a NFS-e/Conta Azul/Bling em ambiente vivo; assinatura/transmissão real da NFS-e (bloqueada na pendência de mTLS) |
 
 **Leitura:** a fundação é sólida — o gargalo não é desenhar mais nada, é **trocar 3 mocks
@@ -273,6 +273,38 @@ migrados pra `unfold.admin.*`; paleta indigo (Tailwind, família do periwinkle j
 no painel); reskin manual anterior removido (superado). Validado com screenshots reais
 antes de subir — login, índice e changelist agora têm cara de aplicação SaaS moderna,
 não admin genérico. `/painel/` seguiu intacto, sem conflito.
+
+**Feedback 26/jul/2026 — "não entendi o painel sendo que já vamos ter o admin do
+django, pq não deixa o painel como se fosse dashboard".** Procede: deixar o `/painel/`
+"intacto" (acima) foi meia decisão. Ele *já* era só dashboard (leitura pura, zero CRUD
+— nunca duplicou o admin), mas era uma **página HTML solta**, com CSS próprio, fora do
+unfold: duas superfícies web, dois visuais, dois lugares pra procurar a mesma coisa.
+Como não havia responsabilidade a separar, o dashboard virou a **home do admin**:
+
+- `DASHBOARD_CALLBACK` (`UNFOLD` em `config/settings.py`) → `apps/painel/views.py::
+  dashboard_callback` injeta as métricas no contexto do índice; o template
+  `apps/painel/templates/painel/dashboard.html` estende o `admin/index.html` do unfold
+  e desenha os cards **acima** da lista de apps (o CRUD continua logo abaixo).
+  Ligado por `admin.site.index_template` — nome próprio de propósito: um override
+  chamado `admin/index.html` não consegue estender o original (o cached loader devolve
+  ele mesmo e o Django estoura `extends cannot appear more than once`).
+- **Branding do tenant subiu de escopo**: `SITE_HEADER`/`SITE_SUBHEADER`/`SITE_LOGO` do
+  unfold aceitam callables (`unfold/sites.py::_get_value`), então `apps/painel/
+  branding.py` resolve o `Escritorio` ativo por requisição — o nome/logo do escritório
+  agora valem no admin **inteiro**, não só numa página. Antes valiam só no `/painel/`.
+- `LOGIN_REDIRECT_URL` voltou pra `/admin/`; `/` e `/painel/` redirecionam pra lá
+  (a URL antiga já circulou em e-mails de Magic Link, docs e no servidor de teste).
+- `apps/painel/urls.py` e o HTML/CSS avulso foram removidos. `apps/painel` fica sendo
+  o app de *apresentação* (métricas + branding + model `Escritorio`), sem rota própria.
+- 121 testes passando; `tests/test_painel.py` reapontado pro `/admin/` e com dois casos
+  novos (redirect do `/painel/` antigo; marca do tenant valendo também numa changelist).
+  Validado com screenshot real do `/admin/` autenticado antes de subir.
+
+⚠ **Consequência de produto a acompanhar**: o contador que entra por Magic Link agora
+cai no admin completo, não numa tela curada. Isso é coerente com o que já estava
+escrito (`magicbi-mvp-cronograma.md`: "o admin é interino, não o Grimório final" — a
+fila de aprovação sempre foi o changelist de `Intencao`), mas quando entrar contador
+de fora da Rotina vai precisar de permissões por grupo pra não expor model demais.
 
 ---
 

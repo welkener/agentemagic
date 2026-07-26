@@ -194,7 +194,7 @@ AUTHENTICATION_BACKENDS = [
     "sesame.backends.ModelBackend",
 ]
 SESAME_MAX_AGE = MAGICLINK_TTL_MINUTOS * 60  # segundos — mesmo TTL do Magic Link do wa_id
-LOGIN_REDIRECT_URL = "/painel/"  # Grimório (dashboard) — não o admin cru
+LOGIN_REDIRECT_URL = "/admin/"  # o índice do admin É o dashboard do Grimório
 
 # ---------------------------------------------------------------------------
 # django-unfold — tema moderno do admin (substitui o reskin manual por CSS
@@ -207,10 +207,18 @@ from django.urls import reverse_lazy as _reverse_lazy  # noqa: E402
 
 UNFOLD = {
     "SITE_TITLE": "Magic BI",
-    "SITE_HEADER": "Magic BI — Grimório",
+    # Callables (o unfold resolve por requisição) — o nome/logo vêm do
+    # Escritorio ativo, então a marca do tenant vale no admin inteiro, não só
+    # numa página. Ver apps/painel/branding.py.
+    "SITE_HEADER": "apps.painel.branding.site_header",
+    "SITE_SUBHEADER": "apps.painel.branding.site_subheader",
+    "SITE_LOGO": "apps.painel.branding.site_logo",
     "SITE_SYMBOL": "auto_awesome",
     "SHOW_HISTORY": True,
     "SHOW_VIEW_ON_SITE": False,
+    # O índice do admin é o dashboard do Grimório: este callback injeta as
+    # métricas no contexto de templates/admin/index.html (apps/painel/views.py).
+    "DASHBOARD_CALLBACK": "apps.painel.views.dashboard_callback",
     # Escala indigo do Tailwind (mesma família de cor do periwinkle #5B67C9 já
     # usado como cor_acento padrão do Escritorio, apps/painel/models.py).
     "COLORS": {
@@ -236,14 +244,19 @@ UNFOLD = {
                 "separator": True,
                 "items": [
                     {
-                        "title": "Dashboard (painel)",
+                        "title": "Dashboard",
                         "icon": "dashboard",
-                        "link": "/painel/",
+                        "link": _reverse_lazy("admin:index"),
                     },
                     {
-                        "title": "Início do admin",
-                        "icon": "home",
-                        "link": _reverse_lazy("admin:index"),
+                        "title": "Fila de aprovação",
+                        "icon": "pending_actions",
+                        "link": _reverse_lazy("admin:agente_nf_intencao_changelist"),
+                    },
+                    {
+                        "title": "Trilha de auditoria",
+                        "icon": "history",
+                        "link": _reverse_lazy("admin:audit_auditoria_changelist"),
                     },
                 ],
             },

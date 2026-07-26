@@ -1,7 +1,9 @@
-"""Dashboard do Grimório (/painel/) — visão de demonstração/homologação."""
+"""Dashboard do Grimório — agora é o índice do admin (/admin/), não uma página solta.
+
+Ver apps/painel/views.py pro contexto da decisão (26/jul/2026).
+"""
 import pytest
 from django.contrib.auth import get_user_model
-from django.urls import reverse
 
 from apps.agents.agente_nf.models import Intencao
 from apps.agents.agente_nf.services import confirmar_emissao
@@ -9,13 +11,16 @@ from apps.channel_evolution.models import ConfiguracaoEvolution
 from apps.credentials.models import Credencial
 from apps.painel.models import Escritorio
 
-URL = "/painel/"
+URL = "/admin/"
 
 
 @pytest.fixture
 def contador(db):
     return get_user_model().objects.create_user(
-        username="contador.painel", email="painel@rotina.example.com", is_staff=True
+        username="contador.painel",
+        email="painel@rotina.example.com",
+        is_staff=True,
+        is_superuser=True,  # o índice só lista os apps que o usuário pode ver
     )
 
 
@@ -39,10 +44,17 @@ def nota_emitida(cliente):
     return intencao
 
 
-def test_raiz_redireciona_pro_painel(client):
+def test_raiz_redireciona_pro_admin(client):
     resposta = client.get("/")
     assert resposta.status_code == 302
-    assert resposta.url == "/painel/"
+    assert resposta.url == "/admin/"
+
+
+def test_painel_antigo_redireciona_pro_admin(client):
+    """A URL /painel/ já circulou em e-mails de Magic Link e no servidor de teste."""
+    resposta = client.get("/painel/")
+    assert resposta.status_code == 302
+    assert resposta.url == "/admin/"
 
 
 @pytest.mark.django_db
@@ -65,7 +77,18 @@ def test_contador_ve_o_dashboard(client, contador):
     client.force_login(contador)
     resposta = client.get(URL)
     assert resposta.status_code == 200
-    assert "Grimório" in resposta.content.decode()
+    corpo = resposta.content.decode()
+    assert "Grimório" in corpo
+    assert "notas emitidas hoje" in corpo
+
+
+@pytest.mark.django_db
+def test_dashboard_convive_com_a_lista_de_apps_do_admin(client, contador):
+    """O dashboard não substitui o CRUD — ele fica acima da lista de apps."""
+    client.force_login(contador)
+    corpo = client.get(URL).content.decode()
+    assert "notas emitidas no mês" in corpo
+    assert "/admin/agente_nf/intencao/" in corpo
 
 
 @pytest.mark.django_db
@@ -98,22 +121,22 @@ def test_com_configuracao_evolution_ativa_mostra_instancia(client, contador):
 @pytest.mark.django_db
 def test_sem_escritorio_cadastrado_usa_marca_generica_magic_bi(client, contador):
     client.force_login(contador)
-    resposta = client.get(URL)
-    corpo = resposta.content.decode()
+    corpo = client.get(URL).content.decode()
     assert "Grimório — Magic BI" in corpo
     assert "Rotina Contábil" not in corpo  # nunca hardcoded
 
 
 @pytest.mark.django_db
-def test_escritorio_ativo_troca_a_marca_do_painel(client, contador):
+def test_escritorio_ativo_troca_a_marca_do_admin_inteiro(client, contador):
+    """Antes a marca do tenant só valia no /painel/; agora vale no cabeçalho do admin."""
     Escritorio.objects.create(
         nome="Contabilidade Exemplo", cor_primaria="#123456", cor_acento="#abcdef", ativo=True
     )
     client.force_login(contador)
-    resposta = client.get(URL)
-    corpo = resposta.content.decode()
-    assert "Contabilidade Exemplo" in corpo
-    assert "#123456" in corpo
+    # Índice (dashboard) e uma changelist qualquer — a marca tem que valer nas duas.
+    for url in (URL, "/admin/clients/cliente/"):
+        corpo = client.get(url).content.decode()
+        assert "Contabilidade Exemplo" in corpo, url
 
 
 @pytest.mark.django_db
@@ -127,5 +150,4 @@ def test_certificado_divergente_mostra_alerta(client, contador, cliente):
         certificado_cnpj="11111111000199",
     )
     client.force_login(contador)
-    resposta = client.get(URL)
-    assert "CNPJ diverge" in resposta.content.decode()
+    assert "CNPJ diverge" in client.get(URL).content.decode()
