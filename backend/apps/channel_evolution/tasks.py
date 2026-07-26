@@ -10,7 +10,7 @@ from celery import shared_task
 
 from apps.channel_whatsapp.pipeline import processar
 from apps.channel_whatsapp.transcricao import transcrever
-from apps.painel.models import Escritorio
+from apps.tenants.models import Escritorio
 
 from .services import baixar_midia, enviar_mensagem
 

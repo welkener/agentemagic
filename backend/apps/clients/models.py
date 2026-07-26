@@ -7,11 +7,11 @@ class Cliente(models.Model):
 
     `escritorio` é a raiz de multi-tenancy: tudo que pendura no cliente
     (perfil, credenciais, intenções, auditoria, sessão) herda o tenant por
-    aqui. Ver `apps/painel/models.py`.
+    aqui. Ver `apps/tenants/models.py`.
     """
 
     escritorio = models.ForeignKey(
-        "painel.Escritorio",
+        "tenants.Escritorio",
         on_delete=models.PROTECT,  # nunca apagar escritório levando junto dado fiscal
         related_name="clientes",
         help_text="Escritório contábil dono desta carteira.",

@@ -4,7 +4,7 @@ Provisiona um escritório parceiro novo (tenant) e o primeiro contador dele.
 É o "vender pro segundo escritório" em um comando: cria o `Escritorio`, o
 `auth.User` do contador e o `MembroEscritorio` que amarra os dois. Sem o
 vínculo o contador loga e não vê nada (padrão seguro — ver
-`apps/painel/escopo.py`), então os três passos andam juntos de propósito.
+`apps/tenants/escopo.py`), então os três passos andam juntos de propósito.
 
 O contador nasce `is_staff=True` e **sem senha** — o acesso é por Magic Link
 (`enviar_link_contador`), igual ao resto do projeto. Nunca `is_superuser`:
@@ -20,7 +20,8 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils.text import slugify
 
-from apps.painel.models import Escritorio, MembroEscritorio
+from apps.tenants.models import Escritorio, MembroEscritorio, grupo_do_escritorio
+from apps.tenants.permissoes import aplicar_permissoes_base
 
 
 class Command(BaseCommand):
@@ -36,6 +37,12 @@ class Command(BaseCommand):
             default="",
             dest="phone_number_id",
             help="ID do número no WhatsApp Cloud API deste escritório (pode entrar depois pelo admin).",
+        )
+        parser.add_argument(
+            "--sem-permissoes",
+            action="store_true",
+            dest="sem_permissoes",
+            help="Cria o grupo vazio, pra montar as permissões do zero no admin.",
         )
 
     @transaction.atomic
@@ -68,10 +75,29 @@ class Command(BaseCommand):
         )
         contador.set_unusable_password()  # acesso é por Magic Link, não senha
         contador.save(update_fields=["password"])
-        MembroEscritorio.objects.create(usuario=contador, escritorio=escritorio)
+
+        # O grupo carrega as PERMISSÕES (o que se faz); o MembroEscritorio
+        # carrega o ESCOPO (sobre quais linhas). Os dois são necessários.
+        grupo = grupo_do_escritorio(escritorio)
+        if not opcoes["sem_permissoes"]:
+            aplicar_permissoes_base(grupo)
+        contador.groups.add(grupo)
+
+        # O primeiro contador é responsável — senão o escritório nasce sem
+        # ninguém que possa cadastrar os colegas.
+        MembroEscritorio.objects.create(
+            usuario=contador, escritorio=escritorio, responsavel=True
+        )
 
         self.stdout.write(self.style.SUCCESS(f"Escritório '{nome}' criado (slug: {slug})."))
-        self.stdout.write(f"Contador '{username}' vinculado — vê só a carteira deste escritório.")
+        self.stdout.write(
+            f"Contador '{username}' vinculado como RESPONSÁVEL — vê só a carteira "
+            f"deste escritório e pode cadastrar os colegas."
+        )
+        self.stdout.write(
+            f"Permissões no grupo '{grupo.name}' "
+            f"({grupo.permissions.count()} permissões) — ajuste lá, não no código."
+        )
         if not phone_number_id:
             self.stdout.write(
                 self.style.WARNING(

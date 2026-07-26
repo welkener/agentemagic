@@ -5,13 +5,13 @@ import pytest
 from django.utils import timezone
 
 from apps.clients.models import Cliente, Perfil
-from apps.painel.models import Escritorio
+from apps.tenants.models import Escritorio
 from apps.security.models import SessaoWhatsapp
 
 
 @pytest.fixture
 def escritorio(db):
-    """Escritório contábil dono da carteira — raiz de tenant (ver apps/painel/models.py)."""
+    """Escritório contábil dono da carteira — raiz de tenant (ver apps/tenants/models.py)."""
     return Escritorio.objects.create(nome="Rotina Contábil", slug="rotina", ativo=True)
 
 

@@ -1,7 +1,7 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin, StackedInline
 
-from apps.painel.escopo import EscopoEscritorioMixin
+from apps.tenants.escopo import EscopoEscritorioMixin
 
 from .models import Cliente, Perfil
 

@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "rest_framework",
     # Apps Magic BI (mapa de módulos — seção 2 da arquitetura)
     "apps.core",
+    "apps.tenants",  # multi-tenancy: Escritorio/MembroEscritorio + escopo de acesso
     "apps.clients",
     "apps.credentials",
     "apps.security",
@@ -110,7 +111,7 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"  # `collectstatic` — servido via `runserver --insecure` no piloto
 STATICFILES_DIRS = [BASE_DIR / "static"]  # CSS de marca do admin (static/admin/css/magicbi_admin.css)
 
-# Upload de logo do escritório (apps/painel). Em produção, trocar por storage
+# Upload de logo do escritório (apps/tenants). Em produção, trocar por storage
 # em nuvem (S3/equivalente) — local só serve pro piloto/dev.
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
@@ -201,7 +202,7 @@ LOGIN_REDIRECT_URL = "/admin/"  # o índice do admin É o dashboard do Grimório
 # custom properties da Onda "restilizar o admin"; ver
 # docs/magicbi-ondas-desenvolvimento.md). Paleta = escala indigo do Tailwind
 # (mais próxima da cor de acento periwinkle já usada no /painel/, ver
-# apps/painel/models.py Escritorio.cor_acento).
+# apps/tenants/models.py Escritorio.cor_acento).
 # ---------------------------------------------------------------------------
 from django.urls import reverse_lazy as _reverse_lazy  # noqa: E402
 
@@ -220,7 +221,7 @@ UNFOLD = {
     # métricas no contexto de templates/admin/index.html (apps/painel/views.py).
     "DASHBOARD_CALLBACK": "apps.painel.views.dashboard_callback",
     # Escala indigo do Tailwind (mesma família de cor do periwinkle #5B67C9 já
-    # usado como cor_acento padrão do Escritorio, apps/painel/models.py).
+    # usado como cor_acento padrão do Escritorio, apps/tenants/models.py).
     "COLORS": {
         "primary": {
             "50": "oklch(95.8% .019 282.83)",

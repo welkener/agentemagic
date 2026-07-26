@@ -9,7 +9,7 @@ pela mesma máquina de estados/auditoria do fluxo por WhatsApp
 from django.contrib import admin, messages
 from unfold.admin import ModelAdmin
 
-from apps.painel.escopo import EscopoEscritorioMixin
+from apps.tenants.escopo import EscopoEscritorioMixin
 
 from .models import Intencao, TransicaoInvalida
 from .services import cancelar_emissao, confirmar_emissao

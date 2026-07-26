@@ -9,7 +9,7 @@ from apps.agents.agente_nf.models import Intencao
 from apps.agents.agente_nf.services import confirmar_emissao
 from apps.channel_evolution.models import ConfiguracaoEvolution
 from apps.credentials.models import Credencial
-from apps.painel.models import Escritorio
+from apps.tenants.models import Escritorio
 
 URL = "/admin/"
 

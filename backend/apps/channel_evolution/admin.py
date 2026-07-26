@@ -5,7 +5,7 @@ from django import forms
 from django.contrib import admin, messages
 from unfold.admin import ModelAdmin
 
-from apps.painel.escopo import EscopoEscritorioMixin
+from apps.tenants.escopo import EscopoEscritorioMixin
 
 from .models import ConfiguracaoEvolution
 from .services import testar_conexao

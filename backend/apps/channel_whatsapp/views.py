@@ -18,7 +18,7 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
-from apps.painel.models import escritorio_por_phone_number_id
+from apps.tenants.models import escritorio_por_phone_number_id
 
 from .models import MensagemProcessada
 from .tasks import processar_mensagem

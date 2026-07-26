@@ -21,7 +21,7 @@ from apps.agents.agente_nf.models import Intencao
 from apps.audit.models import Auditoria
 from apps.clients.models import Cliente, Perfil
 from apps.credentials.models import Credencial
-from apps.painel.models import Escritorio, MembroEscritorio
+from apps.tenants.models import Escritorio, MembroEscritorio
 
 URL_WEBHOOK = "/webhook/whatsapp"
 TELEFONE = "5511900000001"
@@ -317,11 +317,11 @@ def test_contador_nao_ve_o_escritorio_do_vizinho(client, carteiras):
     a, b, _, _ = carteiras
     client.force_login(_contador(a, "contador.a"))
 
-    corpo = client.get("/admin/painel/escritorio/").content.decode()
+    corpo = client.get("/admin/tenants/escritorio/").content.decode()
     assert a.nome in corpo
     assert b.nome not in corpo
 
-    resposta = client.get(f"/admin/painel/escritorio/{b.pk}/change/")
+    resposta = client.get(f"/admin/tenants/escritorio/{b.pk}/change/")
     assert resposta.status_code != 200
     assert b.nome not in resposta.content.decode()
 

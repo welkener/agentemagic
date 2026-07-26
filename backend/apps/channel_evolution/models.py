@@ -15,7 +15,7 @@ from apps.credentials.crypto import CampoTextoCifrado, cifrar, decifrar
 
 class ConfiguracaoEvolution(models.Model):
     escritorio = models.ForeignKey(
-        "painel.Escritorio",
+        "tenants.Escritorio",
         on_delete=models.CASCADE,
         related_name="configuracoes_evolution",
         null=True,
@@ -79,7 +79,7 @@ def escritorio_por_instancia(instancia: str):
     segundo, mensagem sem instância casada é recusada em vez de ir pro tenant
     errado.
     """
-    from apps.painel.models import Escritorio
+    from apps.tenants.models import Escritorio
 
     if instancia:
         config = (

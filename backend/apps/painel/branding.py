@@ -13,8 +13,8 @@ None de propósito e a marca vira a genérica "Magic BI".
 que recebem o request (`unfold/sites.py::_get_value`), então isto é resolvido
 por requisição — trocar o escritório no admin reflete na hora.
 """
-from .escopo import escritorio_do_usuario
-from .models import escritorio_ativo
+from apps.tenants.escopo import escritorio_do_usuario
+from apps.tenants.models import escritorio_ativo
 
 
 def _escritorio(request):

@@ -383,6 +383,77 @@ mora em `apps/painel` (app de apresentação) — o lugar certo seria `apps/tena
 mover model entre apps com dado em produção pede `SeparateDatabaseAndState` e não valia o
 risco agora; e o contador continua vendo o admin completo do próprio escritório (sem
 grupos de permissão mais finos por papel dentro do escritório).
+→ **As duas resolvidas em 1.9, abaixo.**
+
+---
+
+## 1.9 Pendências da multi-tenancy — ✅ concluída 26/jul/2026
+
+Pedido do usuário: "podemos ajustar as pendências".
+
+### `apps/tenants` — o tenant sai da app de apresentação
+
+`Escritorio`/`MembroEscritorio` moraram em `apps/painel` desde que nasceram como
+"branding do dashboard". Com eles virando a raiz do domínio, a direção de dependência
+ficou invertida: `apps/clients` (domínio) importando de `apps/painel` (tela). Agora
+`apps/tenants` guarda model, escopo (`escopo.py`), permissões (`permissoes.py`), admin e
+provisionamento; `apps/painel` fica só com o que o nome diz — dashboard e branding.
+
+**As tabelas foram renomeadas de verdade** (`painel_escritorio` → `tenants_escritorio`),
+não deixadas com `db_table` legado: `tenants/0001` usa `SeparateDatabaseAndState` —
+estado recriado no `tenants`, removido do `painel` (`painel/0003`), e no banco só um
+`ALTER TABLE ... RENAME`. Nenhuma linha é copiada. As FKs não precisam de operação de
+banco: no Postgres a constraint referencia a tabela por OID e acompanha o rename sozinha,
+então `clients/0005` e `channel_evolution/0003` são só estado.
+
+**Pegadinha que quebrou em banco novo e está anotada na migração:** o grafo permitia o
+rename rodar *antes* de `clients/0004` (que faz backfill lendo `painel_escritorio` pelo
+nome antigo) e de `channel_evolution/0002` (que cria FK pra ela). O rename precisa
+declarar as duas como dependência pra ser a última coisa a tocar a tabela antiga.
+
+Validado no **banco de dev real, com dado**: migrou (1 escritório, 2 clientes, 0 órfãos),
+**rolou de volta** (`migrate tenants zero` — tabelas voltaram aos nomes antigos, dados
+intactos) e reaplicou. Migração arriscada tem que ser reversível, e essa é.
+
+### Papéis: Grupo do Django (o quê) + bit `responsavel` (quem convida)
+
+Decisão do usuário: **sem papéis fixos no código** (a equipe Magic BI monta as permissões
+caso a caso) **e** o responsável pode cadastrar os próprios colegas. As duas juntas têm
+uma tensão — sem papéis, quem é "o responsável"? Resolvida separando as duas coisas:
+
+- **`Group` do Django, um por escritório** (`escritorio:<slug>`) decide *o que* a pessoa
+  faz. `permissoes.py` só define a **linha de largada** (para o escritório novo não
+  nascer com grupo vazio nem com permissão demais) — dali em diante é no admin de Grupos,
+  não no código. Fora do baseline de propósito, com o porquê escrito no módulo: `auth.*`
+  (quem edita User edita `is_superuser` — escalada), `AplicativoIntegracao` (é da
+  plataforma) e `MembroEscritorio` (gate é o bit, não a permissão).
+- **`MembroEscritorio.responsavel`** decide *quem administra a equipe*. Não é papel de
+  permissão — é uma capacidade só.
+
+Permissão **não** é isolamento, e isso está escrito nos dois módulos: dar permissão demais
+amplia o que a pessoa faz dentro do escritório dela, nunca a faz alcançar o vizinho (isso
+é `MembroEscritorio` + `escopo.py`).
+
+**Convite de colega sem tocar em `auth.User`:** o responsável não tem (e não pode ter)
+acesso ao admin de usuários. O convite é um formulário em `MembroEscritorio` que cria o
+usuário já no formato certo — `is_staff`, sem senha utilizável (acesso por Magic Link) e
+no grupo do escritório. O `escritorio` não é campo do formulário: vem do vínculo de quem
+convida, então mandar outro no POST não adianta.
+
+**13 testes novos em `tests/test_papeis.py`** (150 no total), cada um tentando furar uma
+trava: convidar pro escritório do vizinho, puxar um superuser da Magic BI pra dentro,
+roubar membro de outro escritório, ver a equipe do vizinho, alcançar `/admin/auth/user/`,
+se auto-remover deixando o escritório órfão, e membro comum abrindo a tela de equipe.
+
+Uma trava saiu de um detalhe que só aparece rodando: o `slug` é **readonly** pro contador,
+porque ele nomeia o grupo de permissões — trocá-lo desligaria a equipe inteira das
+próprias permissões sem nenhum aviso. (E isso forçou `get_prepopulated_fields` a devolver
+vazio pra não-superuser: `prepopulated_fields` sobre campo readonly estoura `KeyError`.)
+
+Conferido também fora do pytest, com escritório provisionado de verdade no banco de dev:
+responsável entra na tela de equipe (200), leva 403 em `/admin/auth/user/`,
+`/admin/auth/group/` e no app da plataforma, e o colega convidado nasce `is_staff=True`,
+`is_superuser=False`, sem senha utilizável e no grupo certo.
 
 ---
 

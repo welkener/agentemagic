@@ -13,7 +13,7 @@ também os `ForeignKey`, o contador do escritório A conseguiria criar uma
 credencial apontando pro cliente do B pelo dropdown. Por isso o mixin mexe nos
 dois — ver `formfield_for_foreignkey`.
 """
-from apps.painel.models import Escritorio
+from apps.tenants.models import Escritorio
 
 
 def escopo_do_usuario(usuario) -> "tuple[bool, Escritorio | None]":

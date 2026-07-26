@@ -25,7 +25,7 @@ from apps.clients.models import Cliente
 from apps.credentials.models import Credencial
 from apps.security.models import SessaoWhatsapp
 
-from .escopo import escopo_do_usuario
+from apps.tenants.escopo import escopo_do_usuario
 
 
 def metricas(request=None) -> dict:

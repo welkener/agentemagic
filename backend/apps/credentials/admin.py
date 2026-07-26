@@ -15,7 +15,7 @@ from django import forms
 from django.contrib import admin
 from unfold.admin import ModelAdmin
 
-from apps.painel.escopo import EscopoEscritorioMixin, SomentePlataformaMixin
+from apps.tenants.escopo import EscopoEscritorioMixin, SomentePlataformaMixin
 
 from .certificados import ErroCertificadoInvalido, extrair_metadados
 from .models import AplicativoIntegracao, Credencial

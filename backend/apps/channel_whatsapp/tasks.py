@@ -11,7 +11,7 @@ escritório. O id viaja em vez do objeto porque o payload do Celery é JSON.
 """
 from celery import shared_task
 
-from apps.painel.models import Escritorio
+from apps.tenants.models import Escritorio
 
 from .pipeline import processar
 from .services import baixar_midia, enviar_mensagem

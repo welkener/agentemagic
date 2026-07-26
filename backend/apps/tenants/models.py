@@ -16,9 +16,16 @@ contador logado via os clientes de todos os outros. Agora ele é dono de:
 
 Um contador sem `MembroEscritorio` não vê nada (não "vê tudo"): o padrão
 seguro é negar. Só `is_superuser` (equipe Magic BI) enxerga a plataforma
-inteira — ver `apps/painel/escopo.py`.
+inteira — ver `apps/tenants/escopo.py`.
+
+**Permissões x escopo são coisas separadas, de propósito.** O `Group` do Django
+(um por escritório, `grupo_do_escritorio`) decide *o que* a pessoa pode fazer —
+quais models, quais ações. O `MembroEscritorio` decide *sobre quais linhas* —
+as do escritório dela. Um não substitui o outro: sem o grupo a pessoa não tem
+permissão de nada; sem o vínculo ela teria permissão sobre nada.
 """
 from django.conf import settings
+from django.contrib.auth.models import Group
 from django.db import models
 
 from apps.credentials.crypto import CampoTextoCifrado, cifrar, decifrar
@@ -100,7 +107,7 @@ class MembroEscritorio(models.Model):
     """Vincula um `auth.User` (contador) ao escritório dele.
 
     Sem este vínculo, um usuário staff não-superuser não enxerga nenhum dado no
-    admin — ver `apps/painel/escopo.py`. É o que impede o contador do escritório
+    admin — ver `apps/tenants/escopo.py`. É o que impede o contador do escritório
     A de abrir a carteira de clientes do escritório B.
     """
 
@@ -108,6 +115,14 @@ class MembroEscritorio(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="membro_escritorio"
     )
     escritorio = models.ForeignKey(Escritorio, on_delete=models.CASCADE, related_name="membros")
+    responsavel = models.BooleanField(
+        default=False,
+        help_text=(
+            "Pode convidar e remover colegas DESTE escritório. Não é um papel de "
+            "permissão (isso é o Grupo do Django) — é só a capacidade de gerir a "
+            "própria equipe."
+        ),
+    )
     criado_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -115,7 +130,23 @@ class MembroEscritorio(models.Model):
         verbose_name_plural = "membros de escritório"
 
     def __str__(self):
-        return f"{self.usuario} — {self.escritorio}"
+        papel = " (responsável)" if self.responsavel else ""
+        return f"{self.usuario} — {self.escritorio}{papel}"
+
+
+def grupo_do_escritorio(escritorio: "Escritorio") -> Group:
+    """Grupo do Django que carrega as permissões deste escritório.
+
+    Um grupo por escritório (`escritorio:<slug>`) em vez de papéis fixos no
+    código: a equipe Magic BI monta as permissões caso a caso, e o que muda de
+    um parceiro pro outro fica no banco, não num `if papel ==` espalhado.
+
+    O grupo NÃO decide isolamento — quem faz isso é `MembroEscritorio` +
+    `escopo.py`. Dar permissão demais aqui amplia o que a pessoa faz dentro do
+    escritório dela, nunca a alcança o escritório do vizinho.
+    """
+    grupo, _ = Group.objects.get_or_create(name=f"escritorio:{escritorio.slug}")
+    return grupo
 
 
 def escritorio_por_phone_number_id(phone_number_id: str) -> "Escritorio | None":
