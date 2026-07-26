@@ -629,6 +629,79 @@ piloto (Onda 5).
 
 ---
 
+## 1.13 DPS de verdade: XML pelo XSD, assinado e empacotado — ✅ concluída 26/jul/2026
+
+Destravado pela observação do usuário: *"tem como subir o certificado da empresa para
+testar, né?"*. **Tem — e isso muda o bloqueio da Onda 2.** A pendência de mTLS era sobre
+assinatura **remota via PSC**; com o `.pfx` em custódia a chave privada está em mãos, então
+assinar é local e o mTLS sai do próprio certificado. O caminho `CERTIFICADO_PFX` já existia
+em `apps/credentials` desde 25/jul — faltava usá-lo.
+
+### O achado que mudou o plano: o cadastro estava errado, não só incompleto
+
+Montando a DPS contra os bindings do **XSD oficial** (`nfelib.nfse.bindings.v1_0`,
+gerados do schema publicado), o schema mostrou que:
+
+- **`cTribNac` é `[0-9]{6}` e NÃO é o CNAE.** O CNAE (`5611-2/01`) é classificação de
+  atividade econômica; a DPS quer o código da lista nacional de serviços (LC 116). Ou seja:
+  **o campo que o projeto vinha protegendo com tanto cuidado — "CNAE nunca inferido pelo
+  LLM" — era o campo errado para a nota.** O cuidado estava certo, o alvo não.
+- **`cLocEmi` (`[0-9]{7}`, código IBGE), `serie`, `nDPS` e `dCompet` são obrigatórios** e
+  simplesmente não existiam no `Cliente`.
+
+`Cliente` ganhou os cinco campos, e `montar_dps` **recusa listando exatamente o que falta**
+em vez de preencher com valor plausível. Numa DPS, campo errado não dá erro de schema — dá
+nota emitida errada, com efeito tributário real. A mensagem de erro do `cTribNac` inclusive
+diz "não é o CNAE", porque é o engano mais provável de quem conhece o cadastro antigo.
+
+### `apps/fiscal` — documento fiscal separado de transporte
+
+Novo app, separado de `apps/adapters` de propósito: adapter é *rede*, isto é *documento
+fiscal*. Contém montagem pelo XSD, assinatura XMLDSig (enveloped, RSA-SHA256, C14N 1.0 —
+o perfil dos documentos fiscais brasileiros; trocar qualquer um dos três faz a Sefin
+recusar mesmo com certificado válido), empacotamento `dpsXmlGZipB64`, extração do par PEM
+para mTLS, e a **numeração sequencial**.
+
+A numeração usa `select_for_update`, não `count()`: dois webhooks do WhatsApp chegando
+juntos (o Celery roda concorrente) gerariam o mesmo `nDPS` com `count()`, e a segunda nota
+seria recusada pela Sefin.
+
+### `emitir()` deixou de ser placeholder
+
+O adapter agora manda `{"dpsXmlGZipB64": ...}` com `cert=` (mTLS), sem header
+`Authorization` — antes mandava `{"dps": {...}}` com Bearer, o que nunca poderia funcionar.
+O par PEM vai para um diretório temporário que some ao fim da chamada: chave privada de
+cliente não fica em disco além do necessário.
+
+Ordem das validações corrigida na revisão, por um motivo que só aparece pensando em nota
+fiscal: **nenhuma validação pode rodar depois de reservar o número.** Número de DPS
+reservado não volta, e queimar sequência por erro de cadastro vira pergunta do fisco sobre
+nota faltando. Cadastro → certificado → só então `proximo_numero`.
+
+Modo **PSC recusa explicitamente** (`CERTIFICADO_INDISPONIVEL`) em vez de emitir sem
+assinatura válida.
+
+### Validação
+
+**26 testes novos** (214 no total), com **certificado gerado dentro do próprio teste** —
+assinatura e mTLS ficam verificáveis offline, sem `.pfx` real no repositório. Conferido
+também fora do pytest, ponta a ponta: DPS montada (`cLocEmi`, `cTribNac`, `vServ` corretos),
+assinada (`Reference URI` apontando pro `Id` do `infDPS` — se não apontar, assina "nada"),
+empacotada com round-trip de gzip conferido, e par mTLS extraído.
+
+`nfelib`, `signxml` e `lxml` entraram no `requirements.txt` — `nfelib` estava instalada na
+venv mas **não declarada**, o que quebraria qualquer deploy limpo.
+
+⚠ **O que continua impedindo emissão real** (e nenhum é código): cadastro na Produção
+Restrita (`adn.producaorestrita.nfse.gov.br`); grupo **IBS/CBS** (NT SE/CGNFS-e 004/007)
+ainda não preenchido; composição oficial do `Id` do `infDPS` não confirmada (hoje é um
+identificador estável nosso); `consultar`/`cancelar` seguem no Bearer placeholder — só a
+emissão foi migrada; e o modo PSC continua bloqueado. **Nada disto foi exercido contra a
+Sefin** — o que os testes provam é que o documento é montado e assinado corretamente, não
+que ela o aceita.
+
+---
+
 ## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
 
 **Por quê agora:** é o item que prova a Hipótese 1 do MVP e o que mais lacunas técnicas

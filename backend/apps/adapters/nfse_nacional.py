@@ -3,22 +3,25 @@ Adaptador REAL da NFS-e Nacional (Emissor Nacional/ADN) — Produção Restrita 
 produção (Semana 3 do MVP). Mesma interface do mock (`nfse_mock.py`); troca
 automática pelo resolver (`resolver.py`) quando o cliente está credenciado.
 
-⚠⚠ NÃO ESTÁ PRONTO PARA PRODUÇÃO — pesquisado e confirmado em 12/jul/2026
-(`magicbi-custodia-fiscal.md` §1, fonte: FENACON/gov.br), mas dois pontos
-seguem exigindo trabalho antes de emitir de verdade:
+Estado em 26/jul/2026 — o `emitir()` deixou de ser placeholder
+------------------------------------------------------------
+Os dois bloqueios históricos deste módulo estão resolvidos **para o modo
+`.pfx` em custódia**:
 
-1. **Auth é mTLS, não Bearer.** A API do ADN/Sefin exige certificado ICP-Brasil
-   (A1/A3) do prestador na conexão TLS (autenticação mútua) — confirmado, não
-   é mais hipótese. Procuração eletrônica NÃO cobre chamada de API (só o
-   portal web). O caminho é certificado em nuvem (PSC — BirdID/Soluti/VIDaaS/
-   SafeID, ainda não escolhido); a credencial resolvida aqui precisa virar um
-   certificado cliente (ou uma chamada de assinatura remota ao PSC) em vez do
-   header `Authorization` abaixo, que é só um placeholder de transporte.
-2. **Payload é híbrido, não JSON puro.** A chamada REST é JSON, mas o
-   documento fiscal em si (DPS/NFS-e) é **XML assinado digitalmente
-   (XMLDSig), comprimido em GZip e codificado em Base64** dentro do corpo
-   JSON — `dados` aqui precisaria virar XML conforme o XSD oficial antes do
-   envio, não ser mandado como dict solto.
+1. **Auth é mTLS, não Bearer** — resolvido: `_preparar_dps` extrai o par PEM do
+   `.pfx` e o `POST` usa `cert=`. Não há mais header `Authorization` na
+   emissão. (`consultar`/`cancelar` ainda usam o Bearer placeholder — só a
+   emissão foi migrada, ver §2 das ondas.)
+2. **Payload é XML assinado, não JSON puro** — resolvido: `apps/fiscal/dps.py`
+   monta a DPS pelo XSD oficial (`nfelib`), assina em XMLDSig com o
+   certificado e empacota em `dpsXmlGZipB64`.
+
+⚠ **O que ainda impede produção:** falta o cadastro na Produção Restrita
+(`adn.producaorestrita.nfse.gov.br`) — sem ele nada disto foi exercido contra
+a Sefin de verdade; o grupo IBS/CBS (NT SE/CGNFS-e 004/007) não é preenchido; e
+o modo **PSC (assinatura remota)** continua bloqueado na pendência de custódia
+(`magicbi-custodia-fiscal.md`) — nesse modo o `emitir()` recusa explicitamente,
+em vez de mandar documento sem assinatura válida.
 
 URLs reais confirmadas (`base_url` no Django admin, `AplicativoIntegracao`):
 Produção Restrita `https://adn.producaorestrita.nfse.gov.br` /
@@ -28,13 +31,30 @@ gov.br/nfse → Biblioteca → Documentação Técnica.
 """
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
+
 import httpx
 
 from apps.core.resultado import ResultadoAcao
 from apps.credentials.models import Credencial
+from apps.fiscal.dps import (
+    ErroDpsIncompleta,
+    conferir_cadastro,
+    assinar,
+    empacotar,
+    extrair_pem_para_mtls,
+    montar_dps,
+    montar_id,
+)
+from apps.fiscal.numeracao import proximo_numero
 
 from .base import AdapterBase
 from .oauth2 import ErroIntegracaoNaoConfigurada, resolver_app, resolver_credencial
+
+
+class ErroCertificadoIndisponivel(Exception):
+    """Credencial existe, mas não permite assinar (modo PSC, ou .pfx incompleto)."""
 
 CAMPOS_OBRIGATORIOS_NFSE = (
     "cnpj_prestador",
@@ -192,38 +212,99 @@ class NfseNacionalAdapter(AdapterBase):
         except ErroIntegracaoNaoConfigurada:
             return ResultadoAcao(ok=False, erro_padronizado="INTEGRACAO_NAO_CONFIGURADA")
 
+        # DPS de verdade: XML pelo XSD oficial, assinado com o certificado em
+        # custódia, gzip+base64 — não mais `{"dps": {...}}`, que nunca poderia
+        # funcionar. Ver apps/fiscal/dps.py.
         try:
-            # ⚠⚠ placeholder — o endpoint POST /nfse é confirmado, mas o corpo
-            # real é {"dpsXmlGZipB64": "<XML da DPS assinado, gzip, base64>"},
-            # não um dict solto; `dados` precisa virar XML (schema oficial,
-            # inclui o grupo IBSCBS — NT SE/CGNFS-e 004/007) e ser assinado via
-            # PSC antes de chegar aqui. Auth é mTLS (cert=), não Bearer.
-            resposta = httpx.post(
-                f"{app.base_url.rstrip('/')}/nfse",
-                json={"dps": dados},
-                headers={"Authorization": f"Bearer {credencial.valor}"},
-                timeout=15.0,
+            corpo, cert_pem, chave_pem = self._preparar_dps(_cliente_de(ctx), dados, credencial)
+        except ErroDpsIncompleta as exc:
+            return ResultadoAcao(
+                ok=False,
+                erro_padronizado="CADASTRO_FISCAL_INCOMPLETO",
+                dados={"faltantes": exc.faltantes},
             )
-            resposta.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code in (401, 403):
-                return ResultadoAcao(ok=False, erro_padronizado="AUTH_EXPIRADA")
-            if exc.response.status_code == 422:
-                return ResultadoAcao(
-                    ok=False, erro_padronizado="REJEITADA_SEFIN", dados={"mensagem_sefin": exc.response.text}
-                )
-            return ResultadoAcao(ok=False, erro_padronizado="INDISPONIVEL")
-        except httpx.HTTPError:
-            return ResultadoAcao(ok=False, erro_padronizado="INDISPONIVEL")
+        except ErroCertificadoIndisponivel as exc:
+            return ResultadoAcao(
+                ok=False, erro_padronizado="CERTIFICADO_INDISPONIVEL", dados={"motivo": str(exc)}
+            )
 
-        corpo = resposta.json()
+        with tempfile.TemporaryDirectory() as pasta:
+            # httpx exige o par mTLS em ARQUIVO. Vai pra um diretório temporário
+            # que some ao sair do bloco — chave privada de cliente nunca fica
+            # em disco além do tempo da chamada.
+            caminho_cert = Path(pasta) / "cliente.pem"
+            caminho_chave = Path(pasta) / "cliente.key"
+            caminho_cert.write_bytes(cert_pem)
+            caminho_chave.write_bytes(chave_pem)
+
+            try:
+                resposta = httpx.post(
+                    f"{app.base_url.rstrip('/')}/nfse",
+                    json={"dpsXmlGZipB64": corpo},
+                    # Auth do ADN/Sefin é mTLS, não Bearer — o certificado É a
+                    # credencial. Não há header de autorização aqui.
+                    cert=(str(caminho_cert), str(caminho_chave)),
+                    timeout=15.0,
+                )
+                resposta.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code in (401, 403):
+                    return ResultadoAcao(ok=False, erro_padronizado="AUTH_EXPIRADA")
+                if exc.response.status_code == 422:
+                    return ResultadoAcao(
+                        ok=False,
+                        erro_padronizado="REJEITADA_SEFIN",
+                        dados={"mensagem_sefin": exc.response.text},
+                    )
+                return ResultadoAcao(ok=False, erro_padronizado="INDISPONIVEL")
+            except httpx.HTTPError:
+                return ResultadoAcao(ok=False, erro_padronizado="INDISPONIVEL")
+
+        retorno = resposta.json()
         return ResultadoAcao(
             ok=True,
             dados={
-                "protocolo": corpo.get("protocolo"),
-                "situacao": corpo.get("situacao", "AUTORIZADA"),
-                "danfse_url": corpo.get("danfse_url"),
+                "protocolo": retorno.get("protocolo"),
+                "situacao": retorno.get("situacao", "AUTORIZADA"),
+                "danfse_url": retorno.get("danfse_url"),
                 "valor": dados["valor"],
             },
-            referencia_externa=corpo.get("protocolo"),
+            referencia_externa=retorno.get("protocolo"),
         )
+
+    # ------------------------------------------------------------------
+    def _preparar_dps(self, cliente, dados: dict, credencial: Credencial):
+        """Monta + assina + empacota a DPS e devolve `(corpo, cert_pem, chave_pem)`.
+
+        Só o modo `.pfx` fecha o ciclo hoje: com a chave privada em custódia a
+        assinatura é local e o mTLS sai daqui mesmo. O modo PSC (assinatura
+        remota) segue bloqueado na pendência técnica registrada em
+        `docs/magicbi-custodia-fiscal.md` — e falha explicitamente, em vez de
+        emitir algo sem assinatura válida.
+        """
+        # Ordem importa por dois motivos. (1) O cadastro é conferido primeiro
+        # porque não depende de certificado — dá o diagnóstico mais útil mesmo
+        # a quem ainda não subiu o .pfx. (2) Nenhuma validação pode acontecer
+        # DEPOIS de `proximo_numero`: número de DPS reservado não volta, e
+        # queimar sequência fiscal por erro de cadastro vira pergunta do fisco
+        # sobre nota faltando.
+        faltantes = conferir_cadastro(cliente)
+        if faltantes:
+            raise ErroDpsIncompleta(faltantes)
+
+        if credencial.tipo != Credencial.Tipo.CERTIFICADO_PFX:
+            raise ErroCertificadoIndisponivel(
+                "Emissão real hoje só com certificado .pfx em custódia — "
+                "assinatura remota via PSC ainda não está resolvida."
+            )
+        pfx = credencial.pfx_bytes
+        senha = credencial.pfx_senha
+        if not pfx or not senha:
+            raise ErroCertificadoIndisponivel("Credencial sem arquivo .pfx ou sem senha.")
+
+        numero = proximo_numero(cliente)
+        xml = montar_dps(cliente, dados, numero=numero)
+        id_dps = montar_id(cliente, (cliente.serie_dps or "1").strip(), numero)
+        assinado = assinar(xml, pfx, senha, id_dps)
+        cert_pem, chave_pem = extrair_pem_para_mtls(pfx, senha)
+        return empacotar(assinado), cert_pem, chave_pem

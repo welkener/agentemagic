@@ -10,7 +10,10 @@ groq  # cliente direto p/ transcrição de áudio (Whisper) — D6, apps/channel
 httpx
 structlog
 psycopg[binary]  # Postgres — único banco suportado (dev local ou docker-compose)
-cryptography  # cifra segredos por campo (Credencial/AplicativoIntegracao) até o cofre em nuvem
+cryptography  # cifra segredos por campo + assina a DPS e extrai o par PEM do .pfx (mTLS)
+nfelib  # bindings gerados do XSD OFICIAL da NFS-e Nacional — apps/fiscal/dps.py
+signxml  # XMLDSig da DPS (enveloped, RSA-SHA256, C14N 1.0)
+lxml  # árvore XML usada na assinatura
 pyjwt  # Magic Link do wa_id↔CNPJ (apps/security) — docs/magicbi-seguranca-sessao.md
 django-sesame  # Magic Link de login do painel/Grimório (contador) — caso diferente do de cima
 Pillow  # upload de logo do escritório no painel (apps/painel) — SaaS multi-tenant, nada de marca hardcoded

@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "apps.channel_evolution",  # SÓ TESTE LOCAL — nunca produção (ver apps/channel_evolution/apps.py)
     "apps.audit",
     "apps.governance",
+    "apps.fiscal",  # DPS: montagem/assinatura do XML + numeração sequencial
     "apps.agents.agente_nf",
     "apps.agents.agente_erp",
 ]

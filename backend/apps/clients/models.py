@@ -36,8 +36,49 @@ class Cliente(models.Model):
         default="",
         help_text=(
             "CNAE do serviço prestado, cadastrado pelo contador — nunca inferido "
-            "pelo LLM (guard determinístico da emissão fiscal)."
+            "pelo LLM (guard determinístico da emissão fiscal). ⚠ NÃO é o que vai "
+            "na DPS: a NFS-e Nacional usa `codigo_tributacao_nacional` (cTribNac). "
+            "CNAE é classificação de atividade econômica, serve pro cadastro."
         ),
+    )
+
+    # --- Campos exigidos pela DPS da NFS-e Nacional ------------------------
+    # Confirmados contra o XSD oficial (nfelib.nfse.bindings.v1_0), não
+    # inferidos: cada um é `required` no schema e tem pattern próprio. Sem eles
+    # não existe DPS válida — ver apps/fiscal/dps.py::montar_dps, que recusa a
+    # emissão listando exatamente o que falta em vez de mandar XML inválido.
+    codigo_municipio_ibge = models.CharField(
+        max_length=7,
+        blank=True,
+        default="",
+        help_text="Código IBGE do município (7 dígitos) — `cLocEmi`/`cLocPrestacao` da DPS.",
+    )
+    inscricao_municipal = models.CharField(
+        max_length=15,
+        blank=True,
+        default="",
+        help_text="Inscrição municipal do prestador (`prest.IM`). Opcional em alguns municípios.",
+    )
+    codigo_tributacao_nacional = models.CharField(
+        max_length=6,
+        blank=True,
+        default="",
+        help_text=(
+            "`cTribNac` — 6 dígitos da lista nacional de serviços (LC 116). "
+            "É ESTE que vai na nota, não o CNAE. Cadastrado pelo contador, "
+            "nunca inferido pelo LLM."
+        ),
+    )
+    regime_tributario = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text="`prest.regTrib` — regime de tributação do prestador (tabela da NT vigente).",
+    )
+    serie_dps = models.CharField(
+        max_length=5,
+        blank=True,
+        default="1",
+        help_text="Série da DPS (`serie`). Numeração sequencial é por prestador+série.",
     )
     ativo = models.BooleanField(default=True)
     criado_em = models.DateTimeField(auto_now_add=True)
