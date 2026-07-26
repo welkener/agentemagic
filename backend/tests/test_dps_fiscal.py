@@ -146,14 +146,88 @@ def test_ambiente_de_producao_e_explicito(cliente_fiscal):
 
 
 @pytest.mark.django_db
-def test_tomador_sem_documento_e_valido(cliente_fiscal):
-    """Serviço a pessoa física sem CPF é caso real — inventar documento pra
-    "completar" a nota seria falsificá-la."""
+def test_tomador_sem_documento_nao_vira_bloco_toma(cliente_fiscal):
+    """O XSD exige CPF/CNPJ dentro de `toma`. Sem documento, o bloco é OMITIDO
+    e o nome vai pra informação complementar — inventar um documento pra
+    "completar" a nota seria falsificar documento fiscal."""
     xml = mod_dps.montar_dps(cliente_fiscal, {**PAYLOAD, "tomador": "Balcão"}, numero=1)
-    assert b"Bal" in xml  # o nome entrou
+    raiz = etree.fromstring(xml)
+
+    assert raiz.xpath("//n:toma", namespaces=NS) == [], "toma sem documento é inválido"
+    assert "Tomador: Balcão" in raiz.xpath("//n:xInfComp", namespaces=NS)[0].text
+    assert not mod_dps.validar_contra_xsd(xml)
+
+
+@pytest.mark.django_db
+def test_tomador_com_cpf_vira_bloco_toma_identificado(cliente_fiscal):
+    xml = mod_dps.montar_dps(
+        cliente_fiscal,
+        {**PAYLOAD, "tomador": "Maria Silva", "tomador_documento": "123.456.789-09"},
+        numero=1,
+    )
     raiz = etree.fromstring(xml)
     toma = raiz.xpath("//n:toma", namespaces=NS)[0]
-    assert toma.xpath("n:CPF", namespaces=NS) == []
+    assert toma.xpath("n:CPF", namespaces=NS)[0].text == "12345678909"  # pontuação some
+    assert not mod_dps.validar_contra_xsd(xml)
+
+
+# ---------------------------------------------------------------------------
+# Validação contra o XSD — o teste que pega o que asserção de campo não pega
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_dps_e_valida_contra_o_xsd_oficial(cliente_fiscal):
+    """Este é o teste que importa.
+
+    A primeira versão deste módulo passava em todas as asserções de campo e
+    mesmo assim gerava DPS **inválida**: faltava o grupo obrigatório `trib`,
+    faltava `regTrib`, o `Id` furava o pattern `DPS[0-9]{42}` e o `toma` vinha
+    sem documento. Conferir campo a campo não pega bloco ausente — só o schema
+    sabe o que falta.
+    """
+    xml = mod_dps.montar_dps(cliente_fiscal, PAYLOAD, numero=1)
+    erros = mod_dps.validar_contra_xsd(xml)
+    assert not erros, "DPS invalida: " + " | ".join(erros)
+
+
+@pytest.mark.django_db
+def test_id_segue_o_pattern_do_xsd(cliente_fiscal):
+    """`DPS[0-9]{42}` = cLocEmi(7) + tpInsc(1) + CNPJ(14) + serie(5) + nDPS(15)."""
+    import re
+
+    id_dps = mod_dps.montar_id(cliente_fiscal, "1", 42)
+    assert re.fullmatch(r"DPS[0-9]{42}", id_dps), id_dps
+    assert id_dps.startswith("DPS35503082")  # IBGE + tipo de inscrição CNPJ
+
+
+@pytest.mark.django_db
+def test_dps_assinada_continua_valida_no_schema(cliente_fiscal, pfx_de_teste):
+    """Assinar não pode quebrar o documento — a Signature tem lugar no XSD."""
+    pfx, senha = pfx_de_teste
+    xml = mod_dps.montar_dps(cliente_fiscal, PAYLOAD, numero=3)
+    assinado = mod_dps.assinar(xml, pfx, senha, mod_dps.montar_id(cliente_fiscal, "1", 3))
+    assert not mod_dps.validar_contra_xsd(assinado)
+
+
+@pytest.mark.django_db
+def test_bloco_de_tributacao_obrigatorio_esta_presente(cliente_fiscal):
+    """`valores.trib` é required — foi o que a primeira versão omitiu."""
+    xml = mod_dps.montar_dps(cliente_fiscal, PAYLOAD, numero=1)
+    raiz = etree.fromstring(xml)
+    assert raiz.xpath("//n:trib/n:tribMun/n:tribISSQN", namespaces=NS)[0].text == "1"
+    assert raiz.xpath("//n:trib/n:tribMun/n:tpRetISSQN", namespaces=NS)[0].text == "1"
+    # indTotTrib=0 ("não informado") — declarar vTotTrib=0.00 AFIRMARIA que não
+    # há tributo, que é diferente de não ter o número.
+    assert raiz.xpath("//n:totTrib/n:indTotTrib", namespaces=NS)[0].text == "0"
+
+
+@pytest.mark.django_db
+def test_aliquota_de_iss_vazia_nao_vira_zero(cliente_fiscal):
+    """MEI/Simples costuma não ter alíquota de ISS na nota. Zero seria uma
+    afirmação tributária que ninguém fez."""
+    cliente_fiscal.aliquota_iss = None
+    cliente_fiscal.save()
+    raiz = etree.fromstring(mod_dps.montar_dps(cliente_fiscal, PAYLOAD, numero=1))
+    assert raiz.xpath("//n:pAliq", namespaces=NS) == []
 
 
 # ---------------------------------------------------------------------------

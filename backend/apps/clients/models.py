@@ -69,10 +69,55 @@ class Cliente(models.Model):
             "nunca inferido pelo LLM."
         ),
     )
-    regime_tributario = models.PositiveSmallIntegerField(
+    # `prest.regTrib` é um GRUPO obrigatório no XSD, não um campo só — e dentro
+    # dele `opSimpNac` e `regEspTrib` também são obrigatórios. Descoberto
+    # validando o XML contra o schema oficial, não lendo doc.
+    class OpcaoSimplesNacional(models.IntegerChoices):
+        NAO_OPTANTE = 1, "Não optante"
+        MEI = 2, "Optante — MEI"
+        ME_EPP = 3, "Optante — ME/EPP"
+
+    opcao_simples_nacional = models.PositiveSmallIntegerField(
+        choices=OpcaoSimplesNacional.choices,
+        default=OpcaoSimplesNacional.NAO_OPTANTE,
+        help_text="`regTrib.opSimpNac` — enquadramento no Simples Nacional.",
+    )
+    regime_especial_tributacao = models.PositiveSmallIntegerField(
+        default=0,
+        help_text="`regTrib.regEspTrib` — 0 = nenhum; 1 a 6 conforme tabela da NT vigente.",
+    )
+
+    class TributacaoIssqn(models.IntegerChoices):
+        OPERACAO_TRIBUTAVEL = 1, "Operação tributável"
+        EXPORTACAO = 2, "Exportação de serviço"
+        NAO_INCIDENCIA = 3, "Não incidência / imunidade"
+        EXIGIBILIDADE_SUSPENSA = 4, "Exigibilidade suspensa"
+
+    class RetencaoIssqn(models.IntegerChoices):
+        NAO_RETIDO = 1, "Não retido"
+        RETIDO_TOMADOR = 2, "Retido pelo tomador"
+        RETIDO_INTERMEDIARIO = 3, "Retido pelo intermediário"
+
+    iss_tributacao = models.PositiveSmallIntegerField(
+        choices=TributacaoIssqn.choices,
+        default=TributacaoIssqn.OPERACAO_TRIBUTAVEL,
+        help_text="`trib.tribMun.tribISSQN` — obrigatório na DPS.",
+    )
+    iss_retencao = models.PositiveSmallIntegerField(
+        choices=RetencaoIssqn.choices,
+        default=RetencaoIssqn.NAO_RETIDO,
+        help_text="`trib.tribMun.tpRetISSQN` — obrigatório na DPS.",
+    )
+    aliquota_iss = models.DecimalField(
+        max_digits=4,
+        decimal_places=2,
         null=True,
         blank=True,
-        help_text="`prest.regTrib` — regime de tributação do prestador (tabela da NT vigente).",
+        help_text=(
+            "`trib.tribMun.pAliq` em % (ex.: 2.00). Vazio = não declarada — "
+            "cabível para MEI/Simples, onde o recolhimento não é por alíquota "
+            "de ISS na nota. Nunca preencher com valor 'padrão' chutado."
+        ),
     )
     serie_dps = models.CharField(
         max_length=5,

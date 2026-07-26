@@ -702,6 +702,70 @@ que ela o aceita.
 
 ---
 
+## 1.14 A DPS de 1.13 era inválida — validação contra o XSD ✅ 26/jul/2026
+
+**Registro honesto: o que 1.13 entregou não passava no schema oficial.** Os testes de
+1.13 conferiam campo a campo e passavam todos — mas asserção de campo **não pega bloco
+obrigatório ausente**. Foi preciso validar contra o `DPS_v1.00.xsd` (que vem dentro do
+próprio `nfelib`) pra descobrir. Cinco erros, todos reais:
+
+1. **`valores.trib` ausente** — obrigatório. A nota não tinha bloco de tributação.
+2. **`prest.regTrib` ausente** — obrigatório, e é um *grupo* (`opSimpNac` + `regEspTrib`),
+   não um campo. O `regime_tributario` que 1.13 adicionou ao `Cliente` era um chute de
+   modelagem; foi removido e substituído pelos campos certos.
+3. **`Id` furava o pattern `DPS[0-9]{42}`.** A composição correta é cLocEmi(7) +
+   tipo de inscrição(1) + CNPJ(14) + série(5) + nDPS(15). 1.13 usava um identificador
+   próprio "até confirmar" — o schema já tinha a resposta.
+4. **`toma` só com nome é inválido**: o bloco é opcional, mas *se presente* exige
+   CNPJ/CPF/NIF. Ver abaixo.
+5. **Assinatura em RSA-SHA256.** O `xmldsig-core-schema_v1.00.xsd` da NFS-e fixa
+   **rsa-sha1 + sha1 + C14N 1.0**. Pior: 1.13 tinha um comentário afirmando que SHA-256
+   "é o perfil dos documentos fiscais brasileiros". Era suposição escrita com cara de
+   fato, e estava errada.
+
+### O tomador não pode ser só um nome
+
+O fluxo do WhatsApp captura "emite uma nota de 300 pro João" — só o nome. Pelo XSD isso
+não forma um tomador. As opções eram inventar um documento (falsificar documento fiscal) ou
+**omitir o bloco `toma` e registrar o nome em `infoCompl`**, que é o que diz a verdade: o
+serviço foi para o João, sem afirmar tomador identificado. `payload["tomador_documento"]`
+passou a ser aceito e, quando presente, monta o `toma` completo (CPF ou CNPJ pelo tamanho).
+
+⚠ **Lacuna de produto que isso expõe**: sem CPF/CNPJ o tomador não fica identificado na
+nota — e em vários municípios é isso que permite a ele usar o serviço como despesa.
+Capturar o documento na conversa é trabalho de fluxo, ainda não feito.
+
+### SHA-1: imposição, não descuido
+
+`signxml` bloqueia SHA-1 por padrão, e está certo. O desbloqueio ficou numa subclasse
+nomeada (`_assinador_nfse_cls`) com o motivo escrito, em vez de um `# noqa` solto — é o
+único ponto do projeto onde SHA-1 é permitido, e some no dia em que a NT permitir SHA-256.
+
+### `pAliq` e `totTrib` — onde não preencher é a resposta certa
+
+- **Alíquota de ISS vazia continua vazia.** MEI/Simples frequentemente não tem alíquota na
+  nota; preencher `0.00` seria *afirmar* que não há ISS.
+- **`totTrib` usa `indTotTrib=0`** ("não informado") em vez de `vTotTrib=0.00`, pelo mesmo
+  motivo: não temos o cálculo de carga tributária aproximada (Lei 12.741), e declarar zero
+  é uma afirmação tributária que ninguém fez.
+
+### A correção de verdade é o teste
+
+`validar_contra_xsd()` + `test_dps_e_valida_contra_o_xsd_oficial`, incluindo o documento
+**depois de assinado** (assinar não pode quebrar o schema). É o teste que teria evitado
+1.13 inteiro. **220 testes no total.**
+
+⚠ **IBS/CBS: não é implementável hoje, e não é escolha.** O `nfelib` 2.5.2 (a versão mais
+recente no PyPI, verificado) não tem o grupo `IBSCBS` nos bindings de NFS-e v1_0 — `trib`
+só tem `tribMun`, `tribFed` e `totTrib`. Enquanto o schema publicado não incluir o grupo,
+não há o que preencher sem inventar estrutura.
+
+Segue pendente: cadastro na Produção Restrita; `consultar`/`cancelar` ainda no Bearer
+placeholder (só `emitir` migrou para mTLS); evento de cancelamento como XML assinado
+(`Te101101` existe nos bindings — dá pra fazer); e captura do documento do tomador.
+
+---
+
 ## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
 
 **Por quê agora:** é o item que prova a Hipótese 1 do MVP e o que mais lacunas técnicas
