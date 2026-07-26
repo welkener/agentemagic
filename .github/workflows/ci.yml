@@ -45,6 +45,17 @@ jobs:
         working-directory: backend
         run: python manage.py check
 
+      # Roda com o ambiente de PRODUÇÃO simulado: é a única forma de exercitar
+      # o bloco de endurecimento (cookies secure, HSTS, recusa de SECRET_KEY
+      # padrão). Com DEBUG=True esse código nem executa.
+      - name: Django check --deploy (segurança de produção)
+        working-directory: backend
+        env:
+          DJANGO_DEBUG: "False"
+          DJANGO_SECRET_KEY: "chave-so-para-o-check-do-ci-nao-usar-em-lugar-nenhum-1234567890"
+          DJANGO_ALLOWED_HOSTS: "exemplo.test"
+        run: python manage.py check --deploy
+
       - name: Migrações (fumaça — confirma que aplicam limpo)
         working-directory: backend
         run: python manage.py migrate

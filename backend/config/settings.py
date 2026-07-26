@@ -18,7 +18,7 @@ env = environ.Env(
 # Lê o .env se existir (dev local); em produção usar variáveis reais de ambiente.
 environ.Env.read_env(BASE_DIR / ".env")
 
-SECRET_KEY = env("DJANGO_SECRET_KEY", default="dev-inseguro-troque-em-producao")
+SECRET_KEY = env("DJANGO_SECRET_KEY", default="dev-inseguro-troque-em-producao")  # ver bloco de endurecimento abaixo
 DEBUG = env("DJANGO_DEBUG")
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
@@ -28,6 +28,41 @@ ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.
 # de um domínio HTTPS.
 CSRF_TRUSTED_ORIGINS = env.list("DJANGO_CSRF_TRUSTED_ORIGINS", default=[])
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# ---------------------------------------------------------------------------
+# Endurecimento fora de DEBUG.
+#
+# Os defaults acima são de conveniência para dev — e é justamente aí que mora o
+# risco: esquecer `DJANGO_DEBUG=False`/`DJANGO_SECRET_KEY` no deploy fazia o
+# sistema subir **silenciosamente** com DEBUG ligado e uma chave pública neste
+# repositório. Sistema fiscal não pode falhar em silêncio nisso: aqui ele recusa
+# subir.
+# ---------------------------------------------------------------------------
+SECRET_KEY_DEV = "dev-inseguro-troque-em-producao"
+
+if not DEBUG:
+    from django.core.exceptions import ImproperlyConfigured  # noqa: E402
+
+    if SECRET_KEY == SECRET_KEY_DEV:
+        raise ImproperlyConfigured(
+            "DJANGO_SECRET_KEY não configurada com DEBUG=False. A chave padrão é "
+            "pública (está versionada neste repositório) — com ela, qualquer um "
+            "forja sessão e token de Magic Link. Gere uma com: python -c "
+            "\"from django.core.management.utils import get_random_secret_key as g; print(g())\""
+        )
+
+    # Cookies só por HTTPS. O app fala HTTP puro (o proxy termina o TLS), então
+    # sem isto o cookie de sessão do contador trafega em claro entre proxy e app.
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = env.bool("DJANGO_SECURE_SSL_REDIRECT", default=True)
+
+    # HSTS começa em 1 hora de propósito. É a única configuração aqui que o
+    # navegador **memoriza**: errar com 1 ano deixa o domínio inacessível por 1
+    # ano, sem desfazer. Suba para 31536000 só depois de confirmar que TUDO
+    # (inclusive subdomínios) responde em HTTPS.
+    SECURE_HSTS_SECONDS = env.int("DJANGO_HSTS_SECONDS", default=3600)
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool("DJANGO_HSTS_SUBDOMAINS", default=False)
 
 INSTALLED_APPS = [
     # django-unfold precisa vir ANTES de django.contrib.admin (troca os

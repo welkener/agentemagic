@@ -195,3 +195,31 @@ def test_sentry_fica_desligado_sem_dsn():
     """Ligar adiciona um subprocessador de dado fiscal — tem que ser ato
     consciente de quem configura o deploy, não efeito de instalar dependência."""
     assert sentry.configurar("", "teste") is False
+
+
+# ---------------------------------------------------------------------------
+# Endurecimento de produção — falhar alto vale mais que subir inseguro
+# ---------------------------------------------------------------------------
+def test_secret_key_padrao_com_debug_desligado_recusa_subir(tmp_path):
+    """O risco não era a chave fraca — era subir em silêncio com ela.
+
+    A chave padrão está VERSIONADA neste repositório: com ela, qualquer um
+    forja sessão e token de Magic Link. Esquecer a variável no deploy tinha que
+    quebrar, não passar batido.
+    """
+    import subprocess
+    import sys
+
+    resultado = subprocess.run(
+        [sys.executable, "manage.py", "check"],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": __import__("os").environ["PATH"],
+            "SYSTEMROOT": __import__("os").environ.get("SYSTEMROOT", ""),
+            "DJANGO_DEBUG": "False",
+            "DATABASE_URL": "postgres://postgres:123456@localhost:5432/magicbi",
+        },
+    )
+    assert resultado.returncode != 0
+    assert "DJANGO_SECRET_KEY" in resultado.stderr
