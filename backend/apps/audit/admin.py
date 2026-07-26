@@ -1,10 +1,11 @@
 from django.contrib import admin
+from unfold.admin import ModelAdmin
 
 from .models import Auditoria
 
 
 @admin.register(Auditoria)
-class AuditoriaAdmin(admin.ModelAdmin):
+class AuditoriaAdmin(ModelAdmin):
     """Só leitura — trilha append-only (o model já bloqueia update/delete)."""
 
     list_display = ("id", "criado_em", "evento", "cliente", "hash_atual")

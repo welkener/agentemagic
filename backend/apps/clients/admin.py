@@ -1,15 +1,16 @@
 from django.contrib import admin
+from unfold.admin import ModelAdmin, StackedInline
 
 from .models import Cliente, Perfil
 
 
-class PerfilInline(admin.StackedInline):
+class PerfilInline(StackedInline):
     model = Perfil
     extra = 0
 
 
 @admin.register(Cliente)
-class ClienteAdmin(admin.ModelAdmin):
+class ClienteAdmin(ModelAdmin):
     list_display = ("nome", "cnpj", "telefone_whatsapp", "cnae_padrao", "ativo", "criado_em")
     list_filter = ("ativo",)
     search_fields = ("nome", "cnpj", "telefone_whatsapp")
@@ -17,6 +18,6 @@ class ClienteAdmin(admin.ModelAdmin):
 
 
 @admin.register(Perfil)
-class PerfilAdmin(admin.ModelAdmin):
+class PerfilAdmin(ModelAdmin):
     list_display = ("cliente", "persona", "tier_maximo", "ferramentas_habilitadas")
     list_filter = ("tier_maximo",)

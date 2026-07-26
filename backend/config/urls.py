@@ -6,8 +6,7 @@ from django.urls import include, path
 from django.views.generic import RedirectView
 from sesame.views import LoginView
 
-admin.site.site_header = "Magic BI — Grimório"
-admin.site.site_title = "Magic BI"
+# SITE_HEADER/SITE_TITLE ficam no dict UNFOLD (settings.py) — django-unfold lê de lá.
 admin.site.index_title = "Painel administrativo"
 
 urlpatterns = [

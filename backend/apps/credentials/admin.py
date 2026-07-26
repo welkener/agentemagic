@@ -13,6 +13,7 @@ re-renderiza com o erro.
 """
 from django import forms
 from django.contrib import admin
+from unfold.admin import ModelAdmin
 
 from .certificados import ErroCertificadoInvalido, extrair_metadados
 from .models import AplicativoIntegracao, Credencial
@@ -95,7 +96,7 @@ class CredencialForm(forms.ModelForm):
 
 
 @admin.register(Credencial)
-class CredencialAdmin(admin.ModelAdmin):
+class CredencialAdmin(ModelAdmin):
     form = CredencialForm
     list_display = (
         "cliente",
@@ -161,7 +162,7 @@ class AplicativoIntegracaoForm(forms.ModelForm):
 
 
 @admin.register(AplicativoIntegracao)
-class AplicativoIntegracaoAdmin(admin.ModelAdmin):
+class AplicativoIntegracaoAdmin(ModelAdmin):
     form = AplicativoIntegracaoForm
     list_display = ("nome", "ambiente", "base_url", "ativo", "atualizado_em")
     list_filter = ("nome", "ambiente", "ativo")

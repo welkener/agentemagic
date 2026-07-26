@@ -1,11 +1,12 @@
 from django.contrib import admin
 from django.utils.html import format_html
+from unfold.admin import ModelAdmin
 
 from .models import Escritorio
 
 
 @admin.register(Escritorio)
-class EscritorioAdmin(admin.ModelAdmin):
+class EscritorioAdmin(ModelAdmin):
     list_display = ("nome", "preview_logo", "cor_primaria", "cor_acento", "ativo", "atualizado_em")
     list_filter = ("ativo",)
 

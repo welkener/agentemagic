@@ -30,6 +30,12 @@ CSRF_TRUSTED_ORIGINS = env.list("DJANGO_CSRF_TRUSTED_ORIGINS", default=[])
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 INSTALLED_APPS = [
+    # django-unfold precisa vir ANTES de django.contrib.admin (troca os
+    # templates do admin por uma UI Tailwind moderna — ver config/urls.py e
+    # cada apps/*/admin.py, que agora herdam de unfold.admin.ModelAdmin).
+    "unfold",
+    "unfold.contrib.filters",
+    "unfold.contrib.forms",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -189,6 +195,61 @@ AUTHENTICATION_BACKENDS = [
 ]
 SESAME_MAX_AGE = MAGICLINK_TTL_MINUTOS * 60  # segundos — mesmo TTL do Magic Link do wa_id
 LOGIN_REDIRECT_URL = "/painel/"  # Grimório (dashboard) — não o admin cru
+
+# ---------------------------------------------------------------------------
+# django-unfold — tema moderno do admin (substitui o reskin manual por CSS
+# custom properties da Onda "restilizar o admin"; ver
+# docs/magicbi-ondas-desenvolvimento.md). Paleta = escala indigo do Tailwind
+# (mais próxima da cor de acento periwinkle já usada no /painel/, ver
+# apps/painel/models.py Escritorio.cor_acento).
+# ---------------------------------------------------------------------------
+from django.urls import reverse_lazy as _reverse_lazy  # noqa: E402
+
+UNFOLD = {
+    "SITE_TITLE": "Magic BI",
+    "SITE_HEADER": "Magic BI — Grimório",
+    "SITE_SYMBOL": "auto_awesome",
+    "SHOW_HISTORY": True,
+    "SHOW_VIEW_ON_SITE": False,
+    # Escala indigo do Tailwind (mesma família de cor do periwinkle #5B67C9 já
+    # usado como cor_acento padrão do Escritorio, apps/painel/models.py).
+    "COLORS": {
+        "primary": {
+            "50": "oklch(95.8% .019 282.83)",
+            "100": "oklch(91.5% .038 285.66)",
+            "200": "oklch(83.2% .078 283.78)",
+            "300": "oklch(74.8% .12 282.58)",
+            "400": "oklch(66.7% .163 280.24)",
+            "500": "oklch(58.5% .204 277.12)",
+            "600": "oklch(50.5% .244 272.22)",
+            "700": "oklch(42.1% .244 268.01)",
+            "800": "oklch(32.9% .19 268.01)",
+            "900": "oklch(23.8% .138 267.96)",
+            "950": "oklch(18.7% .108 268.05)",
+        },
+    },
+    "SIDEBAR": {
+        "show_search": True,
+        "navigation": [
+            {
+                "title": "Grimório",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Dashboard (painel)",
+                        "icon": "dashboard",
+                        "link": "/painel/",
+                    },
+                    {
+                        "title": "Início do admin",
+                        "icon": "home",
+                        "link": _reverse_lazy("admin:index"),
+                    },
+                ],
+            },
+        ],
+    },
+}
 
 # ---------------------------------------------------------------------------
 # Logs estruturados (structlog)

@@ -3,6 +3,7 @@ api_key nunca reexibe o valor salvo (write-only), mesmo padrão do resto do
 projeto (`apps.credentials.admin`)."""
 from django import forms
 from django.contrib import admin, messages
+from unfold.admin import ModelAdmin
 
 from .models import ConfiguracaoEvolution
 from .services import testar_conexao
@@ -30,7 +31,7 @@ class ConfiguracaoEvolutionForm(forms.ModelForm):
 
 
 @admin.register(ConfiguracaoEvolution)
-class ConfiguracaoEvolutionAdmin(admin.ModelAdmin):
+class ConfiguracaoEvolutionAdmin(ModelAdmin):
     form = ConfiguracaoEvolutionForm
     list_display = ("nome", "instancia", "base_url", "ativo", "atualizado_em")
     list_filter = ("ativo",)

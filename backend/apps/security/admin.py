@@ -1,10 +1,11 @@
 from django.contrib import admin
+from unfold.admin import ModelAdmin
 
 from .models import Codigo2FA, SessaoWhatsapp, TokenMagicLink
 
 
 @admin.register(SessaoWhatsapp)
-class SessaoWhatsappAdmin(admin.ModelAdmin):
+class SessaoWhatsappAdmin(ModelAdmin):
     list_display = ("cliente", "wa_id", "status", "validado_em", "expira_em")
     list_filter = ("status",)
     search_fields = ("cliente__nome", "cliente__cnpj", "wa_id")
@@ -15,7 +16,7 @@ class SessaoWhatsappAdmin(admin.ModelAdmin):
 
 
 @admin.register(TokenMagicLink)
-class TokenMagicLinkAdmin(admin.ModelAdmin):
+class TokenMagicLinkAdmin(ModelAdmin):
     list_display = ("cliente", "wa_id", "criado_em", "usado_em", "expira_em")
     search_fields = ("cliente__nome", "cliente__cnpj", "wa_id")
     readonly_fields = [f.name for f in TokenMagicLink._meta.fields]
@@ -28,7 +29,7 @@ class TokenMagicLinkAdmin(admin.ModelAdmin):
 
 
 @admin.register(Codigo2FA)
-class Codigo2FAAdmin(admin.ModelAdmin):
+class Codigo2FAAdmin(ModelAdmin):
     list_display = ("cliente", "intencao", "tentativas", "criado_em", "usado_em", "expira_em")
     search_fields = ("cliente__nome", "cliente__cnpj")
     readonly_fields = [f.name for f in Codigo2FA._meta.fields]
