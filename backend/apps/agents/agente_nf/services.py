@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from django.utils import timezone
 
 from apps.adapters.resolver import resolver_adapter_nfse
+from apps.observabilidade.alertas import alertar_rejeicao_fiscal
 
 from .models import Intencao
 
@@ -40,6 +41,12 @@ def confirmar_emissao(intencao: Intencao, motivo: str) -> ResultadoConfirmacao:
         return ResultadoConfirmacao(ok=True, protocolo=intencao.protocolo, danfse_url=intencao.danfse_url)
 
     intencao.transicionar(Intencao.Estado.REJEITADO, motivo=resultado.erro_padronizado or "rejeicao")
+    # Quem consegue corrigir é o contador — e até aqui ninguém o avisava.
+    alertar_rejeicao_fiscal(
+        intencao,
+        resultado.erro_padronizado,
+        detalhe=str((resultado.dados or {}).get("mensagem_sefin", "")),
+    )
     return ResultadoConfirmacao(ok=False, erro=resultado.erro_padronizado)
 
 
@@ -127,5 +134,10 @@ def confirmar_cancelamento(pedido: Intencao, motivo: str) -> ResultadoConfirmaca
 
     pedido.transicionar(
         Intencao.Estado.REJEITADO, motivo=resultado.erro_padronizado or "rejeicao"
+    )
+    alertar_rejeicao_fiscal(
+        pedido,
+        resultado.erro_padronizado,
+        detalhe=str((resultado.dados or {}).get("mensagem_sefin", "")),
     )
     return ResultadoConfirmacao(ok=False, erro=resultado.erro_padronizado)

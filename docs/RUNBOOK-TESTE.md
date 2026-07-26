@@ -180,10 +180,44 @@ falar com seu ERP, mas ainda não sei ler o formato"), nunca um número inventad
 
 ---
 
+## 6. Alertas e captura de erro
+
+**Rejeição fiscal avisa o contador por e-mail.** Em dev o backend de e-mail é o
+console, então o alerta sai no terminal do `runserver`. Para ver:
+
+```bash
+python manage.py shell -c "
+from apps.clients.models import Cliente
+from apps.agents.agente_nf.models import Intencao
+from apps.agents.agente_nf.services import confirmar_emissao
+c = Cliente.objects.get(cnpj='11222333000181')
+i = Intencao.objects.create(cliente=c, chave_idempotencia='demo-rej',
+    tipo_acao='emitir_nfse', payload={'cnpj_prestador': c.cnpj, 'valor': 900.0},
+    estado=Intencao.Estado.AGUARDANDO_APROVACAO)
+confirmar_emissao(i, motivo='demo')   # sem CNAE -> rejeitado -> alerta
+"
+```
+
+O e-mail vai pro **responsável do escritório**, nunca pro cliente final — ele
+não corrige cadastro fiscal nem certificado. Falhas transitórias
+(`INDISPONIVEL`, `RATE_LIMIT`) **não** geram alerta: o retry resolve, e alerta
+que vira ruído é alerta que ninguém lê quando importa.
+
+O dashboard também mostra **rejeições (24h)** em vermelho — rede de segurança
+pra quem só abre o painel.
+
+**Sentry fica desligado sem `SENTRY_DSN`.** Ligá-lo adiciona um subprocessador
+de dado fiscal/pessoal — leia `apps/observabilidade/sentry.py` antes. O payload
+passa por raspagem (por nome de campo **e** por formato, porque documento
+costuma vazar dentro da mensagem da exceção), e se a raspagem falhar o evento é
+descartado em vez de enviado.
+
+---
+
 ## Testes automatizados
 
 ```bash
-python -m pytest -q        # 240 testes
+python -m pytest -q        # 254 testes
 ```
 
 Cobrem, entre outros: isolamento entre escritórios (dois tenants com **mesmo

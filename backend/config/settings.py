@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "apps.channel_evolution",  # SÓ TESTE LOCAL — nunca produção (ver apps/channel_evolution/apps.py)
     "apps.audit",
     "apps.governance",
+    "apps.observabilidade",  # alertas de negócio + captura de erro (Sentry)
     "apps.fiscal",  # DPS: montagem/assinatura do XML + numeração sequencial
     "apps.agents.agente_nf",
     "apps.agents.agente_erp",
@@ -292,3 +293,18 @@ structlog.configure(
         structlog.dev.ConsoleRenderer(),
     ],
 )
+
+# ---------------------------------------------------------------------------
+# Sentry — captura de exceção. **Desligado sem SENTRY_DSN**, de propósito:
+# ligá-lo adiciona um subprocessador de dado fiscal/pessoal, e isso é decisão
+# de quem configura o deploy, não efeito colateral de instalar dependência.
+# A raspagem do payload fica em apps/observabilidade/sentry.py — leia antes de
+# ligar em produção (o projeto já tem pendência de DPA por causa do Groq).
+# ---------------------------------------------------------------------------
+SENTRY_DSN = env("SENTRY_DSN", default="")
+SENTRY_ENVIRONMENT = env("SENTRY_ENVIRONMENT", default="desenvolvimento")
+
+if SENTRY_DSN:
+    from apps.observabilidade.sentry import configurar as _configurar_sentry  # noqa: E402
+
+    _configurar_sentry(SENTRY_DSN, SENTRY_ENVIRONMENT)

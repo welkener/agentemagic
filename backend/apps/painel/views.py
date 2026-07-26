@@ -16,6 +16,8 @@ SessaoWhatsapp, Credencial) sem introduzir novas fontes de verdade.
 """
 from django.conf import settings
 from django.urls import reverse
+from datetime import timedelta
+
 from django.utils import timezone
 
 from apps.agents.agente_nf.models import Intencao
@@ -67,6 +69,14 @@ def metricas(request=None) -> dict:
         "notas_recentes": notas_concluidas.order_by("-atualizado_em")[:10],
         "notas_pendentes": escopar(
             Intencao.objects.filter(estado=Intencao.Estado.AGUARDANDO_APROVACAO)
+        ).count(),
+        # Rejeição fiscal exige ação humana. O e-mail avisa
+        # (apps/observabilidade/alertas.py), mas e-mail se perde — o número aqui
+        # é a rede de segurança de quem só abre o painel.
+        "rejeicoes_24h": escopar(
+            Intencao.objects.filter(
+                estado=Intencao.Estado.REJEITADO, atualizado_em__gte=agora - timedelta(hours=24)
+            )
         ).count(),
         "sessoes_ativas": escopar(
             SessaoWhatsapp.objects.filter(status=SessaoWhatsapp.Status.ATIVA)

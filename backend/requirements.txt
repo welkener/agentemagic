@@ -12,7 +12,7 @@ structlog
 psycopg[binary]  # Postgres — único banco suportado (dev local ou docker-compose)
 cryptography  # cifra segredos por campo + assina a DPS e extrai o par PEM do .pfx (mTLS)
 nfelib  # bindings gerados do XSD OFICIAL da NFS-e Nacional — apps/fiscal/dps.py
-signxml  # XMLDSig da DPS (enveloped, RSA-SHA256, C14N 1.0)
+signxml  # XMLDSig da DPS (enveloped, RSA-SHA1 + C14N 1.0 — fixados pelo XSD da NFS-e)
 lxml  # árvore XML usada na assinatura
 pyjwt  # Magic Link do wa_id↔CNPJ (apps/security) — docs/magicbi-seguranca-sessao.md
 django-sesame  # Magic Link de login do painel/Grimório (contador) — caso diferente do de cima
@@ -20,3 +20,4 @@ Pillow  # upload de logo do escritório no painel (apps/painel) — SaaS multi-t
 django-unfold  # tema moderno do admin (Tailwind) — feedback "restilizar o admin", ver config/settings.py UNFOLD
 pytest
 pytest-django
+sentry-sdk  # captura de exceção — só ativa com SENTRY_DSN (ver apps/observabilidade/sentry.py)

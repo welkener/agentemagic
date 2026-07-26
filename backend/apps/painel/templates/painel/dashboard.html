@@ -13,7 +13,7 @@
     {# ------------------------------------------------------------------ #}
     {# Números do dia                                                     #}
     {# ------------------------------------------------------------------ #}
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
         {% component "unfold/components/card.html" with href=fila_aprovacao_url icon="receipt_long" %}
             <span class="block font-semibold text-3xl text-font-important-light dark:text-font-important-dark">{{ notas_hoje }}</span>
             <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">notas emitidas hoje</span>
@@ -37,6 +37,11 @@
         {% component "unfold/components/card.html" with icon="apartment" %}
             <span class="block font-semibold text-3xl text-font-important-light dark:text-font-important-dark">{{ clientes_ativos }}</span>
             <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">clientes ativos</span>
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with href=fila_aprovacao_url icon="report" %}
+            <span class="block font-semibold text-3xl {% if rejeicoes_24h %}text-red-600 dark:text-red-400{% else %}text-font-important-light dark:text-font-important-dark{% endif %}">{{ rejeicoes_24h }}</span>
+            <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">rejeições (24h){% if rejeicoes_24h %} — <span class="text-red-600 dark:text-red-400">exige ação</span>{% endif %}</span>
         {% endcomponent %}
     </div>
 

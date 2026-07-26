@@ -872,6 +872,62 @@ Onda 1 — falta o passo anterior, de descobrir o CNPJ conversando.
 
 ---
 
+## 1.17 Alerta de rejeição fiscal + Sentry ✅ 26/jul/2026
+
+### O buraco real não era falta de error tracker
+
+Até aqui, nota recusada pela Sefin virava uma linha de auditoria e uma mensagem
+pro cliente no WhatsApp. **O contador — quem responde pela nota e quem consegue
+corrigir — só descobria se abrisse o admin por conta própria.**
+
+E nenhum Sentry do mundo resolveria isso, porque **rejeição fiscal não é
+exceção**: nada quebra, o fluxo segue normalmente, o desfecho é que é crítico.
+Confundir as duas coisas é o erro clássico de observabilidade — e era o que
+estava acontecendo aqui.
+
+`apps/observabilidade/alertas.py` avisa o **responsável do escritório** por
+e-mail, com motivo em português, código do erro, valor e link direto pro item no
+painel. Decisões que valem registrar:
+
+- **Nunca avisa o cliente final.** Ele não corrige cadastro fiscal nem
+  certificado; receber isso só geraria ansiedade sem ação possível.
+- **Falha transitória não alerta.** `INDISPONIVEL`/`RATE_LIMIT` o retry resolve.
+  Alerta que vira ruído é alerta que ninguém lê quando importa — só a lista
+  `ERROS_QUE_EXIGEM_ACAO` dispara.
+- **Alerta nunca derruba a operação.** A nota já foi rejeitada; e-mail quebrado
+  não pode desfazer transição de estado. Toda falha é engolida e logada, com
+  teste que prova isso.
+- **O alerta entra na trilha** (`rejeicao_fiscal_alertada`) mesmo se o e-mail
+  falhar — é o que permite auditar depois "o escritório foi avisado?".
+
+Card **"rejeições (24h)"** no dashboard, em vermelho: e-mail se perde, painel não.
+
+### Sentry — resolvendo observabilidade sem criar problema de LGPD
+
+Ligar um error tracker num sistema que trafega CNPJ, razão social e valores
+**adiciona um subprocessador de dado pessoal**. O projeto já tem pendência de
+DPA por causa do Groq; entrar com a segunda sem cuidado seria descuido.
+
+Por isso: **desligado sem `SENTRY_DSN`** (ligar é ato de quem configura o
+deploy, não efeito colateral de um `pip install`), `send_default_pii=False`, e um
+`before_send` que raspa o evento inteiro — **por nome de campo e por formato**,
+porque documento costuma vazar dentro da mensagem da exceção, onde não há nome
+de campo pra filtrar. Se a raspagem falhar, o evento é **descartado**: melhor
+perder um erro que vazar dado fiscal por causa de um bug do scrubber.
+
+Sobra o que serve pra depurar (tipo da exceção, stack, código padronizado);
+some o que identifica cliente.
+
+**14 testes novos** (254 no total). Conferido fora do pytest: emissão sem CNAE →
+rejeitada → e-mail com motivo, valor e link chegando ao contador.
+
+⚠ **Do ponto 6 do levantamento, só isto era código.** Continuam pendentes e são
+decisão/processo, não implementação: cofre real (Secrets Manager/KMS) no lugar de
+variável de ambiente, DPA com a cláusula do subprocessador Groq, e parecer de
+responsabilidade civil antes de qualquer emissão real.
+
+---
+
 ## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
 
 **Por quê agora:** é o item que prova a Hipótese 1 do MVP e o que mais lacunas técnicas
