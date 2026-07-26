@@ -15,6 +15,8 @@ from django import forms
 from django.contrib import admin
 from unfold.admin import ModelAdmin
 
+from apps.painel.escopo import EscopoEscritorioMixin, SomentePlataformaMixin
+
 from .certificados import ErroCertificadoInvalido, extrair_metadados
 from .models import AplicativoIntegracao, Credencial
 from .services import vincular_certificado_psc, vincular_certificado_pfx
@@ -96,7 +98,7 @@ class CredencialForm(forms.ModelForm):
 
 
 @admin.register(Credencial)
-class CredencialAdmin(ModelAdmin):
+class CredencialAdmin(EscopoEscritorioMixin, ModelAdmin):
     form = CredencialForm
     list_display = (
         "cliente",
@@ -162,7 +164,7 @@ class AplicativoIntegracaoForm(forms.ModelForm):
 
 
 @admin.register(AplicativoIntegracao)
-class AplicativoIntegracaoAdmin(ModelAdmin):
+class AplicativoIntegracaoAdmin(SomentePlataformaMixin, ModelAdmin):
     form = AplicativoIntegracaoForm
     list_display = ("nome", "ambiente", "base_url", "ativo", "atualizado_em")
     list_filter = ("nome", "ambiente", "ativo")

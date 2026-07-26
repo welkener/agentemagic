@@ -16,16 +16,18 @@ from django.views.decorators.csrf import csrf_exempt
 
 from apps.channel_whatsapp.models import MensagemProcessada
 
+from .models import escritorio_por_instancia
 from .services import resolver_credenciais
 from .tasks import processar_mensagem_evolution
 
 logger = structlog.get_logger(__name__)
 
 
-def _autorizado(payload: dict) -> bool:
+def _autorizado(payload: dict, escritorio=None) -> bool:
     """Sem api_key configurada (admin ou `.env`), não há o que conferir —
-    aceita e loga. Configurada, tem que bater."""
-    chave_esperada = resolver_credenciais().api_key
+    aceita e loga. Configurada, tem que bater — a do escritório dono da
+    instância que recebeu, não uma "ativa" global qualquer."""
+    chave_esperada = resolver_credenciais(escritorio).api_key
     if not chave_esperada:
         return True
     return payload.get("apikey") == chave_esperada
@@ -40,9 +42,20 @@ class WebhookEvolutionView(View):
             logger.warning("evolution_webhook_payload_invalido")
             return JsonResponse({"status": "ignorado"})
 
-        if not _autorizado(payload):
-            logger.warning("evolution_webhook_apikey_invalida")
+        # Multi-tenant: a instância que RECEBEU identifica o escritório (mesmo
+        # contrato do canal oficial, que usa o phone_number_id). Resolvido antes
+        # do `_autorizado` porque a api_key esperada é a daquele escritório.
+        instancia = payload.get("instance", "")
+        escritorio = escritorio_por_instancia(instancia)
+
+        if not _autorizado(payload, escritorio):
+            logger.warning("evolution_webhook_apikey_invalida", instancia=instancia)
             return JsonResponse({"status": "nao_autorizado"}, status=403)
+
+        if escritorio is None:
+            # Nunca processa num tenant arbitrário.
+            logger.warning("evolution_instancia_sem_escritorio", instancia=instancia)
+            return JsonResponse({"status": "ignorado"})
 
         if payload.get("event") != "messages.upsert":
             return JsonResponse({"status": "ignorado"})
@@ -79,5 +92,7 @@ class WebhookEvolutionView(View):
             logger.info("evolution_mensagem_duplicada", message_id=message_id)
             return JsonResponse({"status": "recebido"})
 
-        processar_mensagem_evolution.delay(message_id, telefone, texto, media_id=media_id)
+        processar_mensagem_evolution.delay(
+            message_id, telefone, texto, media_id=media_id, escritorio_id=escritorio.pk
+        )
         return JsonResponse({"status": "recebido"})

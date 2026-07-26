@@ -9,12 +9,14 @@ pela mesma máquina de estados/auditoria do fluxo por WhatsApp
 from django.contrib import admin, messages
 from unfold.admin import ModelAdmin
 
+from apps.painel.escopo import EscopoEscritorioMixin
+
 from .models import Intencao, TransicaoInvalida
 from .services import cancelar_emissao, confirmar_emissao
 
 
 @admin.register(Intencao)
-class IntencaoAdmin(ModelAdmin):
+class IntencaoAdmin(EscopoEscritorioMixin, ModelAdmin):
     """Duplica como a visão "notas emitidas" pra demonstração/homologação —
     filtrar por `estado=CONCLUIDO` já mostra protocolo/DANFSE de cada nota
     real emitida (mock ou adapter real, o campo é preenchido nos dois casos

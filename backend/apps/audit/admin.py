@@ -1,11 +1,13 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin
 
+from apps.painel.escopo import EscopoEscritorioMixin
+
 from .models import Auditoria
 
 
 @admin.register(Auditoria)
-class AuditoriaAdmin(ModelAdmin):
+class AuditoriaAdmin(EscopoEscritorioMixin, ModelAdmin):
     """Só leitura — trilha append-only (o model já bloqueia update/delete)."""
 
     list_display = ("id", "criado_em", "evento", "cliente", "hash_atual")

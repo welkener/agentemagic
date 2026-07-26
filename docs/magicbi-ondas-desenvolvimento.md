@@ -305,6 +305,84 @@ cai no admin completo, não numa tela curada. Isso é coerente com o que já est
 escrito (`magicbi-mvp-cronograma.md`: "o admin é interino, não o Grimório final" — a
 fila de aprovação sempre foi o changelist de `Intencao`), mas quando entrar contador
 de fora da Rotina vai precisar de permissões por grupo pra não expor model demais.
+→ **Resolvido no mesmo dia**, ver 1.8 abaixo.
+
+---
+
+## 1.8 Multi-tenancy de verdade — ✅ concluída 26/jul/2026
+
+**Pedido do usuário:** "o sistema é para ser SaaS, então Rotina é um escritório
+contábil, e podemos vender o sistema para outro escritório, e cada escritório ter seus
+clientes... certifique-se que hoje está assim."
+
+**Auditoria: não estava.** O SaaS multi-tenant existia na doc
+(`magicbi-marca-e-nomes.md` §1) e nos comentários, não no schema:
+
+- `Escritorio` era só uma tabela de logo e cores — **nenhum outro model apontava pra
+  ele**, e `escritorio_ativo()` devolvia "o ativo mais recente" global.
+- `Cliente` não tinha dono. Como toda a cadeia pendura em `Cliente` (perfil,
+  credenciais, intenções, auditoria, sessão), não havia por onde segregar.
+- `auth.User` não tinha escritório e **nenhum dos 7 `admin.py` tinha `get_queryset`** —
+  contador do escritório B veria a carteira, as credenciais e os certificados da Rotina.
+  Isso era vazamento entre concorrentes, não só falta de feature.
+- Canal WhatsApp era um só, global (`.env`), e o roteamento resolvia o cliente por
+  `telefone_whatsapp` **unique global** — dois escritórios não podiam nem atender o
+  mesmo CNPJ.
+
+**Decisões do usuário (26/jul/2026):** número de WhatsApp **por escritório**; um cliente
+pertence a **um** escritório; isolamento **com auditoria de vazamento**.
+
+**O que foi feito:**
+
+- **`Escritorio` vira raiz de tenant** (`apps/painel/models.py`): ganha `slug`, canal
+  WhatsApp próprio (`whatsapp_phone_number_id` + token cifrado) e `MembroEscritorio`
+  (vínculo `auth.User` ↔ escritório). `ativo` mudou de sentido — era "é este que aparece
+  no branding", agora é "escritório habilitado".
+- **`Cliente.escritorio`** (FK `PROTECT` — nunca apagar escritório levando dado fiscal).
+  `cnpj`/`telefone_whatsapp` deixam de ser únicos globalmente e passam a ser únicos
+  **por escritório**: cobre cliente que troca de contador, ou que tem contador fiscal e
+  trabalhista separados.
+- **Roteamento pelo número que RECEBEU**, não pelo remetente
+  (`escritorio_por_phone_number_id` / `escritorio_por_instancia`). É o que faz o
+  isolamento não depender de o cadastro do cliente estar certo. Sem escritório
+  resolvido a mensagem é **descartada** — nunca processada num tenant arbitrário.
+  Fallback explícito: com **um** escritório ativo, número sem casar cai nele (não há
+  pra onde vazar) — é o que mantém a instalação que já está no ar funcionando.
+- **Escopo no admin** (`apps/painel/escopo.py`): superuser vê tudo; membro vê o próprio
+  escritório; **sem vínculo não vê nada** (padrão seguro — staff meio-provisionado nunca
+  pode significar acesso total). O mixin filtra `get_queryset` *e* `formfield_for_foreignkey`
+  — só o primeiro deixaria o contador criar credencial apontando pro cliente do vizinho
+  pelo dropdown. `AplicativoIntegracao` (app OAuth da Magic BI) fica como plataforma,
+  só superuser.
+- **Branding e dashboard escopados**: a marca segue o escritório do usuário logado (antes
+  era global), e as métricas do dashboard filtram pelo mesmo escopo do admin — senão o
+  agregado revelaria o que a listagem esconde.
+- **`provisionar_escritorio`**: cria escritório + primeiro contador + vínculo num comando
+  (os três andam juntos de propósito — sem o vínculo o contador loga e não vê nada).
+
+**Validação — 17 testes novos em `tests/test_multitenancy.py`** (138 no total). O cenário
+é o pior caso de propósito: **dois escritórios com cliente de mesmo CNPJ e mesmo
+telefone** — se o isolamento dependesse de os dados serem distintos, não seria
+isolamento. Cobre banco (unicidade por tenant), webhook (mensagem cai no cliente do dono
+do número), admin (listagem, URL direta de objeto alheio, dropdown de formulário, filtro
+lateral, staff sem vínculo, superuser), dashboard e branding.
+
+Dois vazamentos foram achados **na própria revisão do que eu tinha acabado de escrever**,
+não pelos testes iniciais: (1) o filtro lateral "escritório" na lista de clientes listava
+o nome de todos os escritórios — entregaria a carteira de parceiros da Magic BI pro
+contador; (2) um teste de isolamento passava mesmo se a página voltasse vazia, porque só
+tinha asserção negativa — agora toda superfície afirma *também* que o dado do próprio
+escritório aparece.
+
+Migração validada **contra o banco de dev real** (2 clientes, backfill, 0 órfãos), não só
+contra o banco efêmero do pytest, e conferida com dois tenants reais no banco: o contador
+do escritório novo não enxergou nenhum cliente do outro, nem na listagem nem no dashboard.
+
+⚠ **Ficam pendentes** (nenhum bloqueia vender pro segundo escritório): `Escritorio` ainda
+mora em `apps/painel` (app de apresentação) — o lugar certo seria `apps/tenants`, mas
+mover model entre apps com dado em produção pede `SeparateDatabaseAndState` e não valia o
+risco agora; e o contador continua vendo o admin completo do próprio escritório (sem
+grupos de permissão mais finos por papel dentro do escritório).
 
 ---
 

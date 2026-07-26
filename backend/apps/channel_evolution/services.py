@@ -22,9 +22,12 @@ class CredenciaisEvolution:
         return bool(self.base_url and self.api_key and self.instancia)
 
 
-def resolver_credenciais() -> CredenciaisEvolution:
-    """Configuração ativa no admin tem prioridade; `.env` é o fallback/bootstrap."""
-    config = configuracao_ativa()
+def resolver_credenciais(escritorio=None) -> CredenciaisEvolution:
+    """Configuração ativa no admin tem prioridade; `.env` é o fallback/bootstrap.
+
+    Com `escritorio`, prefere a instância daquele escritório (multi-tenant).
+    """
+    config = configuracao_ativa(escritorio)
     if config is not None:
         return CredenciaisEvolution(base_url=config.base_url, api_key=config.api_key, instancia=config.instancia)
     return CredenciaisEvolution(
@@ -34,13 +37,13 @@ def resolver_credenciais() -> CredenciaisEvolution:
     )
 
 
-def enviar_mensagem(telefone: str, texto: str) -> bool:
+def enviar_mensagem(telefone: str, texto: str, escritorio=None) -> bool:
     """Envia texto via `POST {base_url}/message/sendText/{instance}`.
 
     Sem configuração (nem no admin, nem no `.env`), só loga — mesmo padrão de
     degradação do canal oficial, mantém o fluxo testável offline.
     """
-    cred = resolver_credenciais()
+    cred = resolver_credenciais(escritorio)
     if not cred.configurada:
         logger.info(
             "evolution_envio_simulado (sem configuração ativa nem EVOLUTION_* no .env)",
@@ -65,7 +68,7 @@ def enviar_mensagem(telefone: str, texto: str) -> bool:
         return False
 
 
-def baixar_midia(message_id: str) -> tuple[bytes, str] | None:
+def baixar_midia(message_id: str, escritorio=None) -> tuple[bytes, str] | None:
     """Baixa o áudio de uma mensagem via `POST /chat/getBase64FromMediaMessage/{instance}`.
 
     Diferente do canal Meta (que tem um `media_id` próprio resolvido em dois
@@ -73,7 +76,7 @@ def baixar_midia(message_id: str) -> tuple[bytes, str] | None:
     mensagem** (`message_id`). Sem configuração, devolve None — D6 degrada
     igual ao canal oficial (pede pro cliente escrever, nunca trava).
     """
-    cred = resolver_credenciais()
+    cred = resolver_credenciais(escritorio)
     if not cred.configurada:
         logger.info("evolution_download_midia_indisponivel (sem configuração)", message_id=message_id)
         return None
@@ -97,10 +100,10 @@ def baixar_midia(message_id: str) -> tuple[bytes, str] | None:
         return None
 
 
-def testar_conexao() -> tuple[bool, str]:
+def testar_conexao(escritorio=None) -> tuple[bool, str]:
     """Chama `GET /instance/connectionState/{instance}` — usado pela ação 'Testar
     conexão' do admin. Devolve (ok, mensagem) já pronta pra mostrar ao usuário."""
-    cred = resolver_credenciais()
+    cred = resolver_credenciais(escritorio)
     if not cred.configurada:
         return False, "Configuração incompleta (base_url/api_key/instância)."
 

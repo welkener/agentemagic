@@ -25,37 +25,67 @@ from apps.clients.models import Cliente
 from apps.credentials.models import Credencial
 from apps.security.models import SessaoWhatsapp
 
+from .escopo import escopo_do_usuario
+
 
 def metricas(request=None) -> dict:
-    """Números e listas do dashboard. Separado do callback pra ser testável sozinho."""
+    """Números e listas do dashboard. Separado do callback pra ser testável sozinho.
+
+    Escopado por tenant com a mesma regra do admin (`escopo.py`): superuser vê a
+    plataforma inteira, contador vê o próprio escritório, sem vínculo não vê
+    nada. Sem isso o dashboard mostraria no agregado justamente o que as
+    listagens escondem.
+    """
     agora = timezone.now()
     inicio_hoje = agora.replace(hour=0, minute=0, second=0, microsecond=0)
     inicio_mes = agora.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    notas_concluidas = Intencao.objects.filter(estado=Intencao.Estado.CONCLUIDO)
+    irrestrito, escritorio = escopo_do_usuario(getattr(request, "user", None))
+
+    def escopar(qs, campo="cliente__escritorio"):
+        if irrestrito:
+            return qs
+        if escritorio is None:
+            return qs.none()
+        return qs.filter(**{campo: escritorio})
+
+    notas_concluidas = escopar(Intencao.objects.filter(estado=Intencao.Estado.CONCLUIDO))
     fila_url = reverse("admin:agente_nf_intencao_changelist")
 
+    canal_meta = (
+        escritorio.canal_whatsapp_configurado
+        if escritorio is not None
+        else bool(settings.WHATSAPP_TOKEN and settings.WHATSAPP_PHONE_NUMBER_ID)
+    )
+
     return {
-        "canal_meta_configurado": bool(settings.WHATSAPP_TOKEN and settings.WHATSAPP_PHONE_NUMBER_ID),
-        "canal_evolution": configuracao_ativa(),
+        "escritorio": escritorio,
+        "canal_meta_configurado": canal_meta,
+        "canal_evolution": configuracao_ativa(escritorio),
         "notas_hoje": notas_concluidas.filter(atualizado_em__gte=inicio_hoje).count(),
         "notas_mes": notas_concluidas.filter(atualizado_em__gte=inicio_mes).count(),
         "notas_recentes": notas_concluidas.order_by("-atualizado_em")[:10],
-        "notas_pendentes": Intencao.objects.filter(
-            estado=Intencao.Estado.AGUARDANDO_APROVACAO
+        "notas_pendentes": escopar(
+            Intencao.objects.filter(estado=Intencao.Estado.AGUARDANDO_APROVACAO)
         ).count(),
-        "sessoes_ativas": SessaoWhatsapp.objects.filter(
-            status=SessaoWhatsapp.Status.ATIVA
+        "sessoes_ativas": escopar(
+            SessaoWhatsapp.objects.filter(status=SessaoWhatsapp.Status.ATIVA)
         ).count(),
-        "sessoes_pendentes": SessaoWhatsapp.objects.exclude(
-            status=SessaoWhatsapp.Status.ATIVA
+        "sessoes_pendentes": escopar(
+            SessaoWhatsapp.objects.exclude(status=SessaoWhatsapp.Status.ATIVA)
         ).count(),
-        "clientes_ativos": Cliente.objects.filter(ativo=True).count(),
-        "certificados": Credencial.objects.filter(
-            integracao="nfse_nacional",
-            tipo__in=[Credencial.Tipo.CERTIFICADO_PSC, Credencial.Tipo.CERTIFICADO_PFX],
+        "clientes_ativos": escopar(
+            Cliente.objects.filter(ativo=True), campo="escritorio"
+        ).count(),
+        "certificados": escopar(
+            Credencial.objects.filter(
+                integracao="nfse_nacional",
+                tipo__in=[Credencial.Tipo.CERTIFICADO_PSC, Credencial.Tipo.CERTIFICADO_PFX],
+            )
         ).select_related("cliente"),
-        "atividade_recente": Auditoria.objects.select_related("cliente").order_by("-id")[:15],
+        "atividade_recente": escopar(
+            Auditoria.objects.select_related("cliente")
+        ).order_by("-id")[:15],
         "fila_aprovacao_url": fila_url,
         "auditoria_url": reverse("admin:audit_auditoria_changelist"),
         "credenciais_url": reverse("admin:credentials_credencial_changelist"),

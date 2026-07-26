@@ -5,6 +5,8 @@ from django import forms
 from django.contrib import admin, messages
 from unfold.admin import ModelAdmin
 
+from apps.painel.escopo import EscopoEscritorioMixin
+
 from .models import ConfiguracaoEvolution
 from .services import testar_conexao
 
@@ -18,7 +20,7 @@ class ConfiguracaoEvolutionForm(forms.ModelForm):
 
     class Meta:
         model = ConfiguracaoEvolution
-        fields = ["nome", "base_url", "instancia", "api_key", "ativo"]
+        fields = ["escritorio", "nome", "base_url", "instancia", "api_key", "ativo"]
 
     def save(self, commit=True):
         instancia = super().save(commit=False)
@@ -31,13 +33,21 @@ class ConfiguracaoEvolutionForm(forms.ModelForm):
 
 
 @admin.register(ConfiguracaoEvolution)
-class ConfiguracaoEvolutionAdmin(ModelAdmin):
+class ConfiguracaoEvolutionAdmin(EscopoEscritorioMixin, ModelAdmin):
+    campo_escritorio = "escritorio"
     form = ConfiguracaoEvolutionForm
-    list_display = ("nome", "instancia", "base_url", "ativo", "atualizado_em")
+    list_display = ("nome", "escritorio", "instancia", "base_url", "ativo", "atualizado_em")
     list_filter = ("ativo",)
     actions = ["testar_conexao_action"]
 
     @admin.action(description="Testar conexão com a instância")
     def testar_conexao_action(self, request, queryset):
-        ok, mensagem = testar_conexao()
-        self.message_user(request, mensagem, level=messages.SUCCESS if ok else messages.WARNING)
+        # Testa a instância de cada configuração selecionada, no escritório
+        # dela — antes isto sempre batia na "configuração ativa" global.
+        for config in queryset:
+            ok, mensagem = testar_conexao(config.escritorio)
+            self.message_user(
+                request,
+                f"{config.instancia}: {mensagem}",
+                level=messages.SUCCESS if ok else messages.WARNING,
+            )

@@ -18,6 +18,8 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
+from apps.painel.models import escritorio_por_phone_number_id
+
 from .models import MensagemProcessada
 from .tasks import processar_mensagem
 
@@ -67,9 +69,19 @@ class WebhookWhatsAppView(View):
             logger.warning("webhook_payload_invalido")
             return JsonResponse({"status": "ignorado"})
 
-        for mensagem in self._extrair_mensagens(payload):
+        for phone_number_id, mensagem in self._extrair_mensagens(payload):
             message_id = mensagem.get("id")
             if not message_id:
+                continue
+
+            # Multi-tenant: o número que RECEBEU identifica o escritório. Sem
+            # escritório resolvido, a mensagem é descartada — processar num
+            # tenant arbitrário seria vazamento entre escritórios.
+            escritorio = escritorio_por_phone_number_id(phone_number_id)
+            if escritorio is None:
+                logger.warning(
+                    "webhook_numero_sem_escritorio", phone_number_id=phone_number_id
+                )
                 continue
             telefone = mensagem.get("from", "")
             texto = (mensagem.get("text") or {}).get("body", "")
@@ -84,14 +96,23 @@ class WebhookWhatsAppView(View):
                 logger.info("webhook_mensagem_duplicada", message_id=message_id)
                 continue
 
-            processar_mensagem.delay(message_id, telefone, texto, media_id=media_id)
+            processar_mensagem.delay(
+                message_id, telefone, texto, media_id=media_id, escritorio_id=escritorio.pk
+            )
 
         # Ack imediato — o processamento pesado ficou na fila.
         return JsonResponse({"status": "recebido"})
 
     @staticmethod
     def _extrair_mensagens(payload: dict):
-        """Percorre entry[].changes[].value.messages[] do payload do Meta."""
+        """Percorre entry[].changes[].value.messages[] do payload do Meta.
+
+        Devolve `(phone_number_id, mensagem)`: o `metadata.phone_number_id` é o
+        número da Magic BI que recebeu — é o que identifica o escritório.
+        """
         for entry in payload.get("entry", []):
             for change in entry.get("changes", []):
-                yield from change.get("value", {}).get("messages", []) or []
+                valor = change.get("value", {})
+                phone_number_id = (valor.get("metadata") or {}).get("phone_number_id", "")
+                for mensagem in valor.get("messages", []) or []:
+                    yield phone_number_id, mensagem

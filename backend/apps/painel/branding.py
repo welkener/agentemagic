@@ -1,29 +1,39 @@
 """Branding por escritório (tenant) aplicado ao admin inteiro.
 
-Antes isto vivia só no template do `/painel/`. Com o dashboard virando a home
-do admin (ver views.py), o nome/logo do escritório passam a valer no cabeçalho
-de *todas* as telas — o que sempre foi a intenção do model `Escritorio`: Magic
-BI é a plataforma, o escritório contábil é quem aparece pro contador.
+A marca resolve pelo **escritório do usuário logado** (`escopo.py`), não por um
+"escritório ativo" global — com dois tenants no ar, mostrar a marca do
+escritório A pro contador do B seria pior que mostrar a genérica.
 
-`SITE_HEADER`/`SITE_LOGO` do django-unfold aceitam callables que recebem o
-request (`unfold/sites.py::_get_value`), então a marca é resolvida por
-requisição, sem reiniciar o processo quando o escritório muda no admin.
+Fallback pra `escritorio_ativo()` (o único ativo, se houver só um) cobre as
+telas sem usuário — tela de login, sobretudo — e a instalação single-tenant
+que já está no ar. Com mais de um escritório, `escritorio_ativo()` devolve
+None de propósito e a marca vira a genérica "Magic BI".
+
+`SITE_HEADER`/`SITE_SUBHEADER`/`SITE_LOGO` do django-unfold aceitam callables
+que recebem o request (`unfold/sites.py::_get_value`), então isto é resolvido
+por requisição — trocar o escritório no admin reflete na hora.
 """
+from .escopo import escritorio_do_usuario
 from .models import escritorio_ativo
 
 
+def _escritorio(request):
+    usuario = getattr(request, "user", None)
+    return escritorio_do_usuario(usuario) or escritorio_ativo()
+
+
 def site_header(request) -> str:
-    escritorio = escritorio_ativo()
+    escritorio = _escritorio(request)
     return f"Grimório — {escritorio.nome}" if escritorio else "Grimório — Magic BI"
 
 
 def site_subheader(request) -> str:
     """Deixa explícito que a plataforma é a Magic BI, mesmo com marca de terceiro."""
-    return "plataforma Magic BI" if escritorio_ativo() else "painel do contador"
+    return "plataforma Magic BI" if _escritorio(request) else "painel do contador"
 
 
 def site_logo(request) -> str | None:
-    escritorio = escritorio_ativo()
+    escritorio = _escritorio(request)
     if escritorio and escritorio.logo:
         return escritorio.logo.url
     return None

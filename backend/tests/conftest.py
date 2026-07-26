@@ -5,11 +5,18 @@ import pytest
 from django.utils import timezone
 
 from apps.clients.models import Cliente, Perfil
+from apps.painel.models import Escritorio
 from apps.security.models import SessaoWhatsapp
 
 
 @pytest.fixture
-def cliente(db):
+def escritorio(db):
+    """Escritório contábil dono da carteira — raiz de tenant (ver apps/painel/models.py)."""
+    return Escritorio.objects.create(nome="Rotina Contábil", slug="rotina", ativo=True)
+
+
+@pytest.fixture
+def cliente(db, escritorio):
     """Padaria Estrela — empresa exemplo com perfil Tier 1 e sessão já validada.
 
     Representa o estado normal de um cliente já onboardado — os testes que
@@ -17,6 +24,7 @@ def cliente(db):
     sem `SessaoWhatsapp` ativa (ver tests/test_security.py).
     """
     c = Cliente.objects.create(
+        escritorio=escritorio,
         cnpj="12345678000190",
         nome="Padaria Estrela Ltda",
         telefone_whatsapp="5511999998888",

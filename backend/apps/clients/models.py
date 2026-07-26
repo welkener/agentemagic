@@ -3,13 +3,23 @@ from django.db import models
 
 
 class Cliente(models.Model):
-    """Empresa atendida pela Magic BI (MEI/ME/EPP da base da Rotina)."""
+    """Empresa atendida por um escritório contábil parceiro (MEI/ME/EPP).
 
-    cnpj = models.CharField(max_length=14, unique=True)
+    `escritorio` é a raiz de multi-tenancy: tudo que pendura no cliente
+    (perfil, credenciais, intenções, auditoria, sessão) herda o tenant por
+    aqui. Ver `apps/painel/models.py`.
+    """
+
+    escritorio = models.ForeignKey(
+        "painel.Escritorio",
+        on_delete=models.PROTECT,  # nunca apagar escritório levando junto dado fiscal
+        related_name="clientes",
+        help_text="Escritório contábil dono desta carteira.",
+    )
+    cnpj = models.CharField(max_length=14)
     nome = models.CharField(max_length=200)
     telefone_whatsapp = models.CharField(
         max_length=20,
-        unique=True,
         help_text="Número no formato internacional, ex.: 5511999998888",
     )
     email_contato = models.EmailField(
@@ -34,6 +44,19 @@ class Cliente(models.Model):
 
     class Meta:
         verbose_name = "cliente"
+        constraints = [
+            # Unicidade por ESCRITÓRIO, não global: dois escritórios podem ter
+            # o mesmo CNPJ/telefone na carteira (cliente que troca de contador,
+            # ou que tem contador fiscal e trabalhista separados). O que não
+            # pode é o mesmo escritório duplicar o cliente.
+            models.UniqueConstraint(
+                fields=["escritorio", "cnpj"], name="cliente_cnpj_unico_por_escritorio"
+            ),
+            models.UniqueConstraint(
+                fields=["escritorio", "telefone_whatsapp"],
+                name="cliente_telefone_unico_por_escritorio",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.nome} ({self.cnpj})"

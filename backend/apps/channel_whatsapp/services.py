@@ -8,15 +8,26 @@ logger = structlog.get_logger(__name__)
 VERSAO_GRAPH_API = "v20.0"
 
 
-def enviar_mensagem(telefone: str, texto: str) -> bool:
-    """Envia texto para um número via Cloud API.
+def credenciais_do_escritorio(escritorio=None) -> tuple[str, str]:
+    """(token, phone_number_id) do escritório, com o `.env` como fallback.
+
+    Multi-tenant: cada escritório tem o próprio número (decisão 26/jul/2026).
+    O `.env` continua valendo pra instalação de um tenant só, que é a que já
+    está no ar — o escritório sem canal próprio cai nele em vez de parar.
+    """
+    if escritorio is not None and escritorio.canal_whatsapp_configurado:
+        return escritorio.whatsapp_token, escritorio.whatsapp_phone_number_id
+    return settings.WHATSAPP_TOKEN, settings.WHATSAPP_PHONE_NUMBER_ID
+
+
+def enviar_mensagem(telefone: str, texto: str, escritorio=None) -> bool:
+    """Envia texto para um número via Cloud API, pelo canal do escritório.
 
     Se o token/número não estiverem configurados (dev local sem app do Meta),
     apenas loga a resposta em vez de enviar — mantém o fluxo funcionando
     offline. Retorna True se o envio (ou o log) ocorreu sem erro.
     """
-    token = settings.WHATSAPP_TOKEN
-    phone_id = settings.WHATSAPP_PHONE_NUMBER_ID
+    token, phone_id = credenciais_do_escritorio(escritorio)
 
     if not token or not phone_id:
         logger.info(
@@ -48,14 +59,15 @@ def enviar_mensagem(telefone: str, texto: str) -> bool:
         return False
 
 
-def baixar_midia(media_id: str) -> tuple[bytes, str] | None:
+def baixar_midia(media_id: str, escritorio=None) -> tuple[bytes, str] | None:
     """Baixa uma mídia (ex.: áudio) recebida no WhatsApp — dois passos da Graph
     API: resolve a URL temporária do `media_id`, depois baixa o binário.
 
-    Sem WHATSAPP_TOKEN configurado (dev local sem app do Meta), não há como
-    baixar mídia real — devolve None (dev/teste seguem offline).
+    Usa o token do escritório dono do número (a mídia só é acessível pelo token
+    da mesma conta que recebeu). Sem token configurado (dev local sem app do
+    Meta), devolve None — dev/teste seguem offline.
     """
-    token = settings.WHATSAPP_TOKEN
+    token, _ = credenciais_do_escritorio(escritorio)
     if not token:
         logger.info("whatsapp_download_midia_indisponivel (sem WHATSAPP_TOKEN)", media_id=media_id)
         return None

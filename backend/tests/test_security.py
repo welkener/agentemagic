@@ -21,9 +21,10 @@ from apps.security.services import (
 
 
 @pytest.fixture
-def cliente_sem_sessao(db):
+def cliente_sem_sessao(db, escritorio):
     """Cliente recém-provisionado, ainda sem vínculo wa_id↔CNPJ validado."""
     c = Cliente.objects.create(
+        escritorio=escritorio,
         cnpj="98765432000111",
         nome="Oficina do Zé",
         telefone_whatsapp="5511988887777",

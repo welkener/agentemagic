@@ -29,8 +29,16 @@ def processar(
     enviar_fn: Callable[[str, str], bool],
     transcrever_fn: Callable[[str], str | None] | None = None,
     media_id: str | None = None,
+    escritorio=None,
 ) -> str:
-    cliente = Cliente.objects.filter(telefone_whatsapp=telefone, ativo=True).first()
+    # O tenant vem do número/instância que RECEBEU a mensagem (resolvido na
+    # view), não do remetente — então o telefone do cliente só é procurado
+    # dentro da carteira daquele escritório. Sem isso, dois escritórios com o
+    # mesmo CNPJ/telefone na carteira se cruzariam.
+    clientes = Cliente.objects.filter(telefone_whatsapp=telefone, ativo=True)
+    if escritorio is not None:
+        clientes = clientes.filter(escritorio=escritorio)
+    cliente = clientes.first()
 
     origem = "texto"
     if media_id:
