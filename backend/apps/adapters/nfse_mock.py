@@ -26,7 +26,7 @@ class NfseMockAdapter(AdapterBase):
     """Simulação da API NFS-e Nacional (emissão de nota de serviço)."""
 
     def capacidades(self) -> set[str]:
-        return {"emitir_nfse", "consultar_nfse", "criar_rascunho_nfse"}
+        return {"emitir_nfse", "consultar_nfse", "criar_rascunho_nfse", "cancelar_nfse"}
 
     def consultar(self, recurso: str, filtros: dict, ctx) -> ResultadoAcao:
         if recurso != "nfse":
@@ -53,6 +53,36 @@ class NfseMockAdapter(AdapterBase):
     def alterar(self, recurso: str, id_ext: str, mudancas: dict, ctx) -> ResultadoAcao:
         # NFS-e emitida não se altera — cancela e reemite (fora do escopo do MVP).
         return ResultadoAcao(ok=False, erro_padronizado="OPERACAO_NAO_SUPORTADA")
+
+    def cancelar(self, documento: str, referencia: str, motivo: str, ctx) -> ResultadoAcao:
+        """Simula o evento de cancelamento do ADN.
+
+        Na vida real isto é um evento assinado sobre a NFS-e (não um DELETE) e
+        tem **prazo legal** — passado o prazo, a Sefin recusa e o caminho vira
+        substituição. O mock reproduz a recusa por motivo ausente, que é a
+        rejeição mais comum, pra o fluxo do contador já nascer testado nela.
+        """
+        if documento != "nfse":
+            return ResultadoAcao(ok=False, erro_padronizado="RECURSO_NAO_ENCONTRADO")
+        if not referencia:
+            return ResultadoAcao(ok=False, erro_padronizado="FILTRO_OBRIGATORIO_AUSENTE")
+        if not (motivo or "").strip():
+            return ResultadoAcao(
+                ok=False,
+                erro_padronizado="REJEITADA_MOTIVO_AUSENTE",
+                dados={"mensagem_sefin": "Justificativa de cancelamento não informada."},
+            )
+
+        protocolo_cancelamento = f"CANC-{uuid.uuid4().hex[:12].upper()}"
+        return ResultadoAcao(
+            ok=True,
+            dados={
+                "protocolo_cancelamento": protocolo_cancelamento,
+                "situacao": "CANCELADA",
+                "nfse_cancelada": referencia,
+            },
+            referencia_externa=protocolo_cancelamento,
+        )
 
     def emitir(self, documento: str, dados: dict, ctx) -> ResultadoAcao:
         if documento != "nfse":

@@ -18,6 +18,7 @@ docs/requisitos-dev-piloto-rotina.md §10.5 ("Se a API de IA cair").
 """
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Literal
 
@@ -28,7 +29,12 @@ from pydantic import BaseModel, Field
 
 from apps.agents.agente_erp.services import AgenteErp
 from apps.agents.agente_nf.models import Intencao
-from apps.agents.agente_nf.services import cancelar_emissao, confirmar_emissao
+from apps.agents.agente_nf.services import (
+    ErroCancelamento,
+    cancelar_emissao,
+    confirmar_emissao,
+    solicitar_cancelamento,
+)
 from apps.audit.services import registrar
 from apps.governance.tiers import tier_da_intencao, verificar_tier
 from apps.security.models import Codigo2FA
@@ -61,7 +67,23 @@ _REGRAS_ERP = [
     (("caixa", "fluxo"), ("consultar_fluxo_caixa", "fluxo_caixa")),
 ]
 
-_INTENCOES_VALIDAS = ("emitir_nota", *[nome for _, (nome, _) in _REGRAS_ERP], "desconhecida")
+# Sobre nota — as três intenções (emitir/consultar/cancelar) contêm a palavra
+# "nota", então a desambiguação é por regex de palavra INTEIRA, não substring:
+# "emiti" é prefixo de "emitir", e com `in` "emitir nfs-e" virava consulta.
+_RE_CANCELAR_NOTA = re.compile(r"\b(cancelar|cancela|cancelamento|anular|anula)\b")
+_RE_VERBO_EMITIR = re.compile(r"\b(emitir|emite|emita|emitindo|gerar|gera|fazer|faz)\b")
+_RE_CONSULTAR_NOTA = re.compile(
+    r"\b(quais|quantas|minhas|minha|consultar|consulta|ver|listar|lista|"
+    r"emiti|emitida|emitidas|emitidos|cade|cadê)\b"
+)
+
+_INTENCOES_VALIDAS = (
+    "emitir_nota",
+    "consultar_nota",
+    "cancelar_nota",
+    *[nome for _, (nome, _) in _REGRAS_ERP],
+    "desconhecida",
+)
 
 
 class IntencaoClassificada(BaseModel):
@@ -69,6 +91,8 @@ class IntencaoClassificada(BaseModel):
 
     intencao: Literal[
         "emitir_nota",
+        "consultar_nota",
+        "cancelar_nota",
         "consultar_estoque",
         "consultar_pedido",
         "consultar_contas_receber",
@@ -132,6 +156,12 @@ class Orquestrador:
         if intencao_nome == "emitir_nota":
             return self._iniciar_emissao(mensagem, cliente, perfil, message_id)
 
+        if intencao_nome == "consultar_nota":
+            return self._consultar_notas(cliente, perfil)
+
+        if intencao_nome == "cancelar_nota":
+            return self._pedir_cancelamento(mensagem, cliente)
+
         for _, (nome, recurso) in _REGRAS_ERP:
             if nome == intencao_nome:
                 return self._agente_erp.consultar(
@@ -176,12 +206,94 @@ class Orquestrador:
 
     def _classificar_por_palavra_chave(self, mensagem: str) -> str:
         texto = mensagem.lower()
+        # Falou em nota: decidir QUAL das três intenções. A ordem é o que
+        # resolve os casos ambíguos de verdade:
+        #   1. cancelar ganha de tudo ("quero cancelar minha nota");
+        #   2. verbo de emissão ganha da consulta ("emitir MINHA nota" é
+        #      emissão, apesar do "minha", que é palavra de consulta);
+        #   3. sobrou palavra de consulta → consulta ("minhas notas");
+        #   4. default emitir — preserva o comportamento anterior.
         if any(p in texto for p in _PALAVRAS_NOTA):
+            if _RE_CANCELAR_NOTA.search(texto):
+                return "cancelar_nota"
+            if _RE_VERBO_EMITIR.search(texto):
+                return "emitir_nota"
+            if _RE_CONSULTAR_NOTA.search(texto):
+                return "consultar_nota"
             return "emitir_nota"
         for palavras, (nome, _recurso) in _REGRAS_ERP:
             if any(p in texto for p in palavras):
                 return nome
         return "desconhecida"
+
+    # ------------------------------------------------------------------
+    # Notas já emitidas — consulta (Tier 0) e cancelamento (Tier 3)
+    # ------------------------------------------------------------------
+    def _consultar_notas(self, cliente, perfil) -> str:
+        tier = tier_da_intencao("consultar_nota")
+        if perfil is None or not verificar_tier(tier, perfil):
+            return (
+                "Consulta de notas ainda não está liberada para o seu perfil. "
+                "Fale com seu contador para habilitá-la. 🙏"
+            )
+
+        notas = Intencao.objects.filter(
+            cliente=cliente, tipo_acao="emitir_nfse", estado=Intencao.Estado.CONCLUIDO
+        ).order_by("-atualizado_em")[:5]
+
+        if not notas:
+            return "Você ainda não tem nenhuma nota emitida por aqui. 🧾"
+
+        linhas = ["Suas últimas notas emitidas 🧾", ""]
+        for nota in notas:
+            valor = nota.payload.get("valor")
+            valor_txt = f"R$ {valor:.2f}" if isinstance(valor, (int, float)) else "—"
+            status = " ❌ CANCELADA" if nota.cancelada else ""
+            linhas.append(
+                f"• {nota.atualizado_em.strftime('%d/%m/%Y')} — {valor_txt} — "
+                f"{nota.payload.get('tomador') or 'sem tomador'}{status}"
+            )
+            linhas.append(f"  protocolo {nota.protocolo or '—'}")
+            if nota.danfse_url and not nota.cancelada:
+                linhas.append(f"  DANFSE: {nota.danfse_url}")
+        return "\n".join(linhas)
+
+    def _pedir_cancelamento(self, mensagem: str, cliente) -> str:
+        """Cliente NUNCA cancela sozinho — o pedido vai pro contador.
+
+        Cancelar documento fiscal tem efeito contábil e prazo legal; a decisão
+        é de quem responde tecnicamente por ela. Ver `solicitar_cancelamento`
+        em `agents/agente_nf/services.py` pro porquê isso não depende do
+        `tier_maximo` do perfil.
+        """
+        nota = (
+            Intencao.objects.filter(
+                cliente=cliente,
+                tipo_acao="emitir_nfse",
+                estado=Intencao.Estado.CONCLUIDO,
+                cancelada_em__isnull=True,
+            )
+            .order_by("-atualizado_em")
+            .first()
+        )
+        if nota is None:
+            return "Não encontrei nenhuma nota emitida que possa ser cancelada. 🤔"
+
+        try:
+            solicitar_cancelamento(nota, motivo=mensagem.strip(), origem="whatsapp")
+        except ErroCancelamento as exc:
+            return f"{exc} 🙏"
+
+        valor = nota.payload.get("valor")
+        valor_txt = f"R$ {valor:.2f}" if isinstance(valor, (int, float)) else "—"
+        return (
+            "Registrei seu pedido de cancelamento 📩\n\n"
+            f"Nota: {nota.protocolo}\n"
+            f"Valor: {valor_txt}\n"
+            f"Emitida em: {nota.atualizado_em.strftime('%d/%m/%Y')}\n\n"
+            "Cancelamento de nota fiscal precisa passar pelo seu contador — "
+            "ele foi avisado e vai analisar. Te aviso assim que houver resposta. 🙏"
+        )
 
     # ------------------------------------------------------------------
     # Emissão de NFS-e (Fiscus) — fluxo de 2 turnos com confirmação Tier 1

@@ -58,6 +58,28 @@ class Intencao(models.Model):
     danfse_url = models.URLField(
         blank=True, default="", help_text="Link do DANFSE — preenchido na emissão bem-sucedida."
     )
+
+    # --- Cancelamento (tipo_acao="cancelar_nfse") --------------------------
+    # O pedido de cancelamento é uma Intencao PRÓPRIA, que aponta pra nota
+    # cancelada. Não se reaproveita o estado CANCELADO da nota original: lá
+    # ele significa "o cliente desistiu ANTES de emitir", coisa completamente
+    # diferente de "a nota existiu e foi cancelada na Sefin". Misturar os dois
+    # apagaria essa distinção da trilha de auditoria de um sistema fiscal.
+    intencao_original = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="pedidos_cancelamento",
+        help_text="Só para tipo_acao='cancelar_nfse': a nota que se quer cancelar.",
+    )
+    cancelada_em = models.DateTimeField(
+        null=True, blank=True, help_text="Preenchido na NOTA quando o cancelamento é aceito."
+    )
+    protocolo_cancelamento = models.CharField(
+        max_length=100, blank=True, default="", help_text="Protocolo do evento de cancelamento."
+    )
+
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
 
@@ -88,6 +110,25 @@ class Intencao(models.Model):
                 "motivo": motivo,
             },
             cliente=self.cliente,
+        )
+
+    @property
+    def cancelada(self) -> bool:
+        return self.cancelada_em is not None
+
+    @property
+    def pode_ser_cancelada(self) -> bool:
+        """Só nota emitida de fato e ainda não cancelada.
+
+        Não cobre o **prazo legal** de cancelamento, que varia por município e
+        NT vigente — quem recusa fora do prazo é a Sefin, e o adapter devolve
+        a rejeição. Fingir aqui um prazo que não foi confirmado seria pior que
+        deixar a autoridade decidir.
+        """
+        return (
+            self.tipo_acao == "emitir_nfse"
+            and self.estado == self.Estado.CONCLUIDO
+            and not self.cancelada
         )
 
     def __str__(self):

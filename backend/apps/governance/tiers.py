@@ -12,11 +12,20 @@ sempre com explicação educada na camada de conversa.
 """
 
 # Catálogo: nome da intenção → tier exigido.
+#
+# ⚠ Os nomes aqui TÊM que ser exatamente os que o orquestrador emite. Nome que
+# não bate cai no fail-safe Tier 3 e a intenção é recusada como se fosse
+# destrutiva. Foi o que aconteceu com contas a pagar/receber até 26/jul/2026:
+# o catálogo dizia `consultar_contas`, o orquestrador emitia
+# `consultar_contas_receber`/`_pagar`, e as duas consultas responderam
+# "operação não liberada para o seu perfil" em produção. `tests/test_governance.py`
+# agora cruza este dicionário com o orquestrador pra isso não repetir.
 CATALOGO_TIERS: dict[str, int] = {
     # Tier 0 — consultas
     "consultar_estoque": 0,
     "consultar_pedido": 0,
-    "consultar_contas": 0,
+    "consultar_contas_receber": 0,
+    "consultar_contas_pagar": 0,
     "consultar_fluxo_caixa": 0,
     "consultar_nota": 0,
     # Tier 1 — rascunho e emissão

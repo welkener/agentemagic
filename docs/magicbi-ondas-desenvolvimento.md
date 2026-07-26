@@ -457,6 +457,68 @@ responsável entra na tela de equipe (200), leva 403 em `/admin/auth/user/`,
 
 ---
 
+## 1.10 Consultar e cancelar nota + bug do catálogo de tiers — ✅ concluída 26/jul/2026
+
+Saiu de um levantamento de lacunas pedido pelo usuário ("falta qual funcionalidade?").
+Conferindo o código contra o roadmap, apareceu **um bug em produção, não uma lacuna**.
+
+### 🔴 Contas a pagar/receber estavam recusadas em produção
+
+`CATALOGO_TIERS` (`apps/governance/tiers.py`) tinha `consultar_contas`, mas o orquestrador
+emite `consultar_contas_receber`/`consultar_contas_pagar`. Nome que não bate cai no
+**fail-safe Tier 3** e a intenção é recusada como se fosse destrutiva. Resultado real,
+reproduzido antes de corrigir:
+
+> **Cliente:** quanto tenho a receber essa semana?
+> **Lumen:** Essa operação não está liberada para o seu perfil no momento. 🙏
+
+Duas das cinco consultas do agenteERP estavam mortas. O smoke test de 25/jul só exercitou
+"qual meu estoque?", por isso passou batido — e nenhum teste cruzava as duas listas.
+
+Corrigido, e a correção real é o **teste de regressão**
+(`test_toda_intencao_que_o_orquestrador_emite_esta_no_catalogo`): cruza `_INTENCOES_VALIDAS`
+com `CATALOGO_TIERS`, então intenção nova sem tier quebra o CI, não o WhatsApp do cliente.
+
+### Consultar e cancelar nota (ponto 5 do levantamento)
+
+Estavam no catálogo de tiers desde sempre, mas **inalcançáveis**: o classificador só
+conhecia 7 intenções, e nenhuma delas. Cancelamento de NFS-e é obrigação legal — não dava
+pra ir a cliente real sem.
+
+- **`consultar_nota` (Tier 0)**: lista as últimas 5 notas com valor, tomador, protocolo,
+  DANFSE e marca `❌ CANCELADA` quando for o caso.
+- **`cancelar_nota` (Tier 3)**: o cliente **nunca cancela sozinho**, e isso não depende do
+  `tier_maximo` — nem perfil Tier 3 cancela direto (tem teste). O pedido nasce em
+  `AGUARDANDO_APROVACAO` e vai pra mesma fila onde o contador já aprova emissão. Cancelar
+  documento fiscal tem efeito contábil e prazo legal; a decisão é de quem responde por ela.
+- **O pedido de cancelamento é uma `Intencao` própria** (`tipo_acao="cancelar_nfse"`,
+  `intencao_original` apontando pra nota). Não se reaproveitou o estado `CANCELADO` da
+  nota: lá ele significa "o cliente desistiu ANTES de emitir", coisa diferente de "a nota
+  existiu e foi cancelada na Sefin". Misturar apagaria a distinção da trilha de auditoria.
+  A nota cancelada **continua `CONCLUIDO`** (ela foi emitida de verdade) e ganha
+  `cancelada_em` + `protocolo_cancelamento`.
+- **Adapter**: `cancelar()` entra no `AdapterBase` como método **concreto** que devolve
+  `OPERACAO_NAO_SUPORTADA` — abstrato obrigaria todo adapter de ERP a escrever um `pass`
+  sem sentido. `nfse_mock` simula o evento (e a rejeição por justificativa ausente, que é
+  a mais comum); `nfse_nacional` fica com o mesmo placeholder honesto do `emitir()` —
+  cancelamento real é **evento assinado** (`e101101`), mTLS, e tem prazo legal.
+- **Admin**: uma ação só ("Aprovar"), que despacha pelo `tipo_acao`. Duas ações separadas
+  obrigariam o contador a saber de antemão o que selecionou, e escolher a errada só daria
+  erro. Nova coluna "situação fiscal" — sem ela, nota cancelada e nota normal ficariam
+  idênticas na lista, já que ambas são `CONCLUIDO`.
+
+**Pegadinha do classificador:** as três intenções contêm a palavra "nota". A primeira
+tentativa usou `in` e quebrou em `"emitir nfs-e"` → `"emiti"` é **prefixo** de `"emitir"`.
+Virou regex de palavra inteira, com ordem explícita: cancelar > verbo de emissão >
+consulta > default emitir. Assim `"quero emitir minha nota"` é emissão (apesar do "minha",
+que é palavra de consulta) e `"minhas notas"` é consulta.
+
+**23 testes novos** (173 no total), incluindo os casos ambíguos do classificador, a recusa
+da Sefin sem justificativa (o pedido tem que ir pra `REJEITADO`, não ficar preso em
+`EMITINDO`), pedido duplicado, cancelar nota nunca emitida e cancelar duas vezes.
+
+---
+
 ## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
 
 **Por quê agora:** é o item que prova a Hipótese 1 do MVP e o que mais lacunas técnicas

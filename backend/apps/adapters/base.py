@@ -31,3 +31,14 @@ class AdapterBase(ABC):
 
     @abstractmethod
     def emitir(self, documento: str, dados: dict, ctx) -> ResultadoAcao: ...       # Tier 1-3
+
+    def cancelar(self, documento: str, referencia: str, motivo: str, ctx) -> ResultadoAcao:  # Tier 3
+        """Cancela um documento já emitido. Padrão: não suportado.
+
+        Concreto (não abstrato) de propósito: adaptador de ERP não cancela
+        documento fiscal, e transformar isto em `@abstractmethod` obrigaria
+        todos eles a escrever um `pass` sem sentido. Quem cancela sobrescreve
+        (`nfse_mock`, `nfse_nacional`); o resto degrada num erro padronizado,
+        que o núcleo já sabe tratar.
+        """
+        return ResultadoAcao(ok=False, erro_padronizado="OPERACAO_NAO_SUPORTADA")

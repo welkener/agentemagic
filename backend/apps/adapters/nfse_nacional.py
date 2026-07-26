@@ -112,6 +112,63 @@ class NfseNacionalAdapter(AdapterBase):
         # NFS-e emitida não se altera — cancela e reemite (fora do escopo do MVP).
         return ResultadoAcao(ok=False, erro_padronizado="OPERACAO_NAO_SUPORTADA")
 
+    def cancelar(self, documento: str, referencia: str, motivo: str, ctx) -> ResultadoAcao:
+        """Cancelamento na NFS-e Nacional = **evento assinado**, não DELETE.
+
+        ⚠⚠ Mesmo bloqueio do `emitir()`: o corpo real é um XML de evento
+        (`e101101` — Cancelamento de NFS-e) assinado com o certificado
+        ICP-Brasil e enviado gzip+base64, e a auth é mTLS (`cert=`), não o
+        Bearer que está aqui como placeholder de transporte. Além disso o
+        cancelamento tem **prazo legal** (varia por município/NT vigente):
+        fora do prazo a Sefin recusa e o caminho correto é substituição.
+        Nada disto pode ser inventado — fica marcado até a decisão de custódia
+        (docs/magicbi-custodia-fiscal.md) fechar.
+        """
+        if documento != "nfse":
+            return ResultadoAcao(ok=False, erro_padronizado="RECURSO_NAO_ENCONTRADO")
+        if not referencia:
+            return ResultadoAcao(ok=False, erro_padronizado="FILTRO_OBRIGATORIO_AUSENTE")
+        if not (motivo or "").strip():
+            return ResultadoAcao(ok=False, erro_padronizado="REJEITADA_MOTIVO_AUSENTE")
+
+        try:
+            app = resolver_app("nfse_nacional")
+            credencial = self._credencial(_cliente_de(ctx))
+        except ErroIntegracaoNaoConfigurada:
+            return ResultadoAcao(ok=False, erro_padronizado="INTEGRACAO_NAO_CONFIGURADA")
+
+        try:
+            resposta = httpx.post(
+                f"{app.base_url.rstrip('/')}/nfse/{referencia}/eventos",
+                json={"evento": "cancelamento", "motivo": motivo},
+                headers={"Authorization": f"Bearer {credencial.valor}"},
+                timeout=15.0,
+            )
+            resposta.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (401, 403):
+                return ResultadoAcao(ok=False, erro_padronizado="AUTH_EXPIRADA")
+            if exc.response.status_code == 422:
+                return ResultadoAcao(
+                    ok=False,
+                    erro_padronizado="REJEITADA_SEFIN",
+                    dados={"mensagem_sefin": exc.response.text},
+                )
+            return ResultadoAcao(ok=False, erro_padronizado="INDISPONIVEL")
+        except httpx.HTTPError:
+            return ResultadoAcao(ok=False, erro_padronizado="INDISPONIVEL")
+
+        corpo = resposta.json()
+        return ResultadoAcao(
+            ok=True,
+            dados={
+                "protocolo_cancelamento": corpo.get("protocolo"),
+                "situacao": corpo.get("situacao", "CANCELADA"),
+                "nfse_cancelada": referencia,
+            },
+            referencia_externa=corpo.get("protocolo"),
+        )
+
     def emitir(self, documento: str, dados: dict, ctx) -> ResultadoAcao:
         if documento != "nfse":
             return ResultadoAcao(ok=False, erro_padronizado="RECURSO_NAO_ENCONTRADO")

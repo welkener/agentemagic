@@ -12,7 +12,7 @@ from unfold.admin import ModelAdmin
 from apps.tenants.escopo import EscopoEscritorioMixin
 
 from .models import Intencao, TransicaoInvalida
-from .services import cancelar_emissao, confirmar_emissao
+from .services import cancelar_emissao, confirmar_cancelamento, confirmar_emissao
 
 
 @admin.register(Intencao)
@@ -22,7 +22,16 @@ class IntencaoAdmin(EscopoEscritorioMixin, ModelAdmin):
     real emitida (mock ou adapter real, o campo é preenchido nos dois casos
     desde que `confirmar_emissao` rode — ver `services.py`)."""
 
-    list_display = ("id", "cliente", "tipo_acao", "estado", "valor_formatado", "protocolo", "criado_em")
+    list_display = (
+        "id",
+        "cliente",
+        "tipo_acao",
+        "estado",
+        "valor_formatado",
+        "protocolo",
+        "situacao_fiscal",
+        "criado_em",
+    )
     list_filter = ("estado", "tipo_acao")
     search_fields = ("cliente__nome", "cliente__cnpj", "chave_idempotencia", "protocolo")
     readonly_fields = [f.name for f in Intencao._meta.fields]
@@ -33,6 +42,17 @@ class IntencaoAdmin(EscopoEscritorioMixin, ModelAdmin):
         valor = obj.payload.get("valor")
         return f"R$ {valor:.2f}" if valor is not None else "—"
 
+    @admin.display(description="situação fiscal")
+    def situacao_fiscal(self, obj):
+        """Nota cancelada continua CONCLUIDO (ela foi emitida de verdade) —
+        sem esta coluna, o contador não distinguiria uma da outra na lista."""
+        if obj.tipo_acao == "cancelar_nfse":
+            alvo = obj.intencao_original
+            return f"cancelar nota {alvo.protocolo}" if alvo else "cancelar (nota ausente)"
+        if obj.cancelada:
+            return f"CANCELADA em {obj.cancelada_em:%d/%m/%Y}"
+        return "—"
+
     def has_add_permission(self, request):
         return False
 
@@ -42,10 +62,26 @@ class IntencaoAdmin(EscopoEscritorioMixin, ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         return False
 
-    @admin.action(description="Aprovar e emitir (fila de aprovação do contador)")
+    @admin.action(description="Aprovar (emite a nota, ou cancela se for pedido de cancelamento)")
     def aprovar_e_emitir(self, request, queryset):
+        """Uma ação só, que despacha pelo `tipo_acao`.
+
+        Duas ações separadas obrigariam o contador a saber de antemão que tipo
+        de item ele selecionou — e escolher a errada só daria erro. O que ele
+        decide é "aprovo isto", e o sistema sabe o que "isto" é.
+        """
+
         def acao(intencao):
-            resultado = confirmar_emissao(intencao, motivo=f"aprovado via admin por {request.user}")
+            motivo = f"aprovado via admin por {request.user}"
+
+            if intencao.tipo_acao == "cancelar_nfse":
+                resultado = confirmar_cancelamento(intencao, motivo=motivo)
+                nota = intencao.intencao_original
+                if resultado.ok:
+                    return f"Nota {nota.protocolo} CANCELADA — protocolo {resultado.protocolo}."
+                return f"Cancelamento da nota {nota.protocolo} rejeitado pela Sefin: {resultado.erro}."
+
+            resultado = confirmar_emissao(intencao, motivo=motivo)
             if resultado.ok:
                 return f"Intenção {intencao.id} emitida — protocolo {resultado.protocolo}."
             return f"Intenção {intencao.id} rejeitada pela Sefin: {resultado.erro}."

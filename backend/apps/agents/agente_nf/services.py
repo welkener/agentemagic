@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from django.utils import timezone
+
 from apps.adapters.resolver import resolver_adapter_nfse
 
 from .models import Intencao
@@ -41,4 +43,86 @@ def confirmar_emissao(intencao: Intencao, motivo: str) -> ResultadoConfirmacao:
 
 
 def cancelar_emissao(intencao: Intencao, motivo: str) -> None:
+    """Desiste de uma emissão que AINDA NÃO saiu (nada foi para a Sefin)."""
     intencao.transicionar(Intencao.Estado.CANCELADO, motivo=motivo)
+
+
+# ---------------------------------------------------------------------------
+# Cancelamento de nota JÁ EMITIDA — fluxo diferente do acima
+# ---------------------------------------------------------------------------
+class ErroCancelamento(Exception):
+    """Pedido de cancelamento inválido (nota não cancelável, pedido duplicado)."""
+
+
+def solicitar_cancelamento(nota: Intencao, motivo: str, origem: str) -> Intencao:
+    """Cria o PEDIDO de cancelamento — não cancela nada ainda.
+
+    Cancelar documento fiscal é Tier 3 (destrutivo) e tem efeito contábil e
+    prazo legal. No MVP nenhum perfil de cliente executa isso sozinho pelo
+    WhatsApp, **independente do `tier_maximo`**: o pedido nasce em
+    AGUARDANDO_APROVACAO e quem decide é o contador, na mesma fila onde ele já
+    aprova emissão. O catálogo de tiers mantém `cancelar_nota: 3` como o nível
+    de risco documentado para quando/se a execução direta for liberada.
+    """
+    if not nota.pode_ser_cancelada:
+        if nota.cancelada:
+            raise ErroCancelamento("Essa nota já foi cancelada.")
+        raise ErroCancelamento("Só é possível cancelar nota que foi emitida com sucesso.")
+
+    if not (motivo or "").strip():
+        raise ErroCancelamento("A Sefin exige justificativa para cancelar.")
+
+    pendente = nota.pedidos_cancelamento.filter(
+        estado__in=[
+            Intencao.Estado.RECEBIDO,
+            Intencao.Estado.VALIDANDO,
+            Intencao.Estado.AGUARDANDO_APROVACAO,
+            Intencao.Estado.EMITINDO,
+        ]
+    ).first()
+    if pendente is not None:
+        raise ErroCancelamento("Já existe um pedido de cancelamento em análise para essa nota.")
+
+    pedido = Intencao.objects.create(
+        cliente=nota.cliente,
+        chave_idempotencia=f"cancelar-{nota.pk}-{nota.pedidos_cancelamento.count() + 1}",
+        tipo_acao="cancelar_nfse",
+        intencao_original=nota,
+        payload={"protocolo": nota.protocolo, "motivo": motivo, "origem": origem},
+    )
+    pedido.transicionar(Intencao.Estado.VALIDANDO, motivo=f"pedido de cancelamento ({origem})")
+    pedido.transicionar(
+        Intencao.Estado.AGUARDANDO_APROVACAO, motivo="aguardando decisão do contador"
+    )
+    return pedido
+
+
+def confirmar_cancelamento(pedido: Intencao, motivo: str) -> ResultadoConfirmacao:
+    """Executa o cancelamento na Sefin. Só o contador chega aqui (admin)."""
+    if pedido.tipo_acao != "cancelar_nfse" or pedido.intencao_original is None:
+        raise ErroCancelamento("Esta intenção não é um pedido de cancelamento.")
+
+    nota = pedido.intencao_original
+    pedido.transicionar(Intencao.Estado.EMITINDO, motivo=motivo)
+
+    nfse = resolver_adapter_nfse(nota.cliente)
+    resultado = nfse.cancelar(
+        "nfse",
+        nota.protocolo,
+        pedido.payload.get("motivo", ""),
+        {"cliente": nota.cliente},
+    )
+
+    if resultado.ok:
+        nota.cancelada_em = timezone.now()
+        nota.protocolo_cancelamento = resultado.dados.get("protocolo_cancelamento") or ""
+        nota.save(update_fields=["cancelada_em", "protocolo_cancelamento", "atualizado_em"])
+        pedido.protocolo = nota.protocolo_cancelamento
+        pedido.save(update_fields=["protocolo", "atualizado_em"])
+        pedido.transicionar(Intencao.Estado.CONCLUIDO, motivo="cancelamento aceito pela Sefin")
+        return ResultadoConfirmacao(ok=True, protocolo=nota.protocolo_cancelamento)
+
+    pedido.transicionar(
+        Intencao.Estado.REJEITADO, motivo=resultado.erro_padronizado or "rejeicao"
+    )
+    return ResultadoConfirmacao(ok=False, erro=resultado.erro_padronizado)
