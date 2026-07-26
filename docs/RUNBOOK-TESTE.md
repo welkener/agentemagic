@@ -142,6 +142,28 @@ inválido, o problema é o cadastro — resolva aqui, não contra a Sefin.
 
 ---
 
+## 4b. Cadastrar um cliente novo
+
+O que a Receita já publica vem sozinho:
+
+```bash
+python manage.py cadastrar_cliente 11222333000181     --escritorio ambiente-de-teste --telefone 5511999998888
+```
+
+Preenche razão social, **código IBGE do município**, CNAE e enquadramento no
+Simples. Pelo admin, a mesma coisa: selecione o cliente → ação **Buscar dados na
+Receita**.
+
+Fica com você, porque a Receita não tem: **`cTribNac`** (classificação do
+*serviço*, LC 116 — **não é o CNAE**, que classifica atividade econômica),
+inscrição municipal e as regras de ISS.
+
+Na listagem de clientes, a coluna **“pronto para emitir?”** mostra quem já está
+completo — passe o mouse para ver o que falta. Antes, cadastro incompleto só
+aparecia na primeira emissão, e aparecia pro cliente no WhatsApp.
+
+---
+
 ## 5. ERP real (Conta Azul / Bling)
 
 Endpoints estão mapeados; o **formato da resposta** do Conta Azul não pôde ser
@@ -161,7 +183,7 @@ falar com seu ERP, mas ainda não sei ler o formato"), nunca um número inventad
 ## Testes automatizados
 
 ```bash
-python -m pytest -q        # 227 testes
+python -m pytest -q        # 240 testes
 ```
 
 Cobrem, entre outros: isolamento entre escritórios (dois tenants com **mesmo
@@ -182,4 +204,4 @@ Honestidade sobre os limites — nada disto é código faltando:
 | WhatsApp oficial (Meta) | falta app/WABA/número verificado |
 | Conta Azul com dado real | falta conta de acesso para confirmar o payload |
 | DANFSE em PDF | não implementado |
-| Onboarding de cliente pelo chat | não implementado — cadastro é manual no admin |
+| Onboarding de cliente pelo chat | não implementado — o cadastro é pelo admin/comando (§4b), com consulta pública |

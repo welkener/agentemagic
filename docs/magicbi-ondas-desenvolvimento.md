@@ -817,6 +817,61 @@ Azul, DANFSE em PDF e onboarding pelo chat.
 
 ---
 
+## 1.16 Onboarding de cliente — consulta pública de CNPJ ✅ 26/jul/2026
+
+O gargalo pra vender pro segundo escritório era o cadastro: **sete campos
+digitados à mão por cliente**, e errar qualquer um só aparecia na primeira
+emissão — pro cliente, no WhatsApp.
+
+### O que a Receita resolve e o que não resolve
+
+Fonte: **BrasilAPI** (`/api/cnpj/v1/{cnpj}`), pública e sem autenticação.
+Formato confirmado com **chamada real**, não leitura de doc. Ela devolve o
+`codigo_municipio_ibge` com os **7 dígitos** — exatamente o `cLocEmi` da DPS, e
+o campo que mais dava erro de digitação.
+
+Preenche: razão social, IBGE, CNAE (formatado `6422100` → `6422-1/00`),
+enquadramento no Simples/MEI, e-mail e telefone.
+
+**Não preenche, e não dá pra derivar:**
+
+- **`cTribNac`** — classifica o *serviço* (lista da LC 116); a Receita publica o
+  **CNAE**, que classifica *atividade econômica*. Taxonomias diferentes, sem
+  mapeamento 1:1. Deduzir uma da outra daria nota com tributação errada — pior
+  que nota que não sai. Tem teste dedicado a isso, como lembrete pra quem for
+  mexer no futuro.
+- **Inscrição municipal** e **regras de ISS** — municipais, não estão no cadastro
+  federal.
+
+Sete campos manuais viram três decisões — e as três são genuinamente do contador.
+
+### O que entrou
+
+- `apps/clients/receita.py` — consulta normalizada, com a fronteira HTTP
+  **injetável** (`cliente_http=`) em vez de monkeypatch global nos testes.
+  Consulta fora do ar **levanta erro**, nunca devolve cadastro em branco; IBGE
+  ausente na resposta não vira valor torto.
+- Ação **“Buscar dados na Receita”** no admin e comando `cadastrar_cliente`.
+  Os dois terminam dizendo **o que ainda falta**, com o link do formulário.
+- **`fieldsets` no ClienteAdmin separando "preenchido pela consulta pública" de
+  "decisão do contador"**, com o aviso de que cTribNac não é CNAE escrito no
+  próprio formulário — onde o erro aconteceria.
+- Coluna **"pronto para emitir?"** na listagem: o contador vê o cadastro
+  incompleto *antes*, em vez de o cliente descobrir na primeira emissão.
+- Empresa com situação cadastral diferente de ATIVA é sinalizada, sem bloquear
+  (pode ser baixa recente e o contador saber o que faz).
+
+**13 testes novos** (240 no total) sobre a resposta **real** da API. Validado
+também contra a API de verdade: CNPJ do Banco do Brasil cadastrado em um comando,
+com IBGE `5300108` e CNAE `6422-1/00` corretos, e o comando avisando que faltava
+só o `cTribNac`.
+
+⚠ **Não entrou**: o credenciamento *pelo chat* (cliente novo mandando mensagem de
+número desconhecido). O vínculo `wa_id↔CNPJ` por Magic Link já existe desde a
+Onda 1 — falta o passo anterior, de descobrir o CNPJ conversando.
+
+---
+
 ## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
 
 **Por quê agora:** é o item que prova a Hipótese 1 do MVP e o que mais lacunas técnicas
