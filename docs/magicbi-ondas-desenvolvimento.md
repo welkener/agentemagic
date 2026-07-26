@@ -928,6 +928,66 @@ responsabilidade civil antes de qualquer emissão real.
 
 ---
 
+## 1.18 Cofre: rotação de chave e chave fora do ambiente ✅ 26/jul/2026
+
+Decisão do usuário: em vez de AWS Secrets Manager agora (que eu não conseguiria
+exercitar contra a AWS real — o mesmo erro de placeholder que já cometi com a
+DPS), fazer o que é **pré-requisito de qualquer cofre** e roda no VPS de hoje.
+
+### Os dois problemas concretos
+
+1. **A chave vinha só de variável de ambiente**, pelo `environment:` do
+   docker-compose — legível por qualquer um com o socket do Docker
+   (`docker inspect`) ou acesso ao host (`/proc/<pid>/environ`).
+2. **Não existia rotação.** Uma chave só; trocá-la tornava ilegível tudo que já
+   estava no banco. Na prática: se a chave vazasse, a única saída seria
+   redigitar à mão todo token OAuth, todo `.pfx` e toda senha, de todos os
+   clientes. E era o que impediria migrar pra um cofre depois.
+
+### O que mudou
+
+`MultiFernet`: cifra com a chave ativa, decifra com a ativa **ou** com qualquer
+antiga ainda listada. Origem preferida passa a ser **arquivo**
+(`FIELD_ENCRYPTION_KEY_FILE`) — formato de `docker secret`/`systemd
+LoadCredential`, que não aparece nem no `inspect` nem no `/proc`. Env var segue
+funcionando, pra não quebrar a instalação no ar.
+
+`manage.py rotacionar_chave` recifra tudo com o sistema **no ar**. Ele
+**descobre sozinho** quais models têm campo cifrado, em vez de uma lista fixa:
+lista fixa envelheceria calada — alguém adiciona um `CampoTextoCifrado` novo, a
+rotação não o cobre, e o segredo fica preso na chave antiga até alguém notar
+(provavelmente ao removê-la).
+
+Detalhe que só aparece implementando: o comando carrega **PK por PK**, não o
+queryset inteiro. `from_db_value` decifra na materialização, então um único
+registro ilegível estouraria antes de qualquer `try/except` por linha — e
+abortar no meio deixaria a base metade rotacionada.
+
+### Eu cometi o erro que o procedimento evita, ao vivo
+
+Validando no banco de dev, meu script de demonstração removeu a chave antiga da
+lista **antes** de recifrar. O segredo virou lixo, sem recuperação — exatamente
+o cenário que os 4 passos existem pra impedir. Registro aqui porque é o
+argumento mais forte a favor de seguir a ordem: não é formalidade, e o erro é
+fácil de cometer mesmo sabendo o procedimento.
+
+Refeito na ordem correta e validado ponta a ponta no banco real: segredo gravado
+→ nova chave à frente (segue legível) → 4 registros recifrados → antiga removida
+(segue legível) → revertido.
+
+**12 testes novos** (266 no total), incluindo um que documenta a perda quando se
+remove a chave cedo demais.
+
+⚠ **Isto não é o "Sigillum" da arquitetura.** É o cofre desta fase, com o seam
+certo: AWS Secrets Manager + KMS depois muda só a **origem da chave**, e
+`Credencial.referencia_cofre` já existe pro ARN. O que a rotação garante é que
+essa migração não vai exigir redigitação de segredo.
+
+Segue pendente do §7.2: auditoria de acesso a segredo (quem leu o quê), que
+nenhum dos dois desenhos dá de graça.
+
+---
+
 ## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
 
 **Por quê agora:** é o item que prova a Hipótese 1 do MVP e o que mais lacunas técnicas

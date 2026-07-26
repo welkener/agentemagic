@@ -1,14 +1,22 @@
 """
-Criptografia de campo para segredos guardados localmente (fase MVP/piloto).
+Criptografia de campo para os segredos guardados no banco.
 
-Implementação de "cofre" para este estágio: os segredos (tokens OAuth,
-client_secret dos apps Conta Azul/Bling) ficam cifrados em repouso com Fernet
-(AES-128-CBC + HMAC), chave fora do banco (`FIELD_ENCRYPTION_KEY`, variável de
-ambiente/cofre do processo). Isto substitui o AWS Secrets Manager + KMS
-("Sigillum") só até o deploy em nuvem (Fase 1 do cronograma) — a troca é só
-de backend de armazenamento, o contrato do model não muda.
+Os segredos (tokens OAuth, `.pfx` e sua senha, `client_secret`, token do
+WhatsApp) ficam cifrados em repouso com Fernet (AES-128-CBC + HMAC), chave fora
+do banco. Um dump do Postgres, sozinho, não entrega nada.
 
-Nunca logar/serializar o valor decifrado; ele só deve existir em memória pelo
+**Rotação é de primeira classe** (26/jul/2026): cifra sempre com a chave ativa,
+decifra com a ativa **ou** com qualquer chave antiga ainda listada
+(`MultiFernet`). Antes havia uma chave só, e trocá-la tornava ilegível tudo que
+já estava gravado — o que, na prática, significava que um vazamento obrigaria a
+redigitar à mão todo segredo de todos os clientes. De onde vem a chave e como
+rotacionar: `apps/credentials/chaves.py`.
+
+Isto é o "cofre" desta fase. A troca para AWS Secrets Manager + KMS ("Sigillum",
+seção 10 da arquitetura) muda só a **origem da chave** — o contrato dos models
+não muda, e `Credencial.referencia_cofre` já existe para apontar o ARN.
+
+Nunca logar/serializar o valor decifrado: ele só deve existir em memória pelo
 tempo da chamada à API externa.
 """
 from __future__ import annotations
@@ -17,20 +25,18 @@ from django.conf import settings
 from django.db import models
 
 
-class ErroChaveDeCifraAusente(Exception):
-    """FIELD_ENCRYPTION_KEY não configurada — não é seguro persistir segredos."""
+from .chaves import ErroChaveDeCifraAusente, chaves_configuradas  # noqa: F401 (reexport)
 
 
 def _fernet():
-    from cryptography.fernet import Fernet
+    """`MultiFernet` — cifra com a primeira chave, decifra com qualquer uma.
 
-    chave = getattr(settings, "FIELD_ENCRYPTION_KEY", "")
-    if not chave:
-        raise ErroChaveDeCifraAusente(
-            "FIELD_ENCRYPTION_KEY ausente — gere uma com "
-            "`Fernet.generate_key()` e configure no .env antes de salvar segredos."
-        )
-    return Fernet(chave.encode() if isinstance(chave, str) else chave)
+    Reconstruído a cada chamada de propósito: uma rotação feita com o processo
+    no ar passa a valer na chamada seguinte, sem reiniciar o worker.
+    """
+    from cryptography.fernet import Fernet, MultiFernet
+
+    return MultiFernet([Fernet(c.encode()) for c in chaves_configuradas()])
 
 
 def cifrar(texto_puro: str) -> bytes:

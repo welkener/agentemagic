@@ -214,10 +214,39 @@ descartado em vez de enviado.
 
 ---
 
+## 7. Rotacionar a chave de cifra
+
+A chave que protege tokens OAuth, `.pfx` e senhas. **A ordem importa** — pular o
+passo 3 torna todo segredo ilegível, sem desfazer:
+
+```bash
+# 1. gere a nova
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
+# 2. coloque a NOVA na FRENTE, mantendo a antiga na lista:
+#    FIELD_ENCRYPTION_KEY_FILE aponta pra um arquivo com "NOVA,ANTIGA"
+python manage.py rotacionar_chave --conferir   # relatório, não escreve
+
+# 3. recifra tudo (roda com o sistema no ar)
+python manage.py rotacionar_chave
+
+# 4. SÓ AGORA remova a antiga da lista
+```
+
+Entre o passo 2 e o 4 o sistema funciona normalmente — decifra com qualquer
+chave da lista, cifra com a primeira.
+
+**Prefira `FIELD_ENCRYPTION_KEY_FILE` a `FIELD_ENCRYPTION_KEY`**: variável de
+ambiente é legível por `docker inspect` e `/proc/<pid>/environ`. Arquivo é o
+formato de `docker secret` e `systemd LoadCredential`, e não aparece em nenhum
+dos dois.
+
+---
+
 ## Testes automatizados
 
 ```bash
-python -m pytest -q        # 254 testes
+python -m pytest -q        # 266 testes
 ```
 
 Cobrem, entre outros: isolamento entre escritórios (dois tenants com **mesmo

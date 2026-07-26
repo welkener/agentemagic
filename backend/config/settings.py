@@ -199,10 +199,18 @@ EVOLUTION_API_KEY = env("EVOLUTION_API_KEY", default="")
 EVOLUTION_INSTANCE = env("EVOLUTION_INSTANCE", default="")
 
 # ---------------------------------------------------------------------------
-# Chave de cifra de campo (Credencial/AplicativoIntegracao — apps/credentials/
-# crypto.py). Gerar com `Fernet.generate_key()`; nunca reaproveitar entre
-# ambientes. Sem ela, salvar um segredo levanta ErroChaveDeCifraAusente.
-# ---------------------------------------------------------------------------
+# Chave de cifra de campo (Credencial/AplicativoIntegracao/Escritorio — ver
+# apps/credentials/crypto.py e chaves.py).
+#
+# Preferir o ARQUIVO: variável de ambiente é legível por `docker inspect` e
+# `/proc/<pid>/environ`, ou seja, por qualquer um com o socket do Docker ou
+# acesso ao host. `FIELD_ENCRYPTION_KEY_FILE` é o formato de `docker secret` e
+# de `systemd LoadCredential`, e não aparece em nenhum dos dois.
+#
+# Rotação: várias chaves separadas por vírgula, a PRIMEIRA é a ativa. Ver o
+# procedimento completo em apps/credentials/chaves.py e o comando
+# `manage.py rotacionar_chave`.
+FIELD_ENCRYPTION_KEY_FILE = env("FIELD_ENCRYPTION_KEY_FILE", default="")
 FIELD_ENCRYPTION_KEY = env("FIELD_ENCRYPTION_KEY", default="")
 
 # ---------------------------------------------------------------------------
