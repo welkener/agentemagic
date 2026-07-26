@@ -519,6 +519,68 @@ da Sefin sem justificativa (o pedido tem que ir pra `REJEITADO`, não ficar pres
 
 ---
 
+## 1.11 Normalização de payload de ERP real — ✅ concluída 26/jul/2026
+
+O que faltava no ponto 3 do levantamento **não era o mapa de endpoints** (esse já
+existia, com nível de confiança anotado desde 25/jul) — era o **formato do corpo da
+resposta**, que é o que quebrava `_formatar()`. Sem ele, o adapter real buscava o dado
+e o agente não sabia ler.
+
+### Formas reais obtidas com evidência, não com chute
+
+`developer.bling.com.br/referencia` é SPA e não serve leitura automatizada; o portal do
+Conta Azul bloqueia bot (403). Fui pelos **tipos do SDK público da comunidade**
+(`AlexandreBellas/bling-erp-api-js`, derivados da API real) e confirmei para o Bling v3:
+
+- `GET /contas/receber|pagar` → `{"data": [{id, situacao, vencimento, valor, contato:{id,nome}}]}`,
+  com `situacao` **numérica** (1 = em aberto, 2 = quitada, 5 = cancelada…).
+- `GET /estoques/saldos` → `{"data": [{produto:{id}, saldoFisicoTotal, saldoVirtualTotal, depositos:[…]}]}`.
+
+Para Conta Azul **não** consegui o formato do corpo com evidência nenhuma.
+
+### Nova camada: `apps/adapters/normalizacao.py`
+
+Contrato explícito da forma canônica (a que o `erp_mock` já produzia) e um
+`AdapterBase.normalizar()` que cada adaptador real sobrescreve. `_request` normaliza
+toda leitura antes de devolver.
+
+**Achado que muda comportamento visível:** o `/estoques/saldos` do Bling **não devolve
+nome do produto nem estoque mínimo**. O `_formatar` fazia `quantidade < minimo` — com a
+API real isso daria `TypeError`, e o "conserto" tentador seria assumir um mínimo. Assumir
+seria dar ao cliente um alerta de negócio que ninguém cadastrou. Então `minimo` virou
+`float | None`, e sem o dado **o aviso simplesmente não aparece**. Nome idem: mostra
+`Produto #555`, que é verdade, em vez de um nome inventado. (Buscar o nome exigiria um
+`GET /produtos` por item — N+1 — e fica registrado como pendência, não como chute.)
+
+Mesma regra na situação da conta: código desconhecido **não** vira "aberta". Se virasse,
+entraria na soma e inflaria o total em aberto que o cliente lê no WhatsApp.
+
+### Não saber é um estado de primeira classe
+
+Normalizador que não conhece o formato devolve `None` → `PAYLOAD_NAO_MAPEADO`, com o
+payload cru no log estruturado. O cliente recebe uma resposta **honesta** ("consegui falar
+com seu ERP, mas ainda não sei ler o formato da resposta") em vez de "tente de novo", que
+seria mentira — tentar de novo dá exatamente no mesmo. Ficam assim de propósito: Conta
+Azul inteiro, e `pedidos`/`fluxo_caixa` do Bling.
+
+### `manage.py inspecionar_erp <cnpj> <recurso>`
+
+Transforma "bloqueado esperando sandbox" em trabalho de minutos: imprime a resposta crua
+do ERP real, que é exatamente o insumo pra escrever o normalizador no molde de
+`bling_contas`. Recusa rodar se resolver pro mock (senão daria a falsa impressão de ter
+validado a integração real) e trunca por padrão, porque a saída contém dado real de
+cliente — `--completo` é opt-in consciente.
+
+**15 testes novos** (188 no total) sobre os payloads reais: se a API do Bling mudar de
+formato, quebra aqui, não no WhatsApp do cliente.
+
+⚠ **Continua pendente e não dá pra resolver sem conta de acesso**: confirmar os paths
+(o prefixo `Api/v3` do Bling depende do que fica em `base_url`), o formato de `pedidos`/
+`fluxo_caixa`, o corpo inteiro do Conta Azul, e o fluxo OAuth de conexão pelo cliente
+(hoje a credencial é digitada no admin). Cache de leitura curto também não entrou.
+
+---
+
 ## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
 
 **Por quê agora:** é o item que prova a Hipótese 1 do MVP e o que mais lacunas técnicas

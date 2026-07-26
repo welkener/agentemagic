@@ -46,6 +46,9 @@ INSTALLED_APPS = [
     "rest_framework",
     # Apps Magic BI (mapa de módulos — seção 2 da arquitetura)
     "apps.core",
+    # Sem models — entra na lista só pra o Django descobrir o management
+    # command `inspecionar_erp` (fechar mapeamento de payload de ERP real).
+    "apps.adapters",
     "apps.tenants",  # multi-tenancy: Escritorio/MembroEscritorio + escopo de acesso
     "apps.clients",
     "apps.credentials",

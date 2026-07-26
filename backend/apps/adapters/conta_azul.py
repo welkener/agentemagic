@@ -56,3 +56,20 @@ class ContaAzulAdapter(AdapterErpOAuth2Base):
             "consultar_fluxo_caixa",
             "criar_rascunho_pedido",
         }
+
+    def normalizar(self, recurso: str, payload: dict) -> dict | None:
+        """Sem normalizador — a forma da resposta do Conta Azul não foi confirmada.
+
+        `developers.contaazul.com` bloqueia leitura automatizada (403/bot
+        protection) e não há SDK público com tipos derivados da API real, como
+        existe pro Bling. Diferente dos *endpoints* (que dá pra inferir de
+        páginas indexadas), o **formato do corpo** não tem como ser inferido —
+        e errar aqui não dá erro, dá número errado no financeiro do cliente.
+
+        Então: devolve `None` de propósito → `PAYLOAD_NAO_MAPEADO` → o núcleo
+        responde honestamente que ainda não sabe ler, e o payload cru vai pro
+        log. Com uma conta de acesso, `manage.py inspecionar_erp <cliente>
+        contas_receber` imprime a resposta real e fechar este método vira
+        trabalho de minutos, no molde de `normalizacao.bling_contas`.
+        """
+        return None

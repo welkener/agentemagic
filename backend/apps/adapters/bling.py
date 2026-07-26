@@ -16,6 +16,7 @@ verificar de verdade — testar contra a API real (ou a doc completa) assim
 que houver conta de acesso, antes de ativar em produção.
 `base_url`/`token_url` ficam no Django admin (`AplicativoIntegracao`).
 """
+from . import normalizacao
 from .oauth2 import AdapterErpOAuth2Base
 
 
@@ -41,3 +42,25 @@ class BlingAdapter(AdapterErpOAuth2Base):
             "consultar_fluxo_caixa",
             "criar_rascunho_pedido",
         }
+
+    def normalizar(self, recurso: str, payload: dict) -> dict | None:
+        """Traduz a resposta v3 pra forma canônica (`adapters/normalizacao.py`).
+
+        Formas confirmadas em 26/jul/2026 pelos tipos do SDK da comunidade
+        (`AlexandreBellas/bling-erp-api-js`, derivados da API real) — o portal
+        oficial é SPA e não serve leitura automatizada. Fonte secundária:
+        confirmar com `manage.py inspecionar_erp` antes de produção.
+
+        `pedidos` e `fluxo_caixa` ficam **sem normalizador de propósito** — não
+        consegui a forma da resposta deles com evidência, e mapear no chute
+        entregaria número errado num painel financeiro. Sem normalizador vira
+        `PAYLOAD_NAO_MAPEADO`, que degrada com mensagem honesta e loga o payload
+        cru — o insumo pra fechar isso em minutos quando houver conta.
+        """
+        if recurso == "estoque":
+            return normalizacao.bling_estoque(payload)
+        if recurso == "contas_receber":
+            return normalizacao.bling_contas(payload, papel="cliente")
+        if recurso == "contas_pagar":
+            return normalizacao.bling_contas(payload, papel="fornecedor")
+        return None

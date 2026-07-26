@@ -10,11 +10,14 @@ obtido a cada chamada e nunca persistido — menos segredo em repouso.
 from __future__ import annotations
 
 import httpx
+import structlog
 
 from apps.core.resultado import ResultadoAcao
 from apps.credentials.models import AplicativoIntegracao, Credencial
 
 from .base import AdapterBase
+
+logger = structlog.get_logger(__name__)
 
 
 class ErroIntegracaoNaoConfigurada(Exception):
@@ -121,7 +124,32 @@ class AdapterErpOAuth2Base(AdapterBase):
         except httpx.HTTPError:
             return ResultadoAcao(ok=False, erro_padronizado="INDISPONIVEL")
 
-        return ResultadoAcao(ok=True, dados=resposta.json())
+        try:
+            payload = resposta.json()
+        except ValueError:
+            return ResultadoAcao(ok=False, erro_padronizado="INDISPONIVEL")
+
+        # POST (criar_rascunho) devolve o recurso criado, não uma listagem —
+        # normalizar só faz sentido na leitura.
+        if metodo != "GET":
+            return ResultadoAcao(ok=True, dados=payload)
+
+        normalizado = self.normalizar(recurso, payload)
+        if normalizado is None:
+            # Payload real que o adaptador ainda não sabe traduzir. Vai cru pro
+            # log (é o insumo pra fechar o mapeamento) e o núcleo degrada com
+            # mensagem honesta — nunca com número inventado.
+            logger.warning(
+                "payload_erp_nao_mapeado",
+                integracao=self.nome_integracao,
+                recurso=recurso,
+                amostra=str(payload)[:500],
+            )
+            return ResultadoAcao(
+                ok=False, erro_padronizado="PAYLOAD_NAO_MAPEADO", dados={"bruto": payload}
+            )
+
+        return ResultadoAcao(ok=True, dados=normalizado)
 
     # ------------------------------------------------------------------
     # Contrato AdapterBase — Tier 0-1 no piloto (ver governance/tiers.py)

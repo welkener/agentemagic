@@ -62,6 +62,15 @@ class AgenteErp:
 
         if not resultado.ok:
             logger.warning("consulta_erp_falhou", recurso=recurso, erro=resultado.erro_padronizado)
+            if resultado.erro_padronizado == "PAYLOAD_NAO_MAPEADO":
+                # O ERP respondeu; nós é que ainda não sabemos ler o formato
+                # dele. Dizer "tente de novo" seria mentira — tentar de novo
+                # dá exatamente no mesmo.
+                return (
+                    "Consegui falar com seu ERP, mas ainda não sei ler o formato "
+                    "da resposta dele para essa consulta. Já registrei para o time "
+                    "ajustar — enquanto isso, seu contador consegue ver por lá. 🙏"
+                )
             return (
                 "Não consegui consultar essa informação agora "
                 f"(motivo: {resultado.erro_padronizado}). Pode tentar de novo?"
@@ -81,11 +90,19 @@ class AgenteErp:
     # ------------------------------------------------------------------
     def _formatar(self, recurso: str, dados: dict) -> str:
         if recurso == "estoque":
-            linhas = [
-                f"• {i['produto']}: {i['quantidade']} (mín. {i['minimo']})"
-                + (" ⚠ abaixo do mínimo" if i["quantidade"] < i["minimo"] else "")
-                for i in dados["itens"]
-            ]
+            # `minimo` é opcional: o Bling não expõe estoque mínimo no saldo
+            # (ver adapters/normalizacao.py). Sem o dado, o aviso "abaixo do
+            # mínimo" some — inventar um limite seria dar ao cliente uma
+            # informação de negócio que ninguém cadastrou.
+            linhas = []
+            for i in dados["itens"]:
+                minimo = i.get("minimo")
+                linha = f"• {i['produto']}: {i['quantidade']}"
+                if minimo is not None:
+                    linha += f" (mín. {minimo})"
+                    if i["quantidade"] < minimo:
+                        linha += " ⚠ abaixo do mínimo"
+                linhas.append(linha)
             return "Seu estoque agora:\n" + "\n".join(linhas)
 
         if recurso == "pedidos":

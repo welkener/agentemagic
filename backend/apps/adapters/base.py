@@ -32,6 +32,15 @@ class AdapterBase(ABC):
     @abstractmethod
     def emitir(self, documento: str, dados: dict, ctx) -> ResultadoAcao: ...       # Tier 1-3
 
+    def normalizar(self, recurso: str, payload: dict) -> dict | None:
+        """Traduz o payload da API pra forma canônica (`adapters/normalizacao.py`).
+
+        Padrão: identidade — o mock já produz a forma canônica, que é o próprio
+        contrato. Adaptador real sobrescreve. Devolver `None` significa "não sei
+        traduzir isto", e vira `PAYLOAD_NAO_MAPEADO` — nunca um chute.
+        """
+        return payload
+
     def cancelar(self, documento: str, referencia: str, motivo: str, ctx) -> ResultadoAcao:  # Tier 3
         """Cancela um documento já emitido. Padrão: não suportado.
 
