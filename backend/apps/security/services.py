@@ -20,6 +20,7 @@ from django.core.mail import send_mail
 from django.utils import timezone
 
 from apps.audit.services import registrar
+from apps.clients.telefone import mesmo_numero
 
 from .models import Codigo2FA, SessaoWhatsapp, TokenMagicLink
 
@@ -55,7 +56,13 @@ def sessao_ativa(cliente) -> bool:
     if sessao.status != SessaoWhatsapp.Status.ATIVA:
         return False
 
-    if sessao.wa_id and sessao.wa_id != cliente.telefone_whatsapp:
+    # Comparação pela forma canônica, não pela string: `5599991332604` e
+    # `559991332604` são o MESMO assinante (nono dígito, ver
+    # apps/clients/telefone.py). Comparando cru, uma simples troca de grafia no
+    # cadastro bloquearia a sessão do cliente como se fosse clonagem — e a
+    # anticlonagem continua estrita, porque igualdade canônica só aproxima
+    # grafias do mesmo número, nunca números diferentes.
+    if sessao.wa_id and not mesmo_numero(sessao.wa_id, cliente.telefone_whatsapp):
         # Número da sessão validada diverge do cadastro atual — nunca herda
         # a sessão automaticamente (proteção contra clonagem/troca de número).
         sessao.status = SessaoWhatsapp.Status.BLOQUEADA

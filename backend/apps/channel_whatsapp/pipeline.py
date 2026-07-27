@@ -35,10 +35,9 @@ def processar(
     # view), não do remetente — então o telefone do cliente só é procurado
     # dentro da carteira daquele escritório. Sem isso, dois escritórios com o
     # mesmo CNPJ/telefone na carteira se cruzariam.
-    clientes = Cliente.objects.filter(telefone_whatsapp=telefone, ativo=True)
-    if escritorio is not None:
-        clientes = clientes.filter(escritorio=escritorio)
-    cliente = clientes.first()
+    # `por_telefone` (e não filtro por string crua) porque o WhatsApp entrega o
+    # número brasileiro ora com o nono dígito, ora sem — ver apps/clients/telefone.py.
+    cliente = Cliente.objects.por_telefone(telefone, escritorio=escritorio)
 
     origem = "texto"
     if media_id:

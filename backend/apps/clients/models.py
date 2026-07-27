@@ -1,5 +1,48 @@
 """Modelos de cliente e perfil (um perfil por cliente — princípio da arquitetura)."""
+import structlog
 from django.db import models
+
+from apps.clients import telefone as telefone_br
+
+logger = structlog.get_logger(__name__)
+
+
+class ClienteManager(models.Manager):
+    """Manager com a busca por telefone — o único caminho autorizado.
+
+    Existe para que nenhum código novo volte a comparar `telefone_whatsapp`
+    como string crua: o WhatsApp entrega o número ora com o nono dígito, ora
+    sem (ver `apps/clients/telefone.py`), e a comparação ingênua faz o cliente
+    receber "não te reconheço" sem explicação.
+    """
+
+    def por_telefone(self, numero, escritorio=None):
+        """Cliente ativo dono deste número, ou None.
+
+        Casa qualquer grafia equivalente. Se mais de um cliente casar (a mesma
+        carteira cadastrou as duas formas, o que a constraint de unicidade não
+        impede por serem strings diferentes), a **grafia exata vence** e a
+        ambiguidade vai para o log — escolher em silêncio aqui significaria
+        responder dado fiscal de um cliente para outro.
+        """
+        formas = telefone_br.variantes(numero)
+        if not formas:
+            return None
+
+        qs = self.filter(telefone_whatsapp__in=formas, ativo=True)
+        if escritorio is not None:
+            qs = qs.filter(escritorio=escritorio)
+
+        encontrados = list(qs[:2])
+        if len(encontrados) > 1:
+            logger.warning(
+                "cliente_telefone_ambiguo",
+                telefone=numero,
+                clientes=[c.pk for c in encontrados],
+            )
+            exato = next((c for c in encontrados if c.telefone_whatsapp == formas[0]), None)
+            return exato or encontrados[0]
+        return encontrados[0] if encontrados else None
 
 
 class Cliente(models.Model):
@@ -137,6 +180,8 @@ class Cliente(models.Model):
     )
     ativo = models.BooleanField(default=True)
     criado_em = models.DateTimeField(auto_now_add=True)
+
+    objects = ClienteManager()
 
     class Meta:
         verbose_name = "cliente"
