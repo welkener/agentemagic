@@ -69,8 +69,21 @@ Desde o último deploy: **6 dependências novas** (`nfelib`, `signxml`, `lxml`,
 - **backfill obrigatório** — todo `Cliente` existente precisa ganhar um
   escritório.
 
-As duas foram validadas no banco de dev com dados, **inclusive o rollback**. Mas
-exigem rebuild da imagem (não só `git pull`) e **backup antes**.
+**O deploy foi ensaiado de verdade antes de você rodar** (26/jul/2026): subi a
+imagem da versão que está hoje no servidor, criei o escritório da Rotina, dois
+clientes e conversas na trilha, e então rodei a atualização por cima. Resultado:
+
+- 14 migrações aplicadas, incluindo o rename de tabela e o backfill;
+- **2 clientes preservados, 0 órfãos**, cada um vinculado ao escritório certo;
+- trilha de auditoria íntegra (`verificar_cadeia()` = `True`) com o conteúdo
+  antigo legível;
+- tabelas renomeadas (`tenants_escritorio`, `tenants_membroescritorio`).
+
+Também confirmado que as 6 dependências novas instalam limpo no
+`python:3.13-slim` (`lxml` vem como wheel, não compila).
+
+Ainda assim: **rebuild da imagem** (não só `git pull`) e **backup antes** — o
+ensaio reproduz o esperado, não o que houver de particular no seu banco.
 
 ### 3. Canal WhatsApp e o escritório da Rotina
 
