@@ -372,6 +372,11 @@ UNFOLD = {
                         "link": _reverse_lazy("admin:painel_integracoes"),
                     },
                     {
+                        "title": "Ensinar o agente",
+                        "icon": "school",
+                        "link": _reverse_lazy("admin:core_revisar_nao_entendidas"),
+                    },
+                    {
                         "title": "Clientes",
                         "icon": "apartment",
                         "link": _reverse_lazy("admin:clients_cliente_changelist"),

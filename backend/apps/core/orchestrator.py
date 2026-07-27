@@ -184,7 +184,7 @@ class Orquestrador:
             .first()
         )
         if pendente is not None:
-            return self._resolver_confirmacao(pendente, mensagem)
+            return self._resolver_confirmacao(pendente, mensagem, cliente, message_id)
 
         # Nota em coleta: campos já ditos, mas ainda incompletos. Precisa vir
         # ANTES do roteador — "100 reais", sozinho, não classifica como
@@ -243,10 +243,15 @@ class Orquestrador:
     def _classificar_via_groq(self, mensagem: str) -> str:
         from pydantic_ai import Agent
 
+        from apps.core.models import exemplos_para_prompt
+
+        # Exemplos vêm do banco a cada chamada: cadastrar um no admin passa a
+        # valer na mensagem seguinte, sem deploy. É o que evita que cada jeito
+        # novo de o cliente falar vire trabalho de desenvolvedor.
         agent = Agent(
             _MODELO_ROTEADOR,
             output_type=IntencaoClassificada,
-            system_prompt=_PROMPT_ROTEADOR,
+            system_prompt=_PROMPT_ROTEADOR + exemplos_para_prompt(),
         )
         resultado = agent.run_sync(mensagem)
         return resultado.output.intencao
@@ -480,14 +485,32 @@ class Orquestrador:
             "Responda *sim* para emitir ou *não* para cancelar."
         )
 
-    def _resolver_confirmacao(self, intencao: Intencao, mensagem: str) -> str:
+    def _motivo_autorizacao(self, cliente, message_id: str | None) -> str:
+        """Texto do `motivo` da transição que autoriza a emissão.
+
+        Vai para a trilha encadeada e é o que responde, meses depois, "quem
+        autorizou esta nota e a partir de quê". Sem o `message_id` não dá para
+        apontar a mensagem exata; sem o número, não dá para ligar ao vínculo de
+        sessão validado.
+        """
+        partes = ["cliente confirmou pelo WhatsApp"]
+        if message_id:
+            partes.append(f"mensagem {message_id}")
+        wa_id = getattr(cliente, "telefone_whatsapp", "")
+        if wa_id:
+            partes.append(f"wa_id {wa_id}")
+        return " — ".join(partes)
+
+    def _resolver_confirmacao(
+        self, intencao: Intencao, mensagem: str, cliente=None, message_id: str | None = None
+    ) -> str:
         codigo_pendente = (
             Codigo2FA.objects.filter(intencao=intencao, usado_em__isnull=True)
             .order_by("-criado_em")
             .first()
         )
         if codigo_pendente is not None:
-            return self._resolver_2fa(intencao, codigo_pendente, mensagem)
+            return self._resolver_2fa(intencao, codigo_pendente, mensagem, message_id)
 
         texto = mensagem.lower().strip()
         if any(p in texto for p in _PALAVRAS_CANCELAMENTO):
@@ -515,15 +538,21 @@ class Orquestrador:
                 "só responder aqui com o código. 🔒"
             )
 
-        return self._emitir(intencao)
+        return self._emitir(intencao, message_id)
 
-    def _resolver_2fa(self, intencao: Intencao, codigo_pendente: Codigo2FA, mensagem: str) -> str:
+    def _resolver_2fa(
+        self,
+        intencao: Intencao,
+        codigo_pendente: Codigo2FA,
+        mensagem: str,
+        message_id: str | None = None,
+    ) -> str:
         if codigo_pendente.expira_em <= timezone.now():
             cancelar_emissao(intencao, motivo="código 2FA expirou")
             return "O código expirou. Cancelei a emissão por segurança — pode iniciar de novo."
 
         if verificar_codigo_2fa(codigo_pendente, mensagem):
-            return self._emitir(intencao)
+            return self._emitir(intencao, message_id)
 
         if codigo_pendente.tentativas >= Codigo2FA.LIMITE_TENTATIVAS:
             cancelar_emissao(intencao, motivo="2FA excedeu o número de tentativas")
@@ -531,8 +560,14 @@ class Orquestrador:
 
         return "Código inválido. Confere o e-mail e tenta de novo. 🔒"
 
-    def _emitir(self, intencao: Intencao) -> str:
-        resultado = confirmar_emissao(intencao, motivo="cliente confirmou")
+    def _emitir(self, intencao: Intencao, message_id: str | None = None) -> str:
+        # A autorização é o ato que a auditoria precisa reconstituir depois:
+        # "cliente confirmou" sozinho não diz QUAL mensagem autorizou nem de
+        # qual número. Amarrar aos dois torna a evidência verificável — e é
+        # barato, porque os dois valores já estão em mãos aqui.
+        resultado = confirmar_emissao(
+            intencao, motivo=self._motivo_autorizacao(intencao.cliente, message_id)
+        )
 
         if resultado.ok:
             return (

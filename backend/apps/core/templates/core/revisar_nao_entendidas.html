@@ -1,0 +1,85 @@
+{# Fila de trabalho do aprendizado do roteador. Ver apps/core/admin.py. #}
+{% extends "unfold/layouts/base_simple.html" %}
+{% load i18n unfold %}
+
+{% block content %}
+<div class="flex flex-col gap-8">
+
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {% component "unfold/components/card.html" with icon="help" %}
+            <span class="block font-semibold text-3xl {% if total %}text-orange-600 dark:text-orange-400{% else %}text-font-important-light dark:text-font-important-dark{% endif %}">{{ total }}</span>
+            <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">mensagens que o agente não entendeu</span>
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with icon="school" %}
+            <span class="block font-semibold text-3xl text-font-important-light dark:text-font-important-dark">{{ exemplos_cadastrados }}</span>
+            <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">exemplos ativos ensinando o roteador</span>
+        {% endcomponent %}
+    </div>
+
+    <div class="border border-base-200 bg-base-50 flex gap-3 items-start p-4 rounded-default dark:border-base-800 dark:bg-base-900">
+        <span class="material-symbols-outlined text-font-subtle-light dark:text-font-subtle-dark">lightbulb</span>
+        <p class="text-sm text-font-default-light dark:text-font-default-dark">
+            Quando o cliente reformula e a segunda tentativa acerta, <strong>a intenção da
+            reformulação vale para a frase original</strong> — é o rótulo que faltava.
+            Cadastre a frase original com essa intenção e o agente acerta da próxima vez.
+            <br>
+            ⚠ <strong>Troque nome, CNPJ e valores por exemplos genéricos</strong> antes de
+            cadastrar: o corpus não deve guardar dado pessoal de cliente.
+        </p>
+    </div>
+
+    {% component "unfold/components/card.html" with title="Não entendidas (mais recentes primeiro)" %}
+        <div class="overflow-x-auto">
+            <table class="border-separate border-spacing-0 w-full">
+                <thead class="hidden lg:table-header-group">
+                    <tr>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-left text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">Quando</th>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-left text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">O que o cliente disse</th>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-left text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">Reformulou como</th>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-left text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">Rótulo sugerido</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for linha in linhas %}
+                    <tr class="block border-b border-base-200 mb-4 pb-4 dark:border-base-800 lg:table-row lg:mb-0 lg:pb-0">
+                        <td class="block px-3 py-2 text-sm lg:table-cell whitespace-nowrap">
+                            {{ linha.quando|date:"d/m H:i" }}
+                            <span class="block text-xs text-font-subtle-light dark:text-font-subtle-dark">{{ linha.cliente.nome|default:"—" }}</span>
+                        </td>
+
+                        <td class="block px-3 py-2 text-sm lg:table-cell">
+                            “{{ linha.mensagem }}”
+                        </td>
+
+                        <td class="block px-3 py-2 text-sm lg:table-cell text-font-subtle-light dark:text-font-subtle-dark">
+                            {% if linha.reformulacao %}“{{ linha.reformulacao }}”{% else %}<span class="text-xs">não reformulou</span>{% endif %}
+                        </td>
+
+                        <td class="block px-3 py-2 lg:table-cell">
+                            {% if linha.ja_virou_exemplo %}
+                                {% component "unfold/helpers/label.html" with variant="success" text="já é exemplo" %}{% endcomponent %}
+                            {% elif linha.intencao_da_reformulacao and linha.intencao_da_reformulacao != "desconhecida" %}
+                                {% component "unfold/helpers/label.html" with variant="info" text=linha.intencao_da_reformulacao %}{% endcomponent %}
+                                <a href="{{ add_url }}?frase={{ linha.mensagem|urlencode }}&intencao={{ linha.intencao_da_reformulacao }}"
+                                   class="block mt-1 text-xs text-primary-600 dark:text-primary-500">cadastrar como exemplo →</a>
+                            {% else %}
+                                <span class="text-xs text-font-subtle-light dark:text-font-subtle-dark">sem pista — decidir na mão</span>
+                                <a href="{{ add_url }}?frase={{ linha.mensagem|urlencode }}"
+                                   class="block mt-1 text-xs text-primary-600 dark:text-primary-500">cadastrar →</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4" class="px-3 py-8 text-center text-sm text-font-subtle-light dark:text-font-subtle-dark">
+                            Nenhuma mensagem não entendida no período. 🎉
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endcomponent %}
+</div>
+{% endblock %}
