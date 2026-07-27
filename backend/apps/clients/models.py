@@ -30,6 +30,16 @@ class Cliente(models.Model):
             "Nunca reaproveitar o WhatsApp como canal desses segredos (2º fator de canal)."
         ),
     )
+    data_inicio_atividade = models.DateField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Data de abertura na Receita — preenchida pela consulta pública. "
+            "Usada só para o teto proporcional do MEI no ano de abertura "
+            "(quem abre em julho tem direito a meio teto, não ao teto cheio). "
+            "Vazia = o radar de teto assume o ano inteiro e diz isso na tela."
+        ),
+    )
     cnae_padrao = models.CharField(
         max_length=10,
         blank=True,

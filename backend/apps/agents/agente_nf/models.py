@@ -9,6 +9,8 @@ Intenção fiscal + máquina de estados da emissão (seção 5.1 da arquitetura)
 Toda transição é auditada (trilha append-only) — nada muda de estado em
 silêncio.
 """
+from decimal import Decimal, InvalidOperation
+
 from django.db import models
 
 from apps.audit.services import registrar
@@ -49,6 +51,20 @@ class Intencao(models.Model):
     chave_idempotencia = models.CharField(max_length=100, unique=True)
     tipo_acao = models.CharField(max_length=40, default="emitir_nfse")
     payload = models.JSONField(default=dict)
+    # Valor da nota, desnormalizado do `payload` para ser somável e ordenável
+    # no banco. O payload continua sendo a verdade do que foi pedido; este
+    # campo é derivado e sincronizado no `save()`. Existe porque análise de
+    # faturamento não pode depender de cast de JSON: o valor chega do LLM ora
+    # como número, ora como string, e um cast que falha some com a linha da
+    # soma **em silêncio** — o contador veria um total menor sem saber.
+    valor = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Derivado de payload['valor'] — não editar à mão.",
+    )
     estado = models.CharField(
         max_length=24, choices=Estado.choices, default=Estado.RECEBIDO
     )
@@ -94,8 +110,41 @@ class Intencao(models.Model):
     atualizado_em = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "intenção fiscal"
-        verbose_name_plural = "intenções fiscais"
+        # Nome de produto, não de arquitetura: "intenção fiscal" descreve o
+        # que o modelo é por dentro (proposta do LLM decidida pelo núcleo), e o
+        # contador não pensa nesse termo — ele procura a nota.
+        verbose_name = "nota fiscal"
+        verbose_name_plural = "notas fiscais"
+
+    def valor_do_payload(self) -> "Decimal | None":
+        """Lê `payload['valor']` como Decimal, ou None se não der.
+
+        Devolver None em vez de zero é deliberado: zero seria somado como uma
+        nota de R$ 0,00 e afundaria a média; None sai da conta e aparece como
+        "—" na tela, que é a verdade — não sabemos o valor.
+        """
+        bruto = (self.payload or {}).get("valor")
+        if bruto is None or bruto == "":
+            return None
+        try:
+            return Decimal(str(bruto)).quantize(Decimal("0.01"))
+        except (InvalidOperation, ValueError):
+            return None
+
+    def save(self, *args, **kwargs):
+        """Mantém `valor` em sincronia com o payload em qualquer caminho de escrita.
+
+        Sincronizar aqui, e não em cada `objects.create(...)`, é o que garante
+        que nenhum caminho novo de criação esqueça o campo — inclusive os
+        `update_fields` estreitos de `transicionar()`.
+        """
+        derivado = self.valor_do_payload()
+        if derivado != self.valor:
+            self.valor = derivado
+            campos = kwargs.get("update_fields")
+            if campos is not None:
+                kwargs["update_fields"] = [*campos, "valor"]
+        super().save(*args, **kwargs)
 
     def transicionar(self, novo_estado: str, motivo: str = "") -> None:
         """Muda de estado respeitando o dicionário de transições e auditando.

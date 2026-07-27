@@ -29,6 +29,7 @@ chutar. Sete campos manuais viram três — os três que exigem julgamento.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 
 import httpx
 import structlog
@@ -56,6 +57,7 @@ class DadosReceita:
     email: str = ""
     telefone: str = ""
     situacao_cadastral: str = ""
+    data_inicio_atividade: "date | None" = None
     # Campos que a Receita não tem — ficam explícitos pra quem for cadastrar.
     pendentes_do_contador: list[str] = field(default_factory=list)
 
@@ -66,6 +68,19 @@ class DadosReceita:
 
 def _digitos(valor) -> str:
     return "".join(c for c in str(valor or "") if c.isdigit())
+
+
+def _data(valor) -> "date | None":
+    """`YYYY-MM-DD` da Receita → date. Formato inesperado vira None, não exceção.
+
+    Data de abertura é conveniência (teto proporcional do MEI) — deixar a
+    consulta inteira falhar por causa dela seria trocar um dado que falta por
+    um cadastro que não acontece.
+    """
+    try:
+        return date.fromisoformat(str(valor)[:10])
+    except (TypeError, ValueError):
+        return None
 
 
 def _formatar_cnae(bruto) -> str:
@@ -139,5 +154,6 @@ def consultar_cnpj(cnpj: str, cliente_http=None) -> DadosReceita:
         email=(dados.get("email") or "").strip(),
         telefone=_digitos(dados.get("ddd_telefone_1")),
         situacao_cadastral=(dados.get("descricao_situacao_cadastral") or "").strip(),
+        data_inicio_atividade=_data(dados.get("data_inicio_atividade")),
         pendentes_do_contador=list(PENDENTES_SEMPRE) + ([] if ibge else ["código IBGE do município"]),
     )

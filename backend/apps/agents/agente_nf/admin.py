@@ -7,6 +7,7 @@ pela mesma máquina de estados/auditoria do fluxo por WhatsApp
 (`apps/agents/agente_nf/services.py`).
 """
 from django.contrib import admin, messages
+from django.urls import path
 from unfold.admin import ModelAdmin
 
 from apps.tenants.escopo import EscopoEscritorioMixin
@@ -37,10 +38,25 @@ class IntencaoAdmin(EscopoEscritorioMixin, ModelAdmin):
     readonly_fields = [f.name for f in Intencao._meta.fields]
     actions = ["aprovar_e_emitir", "rejeitar_pendentes"]
 
-    @admin.display(description="valor")
+    def get_urls(self):
+        """Página Documentos fiscais — antes de `super()` por causa do
+        catch-all `<path:object_id>/` (ver nota em apps/clients/admin.py)."""
+        from apps.painel.views import DocumentosView
+
+        return [
+            path(
+                "documentos/",
+                self.admin_site.admin_view(DocumentosView.as_view(model_admin=self)),
+                name="painel_documentos",
+            ),
+        ] + super().get_urls()
+
+    @admin.display(description="valor", ordering="valor")
     def valor_formatado(self, obj):
-        valor = obj.payload.get("valor")
-        return f"R$ {valor:.2f}" if valor is not None else "—"
+        """Lê o campo desnormalizado, não o payload: assim a coluna ordena no
+        banco (`ordering`), e ordenar por valor é metade do uso de uma lista
+        de notas."""
+        return f"R$ {obj.valor:.2f}" if obj.valor is not None else "—"
 
     @admin.display(description="situação fiscal")
     def situacao_fiscal(self, obj):

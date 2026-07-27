@@ -150,6 +150,13 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LANGUAGE_CODE = "pt-br"
+# "R$ 31647,52" não se lê — com separador vira "R$ 31.647,52". Conferido que
+# isto NÃO afeta os campos numéricos dos formulários do admin: `forms.Field`
+# nasce com `localize=False`, então o input continua recebendo `31647.5` cru e
+# o parse no POST não muda. (Testado, não deduzido.) `django.contrib.humanize`
+# foi descartado aqui: `floatformat:2|intcomma` corrompe o número em pt-BR —
+# lê a vírgula decimal como separador de grupo e devolve "31,647,50".
+USE_THOUSAND_SEPARATOR = True
 TIME_ZONE = "America/Sao_Paulo"
 USE_I18N = True
 USE_TZ = True
@@ -268,6 +275,15 @@ SESAME_MAX_AGE = MAGICLINK_TTL_MINUTOS * 60  # segundos — mesmo TTL do Magic L
 LOGIN_REDIRECT_URL = "/admin/"  # o índice do admin É o dashboard do Grimório
 
 # ---------------------------------------------------------------------------
+# Teto do MEI — configurável de propósito. O valor está congelado em R$ 81.000
+# desde 2018, mas há projetos em tramitação para elevá-lo (PLP 60/2025 e
+# 67/2025). Quando a lei mudar, muda-se a variável de ambiente; o radar de teto
+# (apps/fiscal/teto_mei.py) não precisa de release.
+# ---------------------------------------------------------------------------
+TETO_MEI_ANUAL = env("TETO_MEI_ANUAL", default="81000.00")
+TETO_MEI_TOLERANCIA = env("TETO_MEI_TOLERANCIA", default="0.20")  # 20% -> R$ 97.200
+
+# ---------------------------------------------------------------------------
 # django-unfold — tema moderno do admin (substitui o reskin manual por CSS
 # custom properties da Onda "restilizar o admin"; ver
 # docs/magicbi-ondas-desenvolvimento.md). Paleta = escala indigo do Tailwind
@@ -307,11 +323,15 @@ UNFOLD = {
             "950": "oklch(18.7% .108 268.05)",
         },
     },
+    # Navegação escrita no vocabulário do contador, não no do Django. O que ele
+    # procura é "carteira", "notas", "documentos" — não "Intenções fiscais" nem
+    # "Credenciais". Os models continuam acessíveis na lista de apps abaixo do
+    # dashboard; isto é o caminho curto pro que se usa todo dia.
     "SIDEBAR": {
         "show_search": True,
         "navigation": [
             {
-                "title": "Grimório",
+                "title": "Visão geral",
                 "separator": True,
                 "items": [
                     {
@@ -320,9 +340,41 @@ UNFOLD = {
                         "link": _reverse_lazy("admin:index"),
                     },
                     {
+                        "title": "Carteira de clientes",
+                        "icon": "groups",
+                        "link": _reverse_lazy("admin:painel_carteira"),
+                    },
+                ],
+            },
+            {
+                "title": "Fiscal",
+                "separator": True,
+                "items": [
+                    {
                         "title": "Fila de aprovação",
                         "icon": "pending_actions",
                         "link": _reverse_lazy("admin:agente_nf_intencao_changelist"),
+                    },
+                    {
+                        "title": "Documentos fiscais",
+                        "icon": "description",
+                        "link": _reverse_lazy("admin:painel_documentos"),
+                    },
+                ],
+            },
+            {
+                "title": "Configuração",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Integrações",
+                        "icon": "hub",
+                        "link": _reverse_lazy("admin:painel_integracoes"),
+                    },
+                    {
+                        "title": "Clientes",
+                        "icon": "apartment",
+                        "link": _reverse_lazy("admin:clients_cliente_changelist"),
                     },
                     {
                         "title": "Trilha de auditoria",

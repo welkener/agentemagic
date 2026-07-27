@@ -1,0 +1,122 @@
+{# Carteira do escritório — uma linha por cliente. Ver apps/painel/views.py. #}
+{% extends "unfold/layouts/base_simple.html" %}
+{% load i18n unfold %}
+
+{% block content %}
+<div class="flex flex-col gap-8">
+
+    {# ------------------------------------------------------------------ #}
+    {# Resumo — números-título antes da tabela                             #}
+    {# ------------------------------------------------------------------ #}
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {% component "unfold/components/card.html" with icon="payments" %}
+            <span class="block font-semibold text-3xl text-font-important-light dark:text-font-important-dark">R$ {{ total_faturamento|floatformat:2 }}</span>
+            <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">faturado em {{ ano }} — via Magic BI</span>
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with icon="receipt_long" %}
+            <span class="block font-semibold text-3xl text-font-important-light dark:text-font-important-dark">{{ total_notas }}</span>
+            <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">notas emitidas em {{ ano }}</span>
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with icon="warning" %}
+            <span class="block font-semibold text-3xl {% if em_risco %}text-orange-600 dark:text-orange-400{% else %}text-font-important-light dark:text-font-important-dark{% endif %}">{{ em_risco }}</span>
+            <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">MEI perto do teto ou acima</span>
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with icon="assignment_late" %}
+            <span class="block font-semibold text-3xl {% if incompletos %}text-orange-600 dark:text-orange-400{% else %}text-font-important-light dark:text-font-important-dark{% endif %}">{{ incompletos }}</span>
+            <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">com cadastro fiscal incompleto</span>
+        {% endcomponent %}
+    </div>
+
+    {# Ressalva que precisa estar VISÍVEL, não em nota de rodapé: o número é    #}
+    {# um piso, não o faturamento real do cliente. Ver apps/fiscal/teto_mei.py. #}
+    <div class="border border-orange-200 bg-orange-50 flex gap-3 items-start p-4 rounded-default dark:border-orange-500/20 dark:bg-orange-500/10">
+        <span class="material-symbols-outlined text-orange-600 dark:text-orange-400">info</span>
+        <p class="text-sm text-font-default-light dark:text-font-default-dark">
+            Os valores contam <strong>apenas notas emitidas pelo Magic BI</strong>. Nota emitida
+            direto na prefeitura ou por outro sistema não entra — trate o percentual do teto
+            como um piso, não como o faturamento total do cliente. Teto considerado:
+            <strong>R$ {{ teto_anual|floatformat:2 }}</strong>/ano.
+        </p>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Tabela                                                             #}
+    {# ------------------------------------------------------------------ #}
+    {% component "unfold/components/card.html" with title="Clientes" %}
+        <div class="overflow-x-auto">
+            <table class="border-separate border-spacing-0 w-full">
+                <thead class="hidden lg:table-header-group">
+                    <tr>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-left text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">Cliente</th>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-right text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">Mês</th>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-right text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">{{ ano }}</th>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-left text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">Teto do MEI</th>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-left text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">Situação</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for linha in linhas %}
+                    <tr class="block border-b border-base-200 mb-4 pb-4 dark:border-base-800 lg:table-row lg:mb-0 lg:pb-0">
+                        <td class="block px-3 py-2 lg:table-cell">
+                            <a href="{% url 'admin:clients_cliente_change' linha.cliente.pk %}" class="font-medium text-sm text-primary-600 dark:text-primary-500">{{ linha.cliente.nome }}</a>
+                            <span class="block text-xs text-font-subtle-light dark:text-font-subtle-dark">
+                                {{ linha.cliente.cnpj }}
+                                {% if linha.ultima_nota %}· última nota {{ linha.ultima_nota|date:"d/m/Y" }}{% else %}· nenhuma nota ainda{% endif %}
+                            </span>
+                        </td>
+
+                        <td class="block px-3 py-2 text-sm lg:table-cell lg:text-right">
+                            <span class="lg:hidden text-font-subtle-light dark:text-font-subtle-dark">Mês: </span>
+                            R$ {{ linha.faturamento_mes|floatformat:2 }}
+                            <span class="text-font-subtle-light dark:text-font-subtle-dark">({{ linha.notas_mes }})</span>
+                        </td>
+
+                        <td class="block px-3 py-2 text-sm lg:table-cell lg:text-right">
+                            <span class="lg:hidden text-font-subtle-light dark:text-font-subtle-dark">{{ ano }}: </span>
+                            R$ {{ linha.faturamento_ano|floatformat:2 }}
+                            <span class="text-font-subtle-light dark:text-font-subtle-dark">({{ linha.notas_ano }})</span>
+                        </td>
+
+                        <td class="block px-3 py-2 lg:table-cell lg:w-56">
+                            {% if linha.uso_teto.aplicavel %}
+                                {% include "painel/_teto.html" with uso=linha.uso_teto visual=linha.visual_teto %}
+                            {% else %}
+                                <span class="text-sm text-font-subtle-light dark:text-font-subtle-dark">não é MEI</span>
+                            {% endif %}
+                        </td>
+
+                        <td class="block px-3 py-2 lg:table-cell">
+                            <div class="flex flex-wrap gap-1">
+                                {% if linha.pronto_para_emitir %}
+                                    {% component "unfold/helpers/label.html" with variant="success" text="pronto para emitir" %}{% endcomponent %}
+                                {% else %}
+                                    {% component "unfold/helpers/label.html" with variant="warning" text="falta cadastro" %}{% endcomponent %}
+                                {% endif %}
+                                {% if linha.sessao_ativa %}
+                                    {% component "unfold/helpers/label.html" with variant="success" text="WhatsApp ativo" %}{% endcomponent %}
+                                {% else %}
+                                    {% component "unfold/helpers/label.html" with text="WhatsApp inativo" %}{% endcomponent %}
+                                {% endif %}
+                            </div>
+                            {% if not linha.pronto_para_emitir %}
+                                <span class="block mt-1 text-xs text-font-subtle-light dark:text-font-subtle-dark">falta: {{ linha.cadastro_faltante|join:"; " }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="px-3 py-8 text-center text-sm text-font-subtle-light dark:text-font-subtle-dark">
+                            Nenhum cliente na carteira ainda.
+                            <a href="{% url 'admin:clients_cliente_add' %}" class="text-primary-600 dark:text-primary-500">Cadastrar o primeiro →</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endcomponent %}
+</div>
+{% endblock %}

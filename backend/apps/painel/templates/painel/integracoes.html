@@ -1,0 +1,106 @@
+{# O que está ligado em cada cliente. Ver apps/painel/views.py::IntegracoesView. #}
+{% extends "unfold/layouts/base_simple.html" %}
+{% load i18n unfold %}
+
+{% block content %}
+<div class="flex flex-col gap-8">
+
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {% component "unfold/components/card.html" with icon="link_off" %}
+            <span class="block font-semibold text-3xl {% if com_pendencia %}text-orange-600 dark:text-orange-400{% else %}text-font-important-light dark:text-font-important-dark{% endif %}">{{ com_pendencia }}</span>
+            <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">clientes com algo por ligar</span>
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with icon="event_busy" %}
+            <span class="block font-semibold text-3xl {% if vencendo %}text-red-600 dark:text-red-400{% else %}text-font-important-light dark:text-font-important-dark{% endif %}">{{ vencendo|length }}</span>
+            <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">certificados vencendo em 30 dias</span>
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with icon="chat" %}
+            <span class="block font-medium text-lg text-font-important-light dark:text-font-important-dark">
+                {% if canal_evolution %}{{ canal_evolution.instancia }}{% else %}—{% endif %}
+            </span>
+            <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">instância WhatsApp do escritório</span>
+        {% endcomponent %}
+    </div>
+
+    {% if vencendo %}
+    <div class="border border-red-200 bg-red-50 flex gap-3 items-start p-4 rounded-default dark:border-red-500/20 dark:bg-red-500/10">
+        <span class="material-symbols-outlined text-red-600 dark:text-red-400">error</span>
+        <div class="text-sm text-font-default-light dark:text-font-default-dark">
+            <strong>Certificado perto do vencimento.</strong> Quando ele vence, o cliente
+            para de emitir sem aviso — a renovação é do titular e leva dias.
+            <ul class="list-disc mt-2 ml-5">
+                {% for linha in vencendo %}
+                <li>{{ linha.cliente.nome }} — {% if linha.dias_para_vencer < 0 %}<strong>vencido há {{ linha.dias_para_vencer|stringformat:"d"|cut:"-" }} dias</strong>{% else %}vence em {{ linha.dias_para_vencer }} dias{% endif %}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+
+    {% component "unfold/components/card.html" with title="Por cliente" %}
+        <div class="overflow-x-auto">
+            <table class="border-separate border-spacing-0 w-full">
+                <thead class="hidden lg:table-header-group">
+                    <tr>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-left text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">Cliente</th>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-left text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">WhatsApp</th>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-left text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">Certificado fiscal</th>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-left text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">ERP</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for linha in linhas %}
+                    <tr class="block border-b border-base-200 mb-4 pb-4 dark:border-base-800 lg:table-row lg:mb-0 lg:pb-0">
+                        <td class="block px-3 py-2 lg:table-cell">
+                            <a href="{% url 'admin:clients_cliente_change' linha.cliente.pk %}" class="font-medium text-sm text-primary-600 dark:text-primary-500">{{ linha.cliente.nome }}</a>
+                            {% if linha.pendencias %}
+                                <span class="block text-xs text-orange-600 dark:text-orange-400">{{ linha.pendencias|join:" · " }}</span>
+                            {% else %}
+                                <span class="block text-xs text-green-600 dark:text-green-400">tudo conectado</span>
+                            {% endif %}
+                        </td>
+
+                        <td class="block px-3 py-2 lg:table-cell">
+                            {% if linha.sessao and linha.sessao.status == "ativa" %}
+                                {% component "unfold/helpers/label.html" with variant="success" text="vinculado" %}{% endcomponent %}
+                            {% elif linha.sessao %}
+                                {% component "unfold/helpers/label.html" with variant="warning" text=linha.sessao.get_status_display %}{% endcomponent %}
+                            {% else %}
+                                {% component "unfold/helpers/label.html" with text="sem sessão" %}{% endcomponent %}
+                            {% endif %}
+                        </td>
+
+                        <td class="block px-3 py-2 text-sm lg:table-cell">
+                            {% if linha.certificado %}
+                                {{ linha.certificado.get_tipo_display }}
+                                {% if linha.dias_para_vencer is not None %}
+                                    <span class="block text-xs {% if linha.certificado_vencido %}text-red-600 dark:text-red-400{% elif linha.dias_para_vencer <= 30 %}text-orange-600 dark:text-orange-400{% else %}text-font-subtle-light dark:text-font-subtle-dark{% endif %}">
+                                        {% if linha.certificado_vencido %}vencido{% else %}vence em {{ linha.dias_para_vencer }} dias{% endif %}
+                                        ({{ linha.certificado.certificado_validade|date:"d/m/Y" }})
+                                    </span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-font-subtle-light dark:text-font-subtle-dark">nenhum</span>
+                                <a href="{{ credencial_add_url }}" class="block text-xs text-primary-600 dark:text-primary-500">cadastrar →</a>
+                            {% endif %}
+                        </td>
+
+                        <td class="block px-3 py-2 text-sm lg:table-cell">
+                            {% for credencial in linha.credenciais_erp %}
+                                {% component "unfold/helpers/label.html" with variant="success" text=credencial.integracao|default:credencial.get_tipo_display %}{% endcomponent %}
+                            {% empty %}
+                                <span class="text-font-subtle-light dark:text-font-subtle-dark">nenhum</span>
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="px-3 py-8 text-center text-sm text-font-subtle-light dark:text-font-subtle-dark">Nenhum cliente na carteira ainda.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endcomponent %}
+</div>
+{% endblock %}

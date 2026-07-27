@@ -13,6 +13,7 @@ re-renderiza com o erro.
 """
 from django import forms
 from django.contrib import admin
+from django.urls import path
 from unfold.admin import ModelAdmin
 
 from apps.tenants.escopo import EscopoEscritorioMixin, SomentePlataformaMixin
@@ -113,6 +114,19 @@ class CredencialAdmin(EscopoEscritorioMixin, ModelAdmin):
     )
     list_filter = ("tipo", "integracao")
     search_fields = ("cliente__nome", "cliente__cnpj", "integracao")
+
+    def get_urls(self):
+        """Página Integrações — antes de `super()` por causa do catch-all
+        `<path:object_id>/` (ver mesma nota em apps/clients/admin.py)."""
+        from apps.painel.views import IntegracoesView
+
+        return [
+            path(
+                "integracoes/",
+                self.admin_site.admin_view(IntegracoesView.as_view(model_admin=self)),
+                name="painel_integracoes",
+            ),
+        ] + super().get_urls()
 
     @admin.display(boolean=True, description="tem segredo salvo")
     def tem_valor(self, obj):

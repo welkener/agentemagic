@@ -13,7 +13,16 @@
     {# ------------------------------------------------------------------ #}
     {# Números do dia                                                     #}
     {# ------------------------------------------------------------------ #}
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
+    {# 7 cartões em 4 colunas (4+3): em 6 colunas o sétimo ficaria órfão, e     #}
+    {# cada um ficaria estreito demais pro valor em reais.                     #}
+    {% comment %}
+    Dois tropeços deste arquivo, ambos pegos só em screenshot e nenhum pelos
+    testes: (1) comentário de chave-cerquilha não atravessa linha — um par
+    aberto numa linha e fechado na seguinte vaza como texto na página; (2)
+    escrever esses delimitadores DENTRO de um comentário desse tipo fecha o
+    comentário no meio. Para explicação de mais de uma linha, use este bloco.
+    {% endcomment %}
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         {% component "unfold/components/card.html" with href=fila_aprovacao_url icon="receipt_long" %}
             <span class="block font-semibold text-3xl text-font-important-light dark:text-font-important-dark">{{ notas_hoje }}</span>
             <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">notas emitidas hoje</span>
@@ -39,11 +48,59 @@
             <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">clientes ativos</span>
         {% endcomponent %}
 
+        {% component "unfold/components/card.html" with href=carteira_url icon="payments" %}
+            <span class="block font-semibold text-3xl text-font-important-light dark:text-font-important-dark">R$ {{ faturamento_mes|floatformat:2 }}</span>
+            <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">faturado no mês</span>
+        {% endcomponent %}
+
         {% component "unfold/components/card.html" with href=fila_aprovacao_url icon="report" %}
             <span class="block font-semibold text-3xl {% if rejeicoes_24h %}text-red-600 dark:text-red-400{% else %}text-font-important-light dark:text-font-important-dark{% endif %}">{{ rejeicoes_24h }}</span>
             <span class="block mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">rejeições (24h){% if rejeicoes_24h %} — <span class="text-red-600 dark:text-red-400">exige ação</span>{% endif %}</span>
         {% endcomponent %}
     </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Evolução — dois gráficos, nunca um com dois eixos                   #}
+    {#                                                                     #}
+    {# Reais e unidades têm escalas diferentes: sobrepostas num eixo só, a #}
+    {# curva menor vira uma reta colada no zero e o gráfico passa a mentir #}
+    {# sobre a relação entre as duas. Dois gráficos lado a lado comparam   #}
+    {# igual e não distorcem nenhum dos dois.                              #}
+    {# ------------------------------------------------------------------ #}
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {% component "unfold/components/card.html" with title="Faturamento por mês (R$)" %}
+            {% component "unfold/components/chart/line.html" with data=grafico_faturamento height="220" %}{% endcomponent %}
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with title="Notas emitidas por mês" %}
+            {% component "unfold/components/chart/bar.html" with data=grafico_notas height="220" %}{% endcomponent %}
+        {% endcomponent %}
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Radar de teto do MEI — só quem exige ação                           #}
+    {# ------------------------------------------------------------------ #}
+    {% if alertas_teto %}
+    {% component "unfold/components/card.html" with title="Radar de teto do MEI" %}
+        <p class="mb-4 text-sm text-font-subtle-light dark:text-font-subtle-dark">
+            {{ total_alertas_teto }} cliente{{ total_alertas_teto|pluralize }} pass{{ total_alertas_teto|pluralize:"ou,aram" }} de 70% do limite anual.
+            Conta só o que foi emitido pelo Magic BI — o faturamento real pode ser maior.
+        </p>
+        <div class="flex flex-col gap-4">
+            {% for linha in alertas_teto %}
+            <div class="flex flex-col gap-2 lg:flex-row lg:items-center">
+                <a href="{% url 'admin:clients_cliente_change' linha.cliente.pk %}" class="font-medium text-sm text-primary-600 dark:text-primary-500 lg:w-64">{{ linha.cliente.nome }}</a>
+                <div class="lg:flex-1">
+                    {% include "painel/_teto.html" with uso=linha.uso_teto visual=linha.visual_teto %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <p class="mt-4">
+            <a href="{{ carteira_url }}" class="text-primary-600 text-sm dark:text-primary-500">Ver a carteira inteira →</a>
+        </p>
+    {% endcomponent %}
+    {% endif %}
 
     {# ------------------------------------------------------------------ #}
     {# Canais WhatsApp                                                    #}
@@ -135,7 +192,7 @@
                         <tr>
                             <td class="border-t border-base-200 py-2 dark:border-base-800">{{ n.protocolo|default:"—" }}</td>
                             <td class="border-t border-base-200 py-2 dark:border-base-800">{{ n.cliente }}</td>
-                            <td class="border-t border-base-200 py-2 dark:border-base-800">R$ {{ n.payload.valor|floatformat:2 }}</td>
+                            <td class="border-t border-base-200 py-2 dark:border-base-800">{% if n.valor is not None %}R$ {{ n.valor|floatformat:2 }}{% else %}—{% endif %}</td>
                             <td class="border-t border-base-200 py-2 dark:border-base-800">{{ n.atualizado_em|date:"d/m/Y H:i" }}</td>
                             <td class="border-t border-base-200 py-2 dark:border-base-800">
                                 {% if n.danfse_url %}

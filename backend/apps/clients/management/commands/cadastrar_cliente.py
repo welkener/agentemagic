@@ -59,6 +59,7 @@ class Command(BaseCommand):
                 "codigo_municipio_ibge": dados.codigo_municipio_ibge,
                 "cnae_padrao": dados.cnae_padrao,
                 "opcao_simples_nacional": dados.opcao_simples_nacional,
+                "data_inicio_atividade": dados.data_inicio_atividade,
                 "ativo": True,
             },
         )

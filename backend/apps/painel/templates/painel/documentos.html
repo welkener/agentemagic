@@ -1,0 +1,77 @@
+{# Notas emitidas e seus artefatos. Ver apps/painel/views.py::DocumentosView. #}
+{% extends "unfold/layouts/base_simple.html" %}
+{% load i18n unfold %}
+
+{% block content %}
+<div class="flex flex-col gap-8">
+
+    {# Ser explícito sobre o que ainda não existe é o que impede o contador de #}
+    {# procurar um botão de download que não está lá. Ver metricas.documentos. #}
+    <div class="border border-base-200 bg-base-50 flex gap-3 items-start p-4 rounded-default dark:border-base-800 dark:bg-base-900">
+        <span class="material-symbols-outlined text-font-subtle-light dark:text-font-subtle-dark">description</span>
+        <p class="text-sm text-font-default-light dark:text-font-default-dark">
+            Cada nota autorizada deixa <strong>protocolo</strong>, <strong>chave de acesso</strong>
+            e <strong>link do DANFSE</strong>. Guarda do XML assinado e DANFSE em PDF
+            ainda não estão implementados — quando estiverem, aparecem aqui.
+        </p>
+    </div>
+
+    {% for mes, notas in grupos.items %}
+    {% component "unfold/components/card.html" with title=mes %}
+        <div class="overflow-x-auto">
+            <table class="border-separate border-spacing-0 w-full">
+                <thead class="hidden lg:table-header-group">
+                    <tr>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-left text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">Data</th>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-left text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">Cliente</th>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-right text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">Valor</th>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-left text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">Protocolo / chave</th>
+                        <th class="border-b border-base-200 font-medium px-3 py-2 text-left text-sm text-font-important-light dark:border-base-800 dark:text-font-important-dark">Situação</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for nota in notas %}
+                    <tr class="block border-b border-base-200 mb-4 pb-4 dark:border-base-800 lg:table-row lg:mb-0 lg:pb-0">
+                        <td class="block px-3 py-2 text-sm lg:table-cell whitespace-nowrap">{{ nota.atualizado_em|date:"d/m/Y H:i" }}</td>
+
+                        <td class="block px-3 py-2 text-sm lg:table-cell">
+                            <a href="{% url 'admin:clients_cliente_change' nota.cliente.pk %}" class="text-primary-600 dark:text-primary-500">{{ nota.cliente.nome }}</a>
+                        </td>
+
+                        <td class="block px-3 py-2 text-sm lg:table-cell lg:text-right whitespace-nowrap">
+                            {% if nota.valor is not None %}R$ {{ nota.valor|floatformat:2 }}{% else %}—{% endif %}
+                        </td>
+
+                        <td class="block px-3 py-2 lg:table-cell">
+                            <span class="block font-mono text-xs text-font-default-light dark:text-font-default-dark">{{ nota.protocolo|default:"—" }}</span>
+                            {% if nota.chave_nfse %}<span class="block font-mono text-xs text-font-subtle-light dark:text-font-subtle-dark">{{ nota.chave_nfse }}</span>{% endif %}
+                        </td>
+
+                        <td class="block px-3 py-2 lg:table-cell">
+                            <div class="flex flex-wrap gap-1 items-center">
+                                {% if nota.cancelada %}
+                                    {% component "unfold/helpers/label.html" with variant="danger" text="cancelada" %}{% endcomponent %}
+                                    <span class="text-xs text-font-subtle-light dark:text-font-subtle-dark">em {{ nota.cancelada_em|date:"d/m/Y" }}</span>
+                                {% else %}
+                                    {% component "unfold/helpers/label.html" with variant="success" text="autorizada" %}{% endcomponent %}
+                                {% endif %}
+                                {% if nota.danfse_url %}
+                                    <a href="{{ nota.danfse_url }}" target="_blank" rel="noopener" class="text-sm text-primary-600 dark:text-primary-500">DANFSE →</a>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endcomponent %}
+    {% empty %}
+    {% component "unfold/components/card.html" %}
+        <p class="py-8 text-center text-sm text-font-subtle-light dark:text-font-subtle-dark">
+            Nenhuma nota emitida ainda.
+        </p>
+    {% endcomponent %}
+    {% endfor %}
+</div>
+{% endblock %}

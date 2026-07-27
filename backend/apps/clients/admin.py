@@ -1,4 +1,5 @@
 from django.contrib import admin, messages
+from django.urls import path
 from django.utils.html import format_html
 from unfold.admin import ModelAdmin, StackedInline
 
@@ -10,7 +11,13 @@ from .receita import ErroConsultaCnpj, consultar_cnpj
 
 # Campos que a Receita preenche. Separados dos de julgamento fiscal justamente
 # pra deixar claro, no formulário, o que é dado público e o que é decisão.
-CAMPOS_DA_RECEITA = ("nome", "codigo_municipio_ibge", "cnae_padrao", "opcao_simples_nacional")
+CAMPOS_DA_RECEITA = (
+    "nome",
+    "codigo_municipio_ibge",
+    "cnae_padrao",
+    "opcao_simples_nacional",
+    "data_inicio_atividade",
+)
 
 
 class PerfilInline(StackedInline):
@@ -40,7 +47,12 @@ class ClienteAdmin(EscopoEscritorioMixin, ModelAdmin):
         (
             "Preenchido pela consulta pública (ação “Buscar dados na Receita”)",
             {
-                "fields": ("codigo_municipio_ibge", "cnae_padrao", "opcao_simples_nacional"),
+                "fields": (
+                    "codigo_municipio_ibge",
+                    "cnae_padrao",
+                    "opcao_simples_nacional",
+                    "data_inicio_atividade",
+                ),
                 "description": (
                     "Dados do cadastro federal. Use a ação na listagem para puxar "
                     "automaticamente a partir do CNPJ."
@@ -67,6 +79,23 @@ class ClienteAdmin(EscopoEscritorioMixin, ModelAdmin):
             },
         ),
     )
+
+    def get_urls(self):
+        """A página Carteira pendura aqui — é a visão analítica DESTE model.
+
+        Antes de `super()` de propósito: a lista de URLs do ModelAdmin termina
+        num catch-all `<path:object_id>/`, que engoliria "carteira" e tentaria
+        abrir um cliente com esse id.
+        """
+        from apps.painel.views import CarteiraView
+
+        return [
+            path(
+                "carteira/",
+                self.admin_site.admin_view(CarteiraView.as_view(model_admin=self)),
+                name="painel_carteira",
+            ),
+        ] + super().get_urls()
 
     def get_list_filter(self, request):
         # Filtrar por escritório só faz sentido pra equipe Magic BI — e o
@@ -111,6 +140,9 @@ class ClienteAdmin(EscopoEscritorioMixin, ModelAdmin):
             cliente.codigo_municipio_ibge = dados.codigo_municipio_ibge or cliente.codigo_municipio_ibge
             cliente.cnae_padrao = dados.cnae_padrao or cliente.cnae_padrao
             cliente.opcao_simples_nacional = dados.opcao_simples_nacional
+            cliente.data_inicio_atividade = (
+                dados.data_inicio_atividade or cliente.data_inicio_atividade
+            )
             if dados.email and not cliente.email_contato:
                 cliente.email_contato = dados.email
             cliente.save()
