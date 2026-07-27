@@ -1086,6 +1086,38 @@ ser cifrado.
 
 ---
 
+## 1.21 Subida do código e achado sobre o CI ✅ 26/jul/2026
+
+17 commits enviados pro repositório (`621a0a0`). Antes de subir, conferi o
+`docker-compose.deploy.yml` e achei que o serviço do app se chama **`web`**, não
+`backend` — os comandos que eu tinha escrito no runbook de deploy falhariam com
+"no such service", no meio do deploy.
+
+### 🔴 O CI nunca rodou — nem uma vez
+
+Ao conferir o resultado do push, descobri que **os 14 runs desde que o workflow
+foi criado falharam**, todos em 3-4 segundos, **antes de executar qualquer
+step**. O único "sucesso" no histórico era um Dependabot, não o CI.
+
+A causa não é o código nem o workflow (o YAML é válido, 7 steps declarados). A
+anotação do GitHub diz:
+
+> *"The job was not started because your account is locked due to a billing
+> issue."*
+
+**É pendência de cobrança da conta GitHub.** Nada que dê pra resolver aqui.
+
+O que isso significa na prática, e por que registro com destaque: **eu tinha
+escrito "CI verde ✅" no checklist de homologação.** Estava errado — e errado de
+um jeito ruim, porque "CI verde" é justamente o item que dá confiança de que
+nenhuma regressão passou. A única validação real que este projeto tem hoje é a
+suíte rodada localmente (278 testes). Corrigido no `HOMOLOGACAO.md`.
+
+Enquanto a cobrança não for resolvida, nenhuma regressão é pega
+automaticamente — cada push depende de alguém lembrar de rodar `pytest` na mão.
+
+---
+
 ## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
 
 **Por quê agora:** é o item que prova a Hipótese 1 do MVP e o que mais lacunas técnicas

@@ -30,7 +30,15 @@ O fluxo completo roda hoje, de ponta a ponta:
 | Voz: cliente manda áudio, sistema transcreve | ✅ (com `GROQ_API_KEY`) |
 | 2FA por e-mail acima de um valor configurável | ✅ |
 
-278 testes automatizados. Fluxo conferido também fora do pytest.
+278 testes automatizados, **rodados localmente**. Fluxo conferido também fora
+do pytest.
+
+⚠ **O CI do GitHub Actions nunca rodou.** Todos os 14 runs desde que o workflow
+foi criado falharam em 3 segundos, antes de executar qualquer step, com:
+*"The job was not started because your account is locked due to a billing
+issue."* Não é o código nem o workflow — é **cobrança da conta GitHub**. Até
+resolver, "CI verde" não é uma garantia que este projeto tem: a única validação
+é a suíte local.
 
 ---
 
@@ -159,6 +167,9 @@ A multi-tenancy em si está pronta e testada — o que falta é jurídico.
 
 ## §6 Recomendação
 
+0. **Resolver a pendência de cobrança do GitHub** — sem isso o CI segue sem
+   rodar, e nenhuma regressão é pega automaticamente. Não bloqueia o teste com
+   a Rotina, mas é a rede de segurança que hoje não existe.
 1. **Atualizar o servidor com backup**, seguindo §3.
 2. **Configurar SMTP e testar o Magic Link com o próprio e-mail** antes de
    mandar para o contador.
