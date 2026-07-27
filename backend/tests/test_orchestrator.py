@@ -37,7 +37,10 @@ def test_emitir_nota_pede_campos_faltantes(cliente):
     resposta = Orquestrador().processar("quero emitir uma nota", cliente)
     assert "tomador" in resposta
     assert "valor" in resposta
-    assert Intencao.objects.count() == 0
+    # Desde 27/jul/2026 a coleta é persistida (estado RECEBIDO) para lembrar o
+    # que já foi dito entre uma mensagem e outra — ver tests/test_coleta_em_partes.py.
+    # A garantia que importa é outra: nada avançou para um estado emitível.
+    assert not Intencao.objects.exclude(estado=Intencao.Estado.RECEBIDO).exists()
 
 
 @pytest.mark.django_db
@@ -63,7 +66,9 @@ def test_emitir_nota_sem_cnae_bloqueia(cliente):
     )
     resposta = orq.processar("emite nota de 500 pro João, corte de cabelo", cliente)
     assert "CNAE" in resposta
-    assert Intencao.objects.count() == 0
+    # Cadastro incompleto não é algo que o cliente resolva respondendo: a coleta
+    # é encerrada, não fica pendurada esperando a próxima mensagem dele.
+    assert not Intencao.objects.exclude(estado=Intencao.Estado.CANCELADO).exists()
 
 
 @pytest.mark.django_db

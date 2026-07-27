@@ -220,7 +220,9 @@ def test_sem_cnae_no_cadastro_a_emissao_e_barrada(cliente, groq_dublado):
     resposta = Orquestrador().processar("emite nota de 200 pro Carlos", cliente)
 
     assert "CNAE" in resposta
-    assert not Intencao.objects.filter(tipo_acao="emitir_nfse").exists()
+    # A coleta é encerrada (cadastro incompleto não se resolve respondendo),
+    # e nada chega a um estado emitível.
+    assert not Intencao.objects.exclude(estado=Intencao.Estado.CANCELADO).exists()
 
 
 @pytest.mark.django_db
@@ -232,4 +234,7 @@ def test_extracao_incompleta_pergunta_em_vez_de_inventar(cliente, groq_dublado):
     resposta = Orquestrador().processar("emite uma nota pro Carlos", cliente)
 
     assert "valor" in resposta.lower()
-    assert not Intencao.objects.filter(tipo_acao="emitir_nfse").exists()
+    # A coleta fica em RECEBIDO guardando tomador/descrição (ver
+    # tests/test_coleta_em_partes.py). O que não pode é virar nota com valor
+    # zero — ou seja, avançar para além de RECEBIDO.
+    assert not Intencao.objects.exclude(estado=Intencao.Estado.RECEBIDO).exists()

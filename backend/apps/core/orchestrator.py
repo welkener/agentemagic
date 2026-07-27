@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from datetime import timedelta
 from typing import Literal
 
 import structlog
@@ -88,6 +89,11 @@ Regras que resolvem os casos ambíguos:
 _PALAVRAS_NOTA = ("nota", "nfse", "nfs-e", "emitir", "emite")
 _PALAVRAS_CONFIRMACAO = ("sim", "confirmar", "confirmo", "pode emitir", "ok", "👍", "✅")
 _PALAVRAS_CANCELAMENTO = ("não", "nao", "cancelar", "cancela", "❌")
+
+# Por quanto tempo uma nota incompleta continua "em conversa". Curto de
+# propósito: é o tempo de uma conversa, não de uma pendência. Ver
+# `Orquestrador._coleta_em_aberto`.
+COLETA_TTL_MINUTOS = getattr(settings, "COLETA_NOTA_TTL_MINUTOS", 30)
 
 # Palavras-chave → (nome da intenção no catálogo de tiers, recurso do agenteERP)
 # "relatório"/"vendas" caem em pedidos — é a leitura mais próxima que o
@@ -180,13 +186,24 @@ class Orquestrador:
         if pendente is not None:
             return self._resolver_confirmacao(pendente, mensagem)
 
+        # Nota em coleta: campos já ditos, mas ainda incompletos. Precisa vir
+        # ANTES do roteador — "100 reais", sozinho, não classifica como
+        # "emitir_nota" em roteador nenhum; só faz sentido como continuação.
+        em_coleta = self._coleta_em_aberto(cliente)
+        if em_coleta is not None:
+            return self._continuar_coleta(em_coleta, mensagem, cliente, perfil)
+
         intencao_nome = self._classificar_intencao(mensagem)
         registrar(
             "orquestrador_mensagem_processada",
             {"mensagem": mensagem, "intencao": intencao_nome},
             cliente=cliente,
         )
+        return self._despachar(intencao_nome, mensagem, cliente, perfil, message_id)
 
+    def _despachar(self, intencao_nome, mensagem, cliente, perfil, message_id) -> str:
+        """Intenção classificada → handler. Extraído de `processar` para que a
+        coleta possa despachar o assunto novo quando o cliente muda de ideia."""
         if intencao_nome == "emitir_nota":
             return self._iniciar_emissao(mensagem, cliente, perfil, message_id)
 
@@ -337,28 +354,6 @@ class Orquestrador:
             )
 
         dados = self._extrair_dados_nota(mensagem)
-        faltantes = [
-            campo
-            for campo, valor in (
-                ("tomador", dados.tomador),
-                ("valor", dados.valor),
-                ("descrição do serviço", dados.descricao_servico),
-            )
-            if not valor
-        ]
-        if faltantes:
-            return (
-                "Quase lá! Ainda preciso de: " + ", ".join(faltantes) + ". "
-                "Pode me mandar de novo com esses dados? 🧾"
-            )
-
-        if not cliente.cnae_padrao:
-            return (
-                "Seu cadastro ainda não tem o CNAE de serviço configurado. "
-                "Fale com seu contador na Rotina para completar o cadastro "
-                "antes da primeira emissão. 🙏"
-            )
-
         payload = {
             "cnpj_prestador": cliente.cnpj,
             "cnae": cliente.cnae_padrao,
@@ -376,14 +371,112 @@ class Orquestrador:
             # Reprocessamento (retry do Celery) da mesma mensagem — não duplica.
             return self._mensagem_para_intencao_existente(intencao)
 
+        # A intenção nasce em RECEBIDO e SÓ avança quando estiver completa. Antes
+        # ela só era criada com tudo em mãos, e o que faltava era pedido numa
+        # mensagem solta — nada era guardado. Quem respondia em partes ("pra
+        # Fulano, serviço de TI" e depois "100 reais") via o sistema esquecer o
+        # que já tinha dito e pedir de novo, em loop.
+        return self._avancar_coleta(intencao, cliente)
+
+    # ------------------------------------------------------------------
+    # Coleta incremental dos campos da nota
+    # ------------------------------------------------------------------
+    _CAMPOS_DA_NOTA = (
+        ("tomador", "tomador"),
+        ("valor", "valor"),
+        ("descricao_servico", "descrição do serviço"),
+    )
+
+    def _faltantes(self, payload: dict) -> list[str]:
+        return [rotulo for campo, rotulo in self._CAMPOS_DA_NOTA if not payload.get(campo)]
+
+    def _coleta_em_aberto(self, cliente) -> "Intencao | None":
+        """Coleta recente do cliente, se houver — e encerra as vencidas.
+
+        A janela existe porque mesclar é perigoso fora do contexto da conversa:
+        uma coleta abandonada na semana passada com `tomador=Maria` casaria com
+        um "emite nota de 300, consultoria" de hoje e emitiria para a Maria,
+        sem ninguém pedir. Passado o prazo, a coleta morre e a próxima mensagem
+        começa do zero — que é o que o cliente espera depois de sumir.
+        """
+        limite = timezone.now() - timedelta(minutes=COLETA_TTL_MINUTOS)
+        abertas = Intencao.objects.filter(
+            cliente=cliente, tipo_acao="emitir_nfse", estado=Intencao.Estado.RECEBIDO
+        ).order_by("-atualizado_em")
+
+        recente = None
+        for intencao in abertas:
+            if intencao.atualizado_em >= limite and recente is None:
+                recente = intencao
+            elif intencao.atualizado_em < limite:
+                cancelar_emissao(intencao, motivo="coleta abandonada (sem resposta no prazo)")
+        return recente
+
+    def _continuar_coleta(self, intencao: Intencao, mensagem: str, cliente, perfil) -> str:
+        """Mescla o que veio agora no que já havia sido dito.
+
+        Desistir também é uma resposta válida aqui: "cancelar" no meio da coleta
+        significa abandonar ESTA nota, não procurar uma nota emitida para
+        cancelar — que era o que acontecia, e devolvia "não encontrei nenhuma
+        nota que possa ser cancelada" para quem só queria desistir.
+        """
+        if any(p in mensagem.lower().strip() for p in _PALAVRAS_CANCELAMENTO):
+            cancelar_emissao(intencao, motivo="cliente desistiu durante a coleta")
+            return "Sem problema, cancelei essa nota. Se precisar, é só chamar de novo. 👍"
+
+        dados = self._extrair_dados_nota(mensagem)
+        novos = {
+            "tomador": dados.tomador,
+            "valor": dados.valor,
+            "descricao_servico": dados.descricao_servico,
+        }
+        # Valor novo vence o antigo: permite corrigir ("na verdade são 200").
+        aproveitados = {campo: valor for campo, valor in novos.items() if valor}
+
+        if not aproveitados:
+            # Nada de útil na mensagem. Se ela é claramente outro assunto, o
+            # cliente mudou de ideia — insistir na nota o deixaria preso num
+            # fluxo que ele abandonou.
+            outra = self._classificar_intencao(mensagem)
+            if outra and outra != "emitir_nota":
+                cancelar_emissao(intencao, motivo=f"cliente mudou de assunto ({outra})")
+                return self._despachar(outra, mensagem, cliente, perfil, message_id=None)
+            return (
+                "Ainda preciso de: " + ", ".join(self._faltantes(intencao.payload)) + ". 🧾"
+            )
+
+        intencao.payload = {**intencao.payload, **aproveitados}
+        intencao.save(update_fields=["payload", "valor", "atualizado_em"])
+        return self._avancar_coleta(intencao, cliente)
+
+    def _avancar_coleta(self, intencao: Intencao, cliente) -> str:
+        """Pede o que falta, ou fecha a coleta e vai para a confirmação."""
+        faltantes = self._faltantes(intencao.payload)
+        if faltantes:
+            return (
+                "Quase lá! Ainda preciso de: " + ", ".join(faltantes) + ". 🧾"
+            )
+
+        if not cliente.cnae_padrao:
+            # Encerra a coleta em vez de deixá-la aberta: falta cadastro, e isso
+            # o cliente não resolve respondendo mais nada. Deixar pendurada faria
+            # a próxima mensagem dele ser lida como continuação desta nota.
+            cancelar_emissao(intencao, motivo="cadastro sem CNAE de serviço")
+            return (
+                "Seu cadastro ainda não tem o CNAE de serviço configurado. "
+                "Fale com seu contador na Rotina para completar o cadastro "
+                "antes da primeira emissão. 🙏"
+            )
+
         intencao.transicionar(Intencao.Estado.VALIDANDO, motivo="campos extraídos e CNAE do cadastro")
         intencao.transicionar(Intencao.Estado.AGUARDANDO_APROVACAO, motivo="aguardando confirmação Tier 1")
 
+        p = intencao.payload
         return (
             "Confirma a emissão desta nota? 🧾\n"
-            f"Tomador: {dados.tomador}\n"
-            f"Valor: R$ {dados.valor:.2f}\n"
-            f"Serviço: {dados.descricao_servico}\n"
+            f"Tomador: {p['tomador']}\n"
+            f"Valor: R$ {float(p['valor']):.2f}\n"
+            f"Serviço: {p['descricao_servico']}\n"
             "Responda *sim* para emitir ou *não* para cancelar."
         )
 
