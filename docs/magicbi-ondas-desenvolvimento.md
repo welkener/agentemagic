@@ -1027,6 +1027,65 @@ de acesso a segredo, sem pentest, sem exportação de dados do titular).
 
 ---
 
+## 1.20 Eliminação de dados sem quebrar a trilha + pacote de homologação ✅ 26/jul/2026
+
+### A colisão resolvida
+
+`lgpd-inventario-dados.md` §3 registrou uma colisão real: a trilha guarda o texto
+das conversas, é imutável por exigência fiscal, e apagar uma linha quebraria a
+cadeia de hash de todas as seguintes. Direito de eliminação (art. 18, VI) contra
+auditabilidade.
+
+**Crypto-shredding resolve**, e funciona por um detalhe do desenho: o hash é
+calculado sobre o conteúdo de `dados`, seja ele qual for. Gravando **texto
+cifrado** ali, destruir a chave torna o conteúdo irrecuperável **sem alterar um
+byte da linha** — cadeia íntegra, evento ainda provado, conteúdo eliminado. Uma
+chave por titular, então eliminar um não afeta outro.
+
+Validado no banco real: 23 linhas eliminadas, `verificar_cadeia()` continuou
+`True`, e o protocolo da NFS-e seguiu preservado.
+
+⚠ **Só vale para o que for gravado daqui pra frente.** As linhas que já existem
+estão em claro e são imutáveis — cifrá-las retroativamente mudaria o hash. **Cada
+dia rodando sem isto acrescenta linhas que não poderão ser eliminadas**, e essa é
+a única parte do problema que piora com o tempo.
+
+### Mecanismo pronto, parâmetro em aberto
+
+Foi o critério das duas entregas: o **mecanismo** é técnico e está pronto e
+testado; o **parâmetro** é jurídico e fica desligado até alguém decidir.
+
+- `expurgar_dados` — retenção do que pode ser apagado (ids de mensagem, tokens
+  expirados, códigos 2FA usados). `RETENCAO_*_DIAS` vem `None`: reter
+  indefinidamente, o comportamento histórico. Definir o número liga o expurgo.
+- `TRANSCRITOR_AUDIO` — seam para trocar o Groq por transcrição local se o
+  parecer considerar voz dado biométrico. Contrato:
+  `(audio_bytes, mime_type) -> str | None`. Nenhuma dependência pesada foi
+  instalada por especulação.
+
+Isto evita os dois erros opostos: inventar prazo de retenção (parâmetro legal que
+não é meu) e entregar a decisão sem nada pronto para executá-la.
+
+### `docs/HOMOLOGACAO.md`
+
+Estado das duas homologações, conferido no código. **Produção Restrita pode
+começar hoje** — o passo 1 é o cadastro no ADN e não depende de nós. **Produto
+está bloqueado por 3 itens, nenhum é código**: parecer de responsabilidade civil,
+DPA, e os prazos de retenção.
+
+Recomendação registrada: **começar a Produção Restrita agora e não emitir nota
+real antes do parecer.** São paralelos — Produção Restrita é ambiente de
+homologação do governo, não produz efeito tributário, e é o único jeito de
+transformar suposição em fato. Emissão real tem efeito tributário e
+responsabilidade sobre documento em nome de terceiro; o checklist do projeto já
+a condicionava ao parecer.
+
+**12 testes novos** (278 no total). Dois testes antigos precisaram passar a ler
+`dados_revelados` em vez de `dados` — consequência esperada de o conteúdo agora
+ser cifrado.
+
+---
+
 ## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
 
 **Por quê agora:** é o item que prova a Hipótese 1 do MVP e o que mais lacunas técnicas

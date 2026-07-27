@@ -26,6 +26,23 @@ _EXTENSAO_POR_MIME = {
 
 
 def transcrever(audio_bytes: bytes, mime_type: str) -> str | None:
+    """Ponto único de transcrição — despacha para o transcritor configurado.
+
+    Existe como seam por causa de uma pendência jurídica concreta: hoje o áudio
+    (a VOZ do cliente) vai para o Groq, nos EUA. Se o parecer considerar voz
+    dado biométrico, trocar `settings.TRANSCRITOR_AUDIO` por uma implementação
+    local resolve sem tocar em mais nada — o contrato é
+    `(audio_bytes, mime_type) -> str | None`.
+    """
+    from django.utils.module_loading import import_string
+
+    caminho = getattr(
+        settings, "TRANSCRITOR_AUDIO", "apps.channel_whatsapp.transcricao.transcrever_groq"
+    )
+    return import_string(caminho)(audio_bytes, mime_type)
+
+
+def transcrever_groq(audio_bytes: bytes, mime_type: str) -> str | None:
     if not getattr(settings, "GROQ_API_KEY", ""):
         return None
 

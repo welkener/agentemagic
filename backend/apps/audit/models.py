@@ -59,5 +59,16 @@ class Auditoria(models.Model):
             "Auditoria é append-only: registros não podem ser apagados."
         )
 
+    @property
+    def dados_revelados(self) -> dict:
+        """`dados` com o conteúdo pessoal decifrado — para exibição.
+
+        Se o titular pediu eliminação, os campos voltam marcados como
+        eliminados, e não como erro: a ausência é o resultado esperado.
+        """
+        from .conteudo import revelar
+
+        return revelar(self.dados, self.cliente)
+
     def __str__(self):
         return f"[{self.id}] {self.evento}"

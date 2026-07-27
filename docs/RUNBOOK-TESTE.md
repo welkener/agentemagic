@@ -243,10 +243,33 @@ dos dois.
 
 ---
 
+## 8. Eliminação de dados do titular (LGPD)
+
+```bash
+python manage.py eliminar_dados_titular <cnpj> --conferir    # mostra o impacto
+python manage.py eliminar_dados_titular <cnpj> --confirmar   # IRREVERSÍVEL
+```
+
+Destrói a chave de conteúdo do titular: o texto das conversas dele fica
+irrecuperável **sem apagar linha nenhuma** e sem quebrar a cadeia de hash. O dado
+fiscal (que a nota existiu, valor, protocolo) permanece — é obrigação de guarda.
+
+Retenção por prazo, do que **pode** ser apagado (ids de mensagem, tokens
+expirados, códigos 2FA usados):
+
+```bash
+python manage.py expurgar_dados --conferir
+```
+
+Vem **desligado**: definir prazo é decisão jurídica. Quando houver, defina
+`RETENCAO_*_DIAS`. Detalhes em `docs/HOMOLOGACAO.md` §4.
+
+---
+
 ## Testes automatizados
 
 ```bash
-python -m pytest -q        # 266 testes
+python -m pytest -q        # 278 testes
 ```
 
 Cobrem, entre outros: isolamento entre escritórios (dois tenants com **mesmo

@@ -13,7 +13,13 @@ class AuditoriaAdmin(EscopoEscritorioMixin, ModelAdmin):
     list_display = ("id", "criado_em", "evento", "cliente", "hash_atual")
     list_filter = ("evento",)
     search_fields = ("evento", "cliente__nome", "cliente__cnpj", "hash_atual")
-    readonly_fields = [f.name for f in Auditoria._meta.fields]
+    readonly_fields = [f.name for f in Auditoria._meta.fields] + ["conteudo"]
+
+    @admin.display(description="conteúdo (decifrado)")
+    def conteudo(self, obj):
+        """`dados` guarda o conteúdo pessoal cifrado com a chave do titular —
+        sem isto o admin mostraria só o token."""
+        return obj.dados_revelados
 
     def has_add_permission(self, request):
         return False

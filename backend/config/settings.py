@@ -351,3 +351,27 @@ if SENTRY_DSN:
     from apps.observabilidade.sentry import configurar as _configurar_sentry  # noqa: E402
 
     _configurar_sentry(SENTRY_DSN, SENTRY_ENVIRONMENT)
+
+# ---------------------------------------------------------------------------
+# Retenção de dados (LGPD) — `manage.py expurgar_dados`.
+#
+# **Desligado por padrão de propósito.** `None` = reter indefinidamente, que é o
+# comportamento histórico. Definir prazo é decisão JURÍDICA, não técnica — o
+# mecanismo está pronto e testado, e passa a valer quando alguém puser o número.
+# Ver docs/lgpd-inventario-dados.md §3.
+#
+# Não cobre a trilha de auditoria: ela é imutável, e a eliminação do conteúdo
+# dela é por crypto-shredding (`manage.py eliminar_dados_titular`).
+# ---------------------------------------------------------------------------
+RETENCAO_MENSAGENS_PROCESSADAS_DIAS = env.int("RETENCAO_MENSAGENS_PROCESSADAS_DIAS", default=0) or None
+RETENCAO_TOKENS_MAGIC_LINK_DIAS = env.int("RETENCAO_TOKENS_MAGIC_LINK_DIAS", default=0) or None
+RETENCAO_CODIGOS_2FA_DIAS = env.int("RETENCAO_CODIGOS_2FA_DIAS", default=0) or None
+
+# ---------------------------------------------------------------------------
+# Transcrição de áudio — hoje via Groq (Whisper), o que envia a VOZ do cliente
+# para fora do Brasil. Se o parecer jurídico considerar voz dado biométrico
+# (LGPD art. 5º, II), trocar aqui por uma implementação local com o mesmo
+# contrato: `(audio_bytes, mime_type) -> str | None`. Ver
+# docs/lgpd-inventario-dados.md §6.
+# ---------------------------------------------------------------------------
+TRANSCRITOR_AUDIO = env("TRANSCRITOR_AUDIO", default="apps.channel_whatsapp.transcricao.transcrever_groq")

@@ -156,7 +156,9 @@ def test_mensagem_de_audio_sem_groq_pede_para_escrever(client, cliente):
     assert resposta.status_code == 200
 
     assert MensagemProcessada.objects.filter(message_id="wamid.AUDIO001").exists()
-    eventos = list(Auditoria.objects.values_list("evento", "dados"))
+    # `dados_revelados`, não `dados`: o conteúdo pessoal fica cifrado com a
+    # chave do titular (apps/audit/conteudo.py) — ler o campo cru devolve o token.
+    eventos = [(a.evento, a.dados_revelados) for a in Auditoria.objects.all()]
     nomes_eventos = [e for e, _ in eventos]
     assert "whatsapp_transcricao_falhou" in nomes_eventos
     assert "whatsapp_mensagem_recebida" not in nomes_eventos  # nunca chegou a processar texto vazio

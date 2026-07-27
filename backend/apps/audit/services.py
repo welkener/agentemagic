@@ -1,6 +1,7 @@
 """Serviços de auditoria: registro encadeado e verificação da cadeia."""
 from django.db import transaction
 
+from .conteudo import cifrar_campos_pessoais
 from .models import Auditoria, calcular_hash
 
 
@@ -10,6 +11,11 @@ def registrar(evento: str, dados: dict, cliente=None) -> Auditoria:
     O hash do último registro vira o `hash_anterior` do novo — formando uma
     cadeia verificável. A transação evita corrida entre dois registros.
     """
+    # Conteúdo pessoal entra CIFRADO com a chave do titular. É isso que torna a
+    # eliminação (LGPD art. 18, VI) possível sem quebrar a cadeia de hash —
+    # ver apps/audit/conteudo.py.
+    dados = cifrar_campos_pessoais(dados, cliente)
+
     with transaction.atomic():
         anterior = (
             Auditoria.objects.select_for_update(of=("self",))
