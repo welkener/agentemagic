@@ -988,6 +988,45 @@ nenhum dos dois desenhos dá de graça.
 
 ---
 
+## 1.19 Inventário LGPD — insumo técnico para o DPA ✅ 26/jul/2026
+
+`docs/lgpd-inventario-dados.md`. Levantado **do código, campo a campo**, não por
+estimativa. Não é parecer: não determina base legal, prazo de retenção, papel de
+controlador nem redação de cláusula — é o levantamento factual que o advogado
+pede antes de escrever qualquer coisa.
+
+### 🔴 O achado que muda a prioridade
+
+**Não existe política de retenção nenhuma — nada é apagado, em lugar nenhum.**
+E pior que o volume: a **trilha de auditoria guarda o texto integral de cada
+mensagem** trocada com o cliente, junto com o telefone (`pipeline.py`,
+`orchestrator.py`), e é **imutável por construção** — o model bloqueia `UPDATE`
+e `DELETE`, e apagar uma linha quebraria a cadeia de hash de todas as seguintes.
+As duas coisas foram confirmadas rodando, não lendo.
+
+Isso põe o **direito de eliminação (art. 18, VI) em rota de colisão com a
+imutabilidade que a auditoria fiscal exige.** Há caminhos técnicos (guardar hash
+em vez do texto, *crypto-shredding* com chave por titular, separar trilha fiscal
+de conversacional) — mas **qual adotar depende de decisão jurídica** sobre o que
+precisa mesmo ser retido. Implementar antes disso seria chutar.
+
+### Subprocessadores mapeados
+
+Groq (EUA) recebe o **texto e o áudio** da mensagem; Meta/Evolution, o conteúdo
+das conversas; BrasilAPI, o CNPJ; Sefin, a DPS; Conta Azul/Bling, consultas da
+conta do próprio cliente; Sentry, stack trace já raspado (opcional).
+
+Um ponto para o jurídico que só apareceu ao mapear: **áudio de voz pode ser lido
+como dado biométrico** (art. 5º, II), o que mudaria o regime aplicável ao Groq.
+Existe alternativa técnica (transcrição local) se o parecer for restritivo — mas
+a decisão vem primeiro.
+
+O documento fecha com as **6 perguntas que só o jurídico responde** e as lacunas
+técnicas conhecidas (conteúdo de mensagem em texto claro no banco, sem auditoria
+de acesso a segredo, sem pentest, sem exportação de dados do titular).
+
+---
+
 ## 2. Onda 2 — NFS-e real em homologação — 5 a 8 dias (⚠ replanejada 25/jul/2026)
 
 **Por quê agora:** é o item que prova a Hipótese 1 do MVP e o que mais lacunas técnicas
