@@ -92,21 +92,21 @@ docker compose -f docker-compose.deploy.yml exec postgres \
 
 # 3. rebuild (deps novas — `git pull` sozinho não basta)
 git pull
-docker compose -f docker-compose.deploy.yml build backend
+docker compose -f docker-compose.deploy.yml build web
 docker compose -f docker-compose.deploy.yml up -d      # migra no start
 
 # 4. conferir
-docker compose -f docker-compose.deploy.yml logs backend | tail -30
+docker compose -f docker-compose.deploy.yml logs web | tail -30
 ```
 
 Depois, provisionar a Rotina:
 
 ```bash
-docker compose -f docker-compose.deploy.yml exec backend \
+docker compose -f docker-compose.deploy.yml exec web \
   python manage.py provisionar_escritorio "Rotina Contábil" \
   --contador rotina.responsavel --email <e-mail-real>
 
-docker compose -f docker-compose.deploy.yml exec backend \
+docker compose -f docker-compose.deploy.yml exec web \
   python manage.py cadastrar_cliente <CNPJ> --escritorio rotina-contabil \
   --telefone 55DDNUMERO
 ```
@@ -121,7 +121,7 @@ Evolution no admin e conectar o número por QR.
 ### Antes de chamar o contador
 
 ```bash
-docker compose -f docker-compose.deploy.yml exec backend \
+docker compose -f docker-compose.deploy.yml exec web \
   python manage.py testar_conversa --cnpj <CNPJ> "qual meu estoque?"
 ```
 
