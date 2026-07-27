@@ -1,127 +1,175 @@
-# Homologação — estado e o que falta
+# Homologação — MVP rodando para a Rotina Contábil testar
 
 Atualizado em 26/jul/2026. Conferido no código, não por memória.
 
-São **duas homologações diferentes** e elas não dependem uma da outra:
+**Homologar aqui = o MVP no ar, a Rotina entrando no painel e um cliente real
+conversando com o agente pelo WhatsApp.** Não é homologação do governo (Produção
+Restrita, §4) nem prontidão para vender a outros escritórios (§5) — as três são
+coisas diferentes e não dependem uma da outra.
 
-| | O que é | Estado |
-|---|---|---|
-| **§1 Produção Restrita** | homologação do governo (NFS-e Nacional) | 🟡 **pode começar hoje** |
-| **§2 Produto** | pronto para cliente real fora do time | 🔴 **bloqueado por 3 itens, nenhum é código** |
+## Resposta curta
+
+**O produto está pronto. O que falta é operação de deploy — e três configurações
+que, se descobertas no dia do teste, queimam a sessão com o contador.**
 
 ---
 
-## §1 Produção Restrita — pode começar
+## §1 O que já funciona (verificado)
 
-O passo 1 é o **cadastro em `adn.producaorestrita.nfse.gov.br`**, que não depende
-de nada nosso. Com ele feito e o `.pfx` da empresa subido no admin, o sistema
-tenta emitir de verdade.
+O fluxo completo roda hoje, de ponta a ponta:
 
-| Item | Estado |
+| | |
 |---|---|
-| DPS válida contra o XSD oficial | ✅ testado, antes e depois de assinar |
-| Assinatura XMLDSig (rsa-sha1 + C14N 1.0, como o schema fixa) | ✅ |
-| Transporte mTLS com o `.pfx` em custódia | ✅ |
-| Evento de cancelamento (`e101101`) assinado | ✅ validado contra o XSD |
-| Numeração sequencial segura sob concorrência | ✅ `select_for_update` |
-| **Cadastro no ADN** | ❌ **com você** |
-| **Emissão aceita pela Sefin** | ❌ nunca exercido — é o que o cadastro destrava |
-| **IBS/CBS** | ⚠ **não implementável**: `nfelib` 2.5.2 (a mais recente) não tem o grupo nos bindings |
+| Cliente pergunta estoque, pedidos, contas a pagar/receber, fluxo de caixa | ✅ |
+| Cliente pede nota → confirma → nota emitida (mock) com protocolo e DANFSE | ✅ |
+| Cliente consulta as notas dele | ✅ |
+| Cliente pede cancelamento → vai para o contador decidir | ✅ |
+| Contador entra no painel e vê **só a carteira dele** | ✅ |
+| Contador aprova/rejeita na fila | ✅ |
+| Contador é avisado por e-mail quando a Sefin recusa | ✅ |
+| Voz: cliente manda áudio, sistema transcreve | ✅ (com `GROQ_API_KEY`) |
+| 2FA por e-mail acima de um valor configurável | ✅ |
 
-**Antes de tentar contra a Sefin**, valide local (não gasta chamada, não depende
-de cadastro):
+278 testes automatizados. Fluxo conferido também fora do pytest.
+
+---
+
+## §2 🔴 As três coisas que travam o teste no dia
+
+Nenhuma é código faltando — são configurações que ninguém percebe até a hora.
+
+### 1. SMTP — sem ele o contador não consegue entrar
+
+O acesso ao painel é por **Magic Link enviado por e-mail**. Sem SMTP
+configurado, o Django cai no backend de console e **o link sai no log do
+container**, não no e-mail do contador. Ele simplesmente não entra.
+
+Os alertas de rejeição fiscal também não saem.
+
+**Correção**: preencher `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`,
+`EMAIL_HOST_PASSWORD` no `.env` do servidor. Basta `EMAIL_HOST` que o backend
+SMTP entra sozinho.
+
+> Isto estava faltando no `docker-compose.deploy.yml` e foi corrigido agora.
+
+### 2. O servidor está muito atrás do código
+
+Desde o último deploy: **6 dependências novas** (`nfelib`, `signxml`, `lxml`,
+`sentry-sdk`…) e **14 migrações**, incluindo duas de risco:
+
+- **renomeação de tabelas** (`painel_escritorio` → `tenants_escritorio`);
+- **backfill obrigatório** — todo `Cliente` existente precisa ganhar um
+  escritório.
+
+As duas foram validadas no banco de dev com dados, **inclusive o rollback**. Mas
+exigem rebuild da imagem (não só `git pull`) e **backup antes**.
+
+### 3. Canal WhatsApp e o escritório da Rotina
+
+O roteamento é multi-tenant: a **instância que recebe** a mensagem identifica o
+escritório. Precisa existir:
+
+- escritório "Rotina Contábil" provisionado;
+- `ConfiguracaoEvolution` vinculada **a ele** e marcada ativa;
+- número conectado por QR;
+- cliente(s) da Rotina cadastrados, com sessão WhatsApp ativa.
+
+Com **um só** escritório ativo o sistema cai num fallback e funciona mesmo sem
+instância casada. A partir do segundo, mensagem sem instância vinculada é
+**descartada** — comportamento correto (nunca cai no tenant errado), mas que
+parece "o bot não responde" se ninguém souber.
+
+---
+
+## §3 Roteiro do deploy
 
 ```bash
-python manage.py shell -c "
-from apps.clients.models import Cliente
-from apps.fiscal import dps
-c = Cliente.objects.get(cnpj='SEU_CNPJ')
-xml = dps.montar_dps(c, {'valor':100.0,'descricao_servico':'Teste','tomador':'Fulano'}, numero=1)
-print('valida:', not dps.validar_contra_xsd(xml))"
+# 1. BACKUP — há renomeação de tabela e backfill
+docker compose -f docker-compose.deploy.yml exec postgres \
+  pg_dump -U magicbi magicbi > backup-antes-$(date +%F).sql
+
+# 2. .env: acrescentar SMTP (ver .env.deploy.example)
+
+# 3. rebuild (deps novas — `git pull` sozinho não basta)
+git pull
+docker compose -f docker-compose.deploy.yml build backend
+docker compose -f docker-compose.deploy.yml up -d      # migra no start
+
+# 4. conferir
+docker compose -f docker-compose.deploy.yml logs backend | tail -30
 ```
 
-Se der inválido, o problema é cadastro do cliente — resolve aqui, não contra o
-governo.
-
----
-
-## §2 Produto — o que falta
-
-### Pronto ✅
-
-| Item | Onde conferir |
-|---|---|
-| Isolamento entre escritórios | 17 testes, cenário de mesmo CNPJ e telefone em dois tenants |
-| Escalada de privilégio no convite de colegas | 13 testes |
-| Segredos cifrados **com rotação de chave** sem downtime | `apps/credentials/chaves.py` |
-| Chave fora de variável de ambiente | arquivo (`docker secret`/`systemd`) |
-| Trilha append-only com hash encadeado | adulteração é detectável |
-| **Eliminação de dados do titular** sem quebrar a trilha | crypto-shredding, ver abaixo |
-| Alerta de rejeição fiscal ao contador | e-mail + card no dashboard |
-| Recusa de subir com chave de sessão padrão | `settings.py` |
-| Cookies `secure`, HTTPS obrigatório, HSTS | fora de DEBUG |
-| CI: 278 testes + `check --deploy` | `.github/workflows/ci.yml` |
-
-### Bloqueado 🔴 — e nenhum é código
-
-| Item | Com quem | Por quê bloqueia |
-|---|---|---|
-| **Parecer de responsabilidade civil** | jurídico | o checklist do projeto o marca como **pré-condição de qualquer emissão real** |
-| **DPA + minuta citando subprocessadores** | jurídico | Groq recebe texto **e áudio** do cliente; ver `lgpd-inventario-dados.md` |
-| **Prazos de retenção** | jurídico | mecanismo pronto e testado, mas **desligado** — o número é decisão legal |
-| Pentest leve | terceiro | postura nunca testada por quem não escreveu o código |
-
----
-
-## §3 Recomendação
-
-**Comece a Produção Restrita agora e não emita nota real antes do parecer.**
-
-As duas coisas são paralelas. A Produção Restrita é ambiente de homologação do
-governo: emitir lá não produz efeito tributário, e é o único jeito de transformar
-suposição em fato — cada rejeição da Sefin vira informação concreta em vez de
-especulação. Não há motivo para esperar o jurídico para isso.
-
-Emissão **real**, em produção, é outra história: aí há efeito tributário e
-responsabilidade civil sobre documento emitido em nome de terceiro. O checklist
-do próprio projeto já colocava o parecer como pré-condição, e isso não mudou.
-
-**O gate honesto para "homologado" é:** uma emissão aceita pela Sefin em Produção
-Restrita **e** o parecer assinado. Os outros itens são endereçáveis em paralelo.
-
-### As três decisões que destravam trabalho meu
-
-1. **Prazos de retenção** (dias por tipo de dado) → ligo o expurgo, que já está
-   pronto e testado.
-2. **Parecer sobre o áudio no Groq** — se voz for tratada como dado biométrico,
-   troco por transcrição local; o seam já existe (`settings.TRANSCRITOR_AUDIO`).
-3. **Cadastro no ADN** → primeira emissão real e o trabalho que vier dela.
-
----
-
-## §4 Nota sobre a eliminação de dados (LGPD art. 18, VI)
-
-Havia uma colisão real: a trilha guarda o texto das conversas, é imutável por
-exigência fiscal, e apagar uma linha quebraria a cadeia de hash de todas as
-seguintes.
-
-Resolvido por **crypto-shredding**: o conteúdo pessoal é gravado **cifrado com
-uma chave por titular**. Destruir a chave torna o conteúdo irrecuperável **sem
-alterar um byte da linha** — a cadeia continua verificando, a trilha continua
-provando que o evento aconteceu, e o conteúdo some. Validado no banco real:
-23 linhas eliminadas, cadeia íntegra, dado fiscal preservado.
+Depois, provisionar a Rotina:
 
 ```bash
-python manage.py eliminar_dados_titular <cnpj> --conferir
-python manage.py eliminar_dados_titular <cnpj> --confirmar   # irreversível
+docker compose -f docker-compose.deploy.yml exec backend \
+  python manage.py provisionar_escritorio "Rotina Contábil" \
+  --contador rotina.responsavel --email <e-mail-real>
+
+docker compose -f docker-compose.deploy.yml exec backend \
+  python manage.py cadastrar_cliente <CNPJ> --escritorio rotina-contabil \
+  --telefone 55DDNUMERO
 ```
 
-⚠ **Vale só para o que for gravado a partir de agora.** As linhas que já existem
-estão em texto claro e são imutáveis — não há como cifrá-las retroativamente
-(mudar `dados` mudaria o hash). Para elas, a única eliminação possível seria
-apagar a linha, quebrando a cadeia.
+O `cadastrar_cliente` puxa razão social, município (IBGE) e CNAE da Receita.
+Restará definir o **código de tributação nacional** no admin — é decisão do
+contador, não dá para deduzir do CNAE.
 
-**Consequência prática: cada dia rodando sem isto acrescenta linhas que não
-poderão ser eliminadas.** Se houver conversa real de cliente na base hoje, vale
-decidir logo o que fazer com esse histórico — é a única parte deste problema que
-piora com o tempo.
+Por fim: `enviar_link_contador rotina.responsavel`, configurar a instância
+Evolution no admin e conectar o número por QR.
+
+### Antes de chamar o contador
+
+```bash
+docker compose -f docker-compose.deploy.yml exec backend \
+  python manage.py testar_conversa --cnpj <CNPJ> "qual meu estoque?"
+```
+
+Testa o agente **sem passar pelo WhatsApp**. Se responder aqui e não no
+WhatsApp, o problema é canal — não agente. Vale rodar o roteiro completo do
+`RUNBOOK-TESTE.md` §1 antes da sessão.
+
+---
+
+## §4 Isto NÃO é homologação do governo
+
+Emissão real de NFS-e continua **bloqueada** por falta de cadastro em
+`adn.producaorestrita.nfse.gov.br`. No teste com a Rotina, **as notas são
+emitidas pelo mock** — protocolo e DANFSE falsos, sem efeito tributário.
+
+Isso é adequado para validar o fluxo, a conversa e a fila de aprovação. Precisa
+estar claro para o contador: **nenhuma nota do teste existe perante o fisco.**
+
+O que já está pronto do lado fiscal (DPS válida no XSD oficial, assinatura,
+mTLS, evento de cancelamento) só entra em ação quando houver cadastro no ADN e
+certificado `.pfx` cadastrado.
+
+---
+
+## §5 Isto também NÃO é prontidão para vender a outro escritório
+
+Para cliente pagante fora da Rotina, seguem pendentes — e nenhum é código:
+parecer de responsabilidade civil, DPA citando os subprocessadores, prazos de
+retenção (mecanismo pronto, desligado) e pentest. Ver
+`docs/lgpd-inventario-dados.md`.
+
+A multi-tenancy em si está pronta e testada — o que falta é jurídico.
+
+---
+
+## §6 Recomendação
+
+1. **Atualizar o servidor com backup**, seguindo §3.
+2. **Configurar SMTP e testar o Magic Link com o próprio e-mail** antes de
+   mandar para o contador.
+3. **Rodar o roteiro de conversa pelo terminal** antes de envolver o WhatsApp —
+   separa falha de agente de falha de canal.
+4. **Deixar explícito para a Rotina que as notas do teste são simuladas.**
+
+Feito isso, o MVP está homologável no sentido que interessa agora: dá para
+sentar com o contador e usar.
+
+⚠ Um ponto que piora com o tempo: a partir de agora o conteúdo das conversas é
+gravado cifrado, o que permite atender pedido de eliminação. **Conversa gravada
+antes disso está em texto claro e é imutável** — se o teste com a Rotina gerar
+conversa real, vale subir a versão nova *antes* de começar.

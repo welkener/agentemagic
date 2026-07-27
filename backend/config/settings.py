@@ -55,7 +55,14 @@ if not DEBUG:
     # sem isto o cookie de sessão do contador trafega em claro entre proxy e app.
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_SSL_REDIRECT = env.bool("DJANGO_SECURE_SSL_REDIRECT", default=True)
+
+    # Redirect HTTP→HTTPS fica DESLIGADO por padrão, e não é descuido: quem
+    # termina o TLS aqui é o proxy reverso, e ele já redireciona. Ligar no
+    # Django, com a porta do app também exposta direto (8020 no compose de
+    # deploy), faz quem acessar por IP cair em **loop infinito de redirect** —
+    # inclusive quem só quer conferir se o container subiu. Ligue apenas se o
+    # app deixar de ser alcançável fora do proxy.
+    SECURE_SSL_REDIRECT = env.bool("DJANGO_SECURE_SSL_REDIRECT", default=False)
 
     # HSTS começa em 1 hora de propósito. É a única configuração aqui que o
     # navegador **memoriza**: errar com 1 ano deixa o domínio inacessível por 1
@@ -226,8 +233,23 @@ PAINEL_BASE_URL = env("PAINEL_BASE_URL", default="http://localhost:8000")
 
 # E-mail: console em dev (imprime no terminal em vez de enviar de verdade);
 # configurar SMTP real (ou SES) antes do piloto com clientes reais.
+# Sem SMTP configurado, cai no console — e aí o Magic Link do contador sai no
+# log do container em vez de chegar no e-mail dele. Em dev isso é conveniente;
+# num servidor de teste com gente real, é o que trava a primeira sessão.
+# Basta definir EMAIL_HOST para o backend SMTP entrar sozinho.
+EMAIL_HOST = env("EMAIL_HOST", default="")
+EMAIL_PORT = env.int("EMAIL_PORT", default=587)
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+
 EMAIL_BACKEND = env(
-    "EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend"
+    "EMAIL_BACKEND",
+    default=(
+        "django.core.mail.backends.smtp.EmailBackend"
+        if EMAIL_HOST
+        else "django.core.mail.backends.console.EmailBackend"
+    ),
 )
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="no-reply@magicbi.local")
 
