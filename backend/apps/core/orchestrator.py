@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 
 from apps.agents.agente_erp.services import AgenteErp
 from apps.agents.agente_nf.models import Intencao
+from apps.agents.registry import criar_agente, exposto_ao_modelo
 from apps.agents.agente_nf.services import (
     ErroCancelamento,
     cancelar_emissao,
@@ -126,6 +127,7 @@ _INTENCOES_VALIDAS = (
 )
 
 
+@exposto_ao_modelo
 class IntencaoClassificada(BaseModel):
     """Saída tipada do roteador — o núcleo decide o que fazer com cada valor."""
 
@@ -142,8 +144,14 @@ class IntencaoClassificada(BaseModel):
     ]
 
 
+@exposto_ao_modelo
 class DadosNotaExtraidos(BaseModel):
-    """Campos extraídos da mensagem para emitir NFS-e — nunca inclui CNAE/alíquota."""
+    """Campos extraídos da mensagem para emitir NFS-e — nunca inclui CNAE/alíquota.
+
+    Nem CNPJ, nem qualquer identificador de escopo: `cnpj_prestador` e `cnae` são
+    montados pelo núcleo a partir do cadastro do cliente resolvido no webhook
+    (`_iniciar_emissao`). O decorador acima é o que impede isso mudar em silêncio.
+    """
 
     tomador: str | None = Field(None, description="Nome de quem recebeu o serviço")
     valor: float | None = Field(None, description="Valor do serviço em reais")
@@ -241,14 +249,12 @@ class Orquestrador:
         return self._classificar_por_palavra_chave(mensagem)
 
     def _classificar_via_groq(self, mensagem: str) -> str:
-        from pydantic_ai import Agent
-
         from apps.core.models import exemplos_para_prompt
 
         # Exemplos vêm do banco a cada chamada: cadastrar um no admin passa a
         # valer na mensagem seguinte, sem deploy. É o que evita que cada jeito
         # novo de o cliente falar vire trabalho de desenvolvedor.
-        agent = Agent(
+        agent = criar_agente(
             _MODELO_ROTEADOR,
             output_type=IntencaoClassificada,
             system_prompt=_PROMPT_ROTEADOR + exemplos_para_prompt(),
@@ -619,9 +625,7 @@ class Orquestrador:
         return DadosNotaExtraidos()
 
     def _extrair_via_groq(self, mensagem: str) -> DadosNotaExtraidos:
-        from pydantic_ai import Agent
-
-        agent = Agent(
+        agent = criar_agente(
             _MODELO_EXTRACAO,
             output_type=DadosNotaExtraidos,
             system_prompt=(
