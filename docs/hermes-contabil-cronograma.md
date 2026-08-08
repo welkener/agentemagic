@@ -1,0 +1,329 @@
+# Cronograma — dois produtos sobre uma plataforma (a partir de 08/ago/2026)
+
+Executa as decisões de [`hermes-contabil-decisoes.md`](hermes-contabil-decisoes.md),
+com base no estado real do código levantado em
+[`hermes-contabil-ajuste.md`](hermes-contabil-ajuste.md).
+
+**Não é um plano do zero.** É o que falta para o backend que já roda sustentar os
+**dois produtos** (DEC-02):
+
+- **Fiscus/Lumen** — a empresa final (MEI e micro) no WhatsApp: emitir nota,
+  radar de teto, consultar o ERP dela. **Funciona ponta a ponta hoje.**
+- **Hermes Contábil** — o escritório contábil como tenant, atendendo centenas ou
+  milhares de empresas: guias, obrigações, documentos, folha, integração com o
+  sistema contábil. **É o que este cronograma constrói.**
+
+Os itens ✅ já estão escritos e testados. O cronograma existe para o resto.
+
+Relação com os cronogramas anteriores: substitui `magicbi-mvp-cronograma.md`
+(encerrado, papel cumprido) e reenquadra `magicbi-cronograma.md`, cujas fases
+F5/F6 seguem válidas — ver §6.
+
+---
+
+## 1. Capacidade — leia antes do calendário
+
+Os cronogramas anteriores assumiam **1 backend + 1 full-stack + 1 contador/produto**.
+O calendário principal mantém essa premissa, com sprints de 2 semanas. Se a
+execução for de **um dev só** — que é o cenário real do que foi entregue até
+aqui —, o mesmo escopo cabe em sprints de 3 semanas:
+
+| Sprint | Entrega | Time de 3 (2 sem) | Dev solo (3 sem) |
+|---|---|---|---|
+| S1 | Isolamento de 3 níveis | 10–21/ago | 10–28/ago |
+| S2 | Tool registry + medição | 24/ago–04/set | 31/ago–18/set |
+| **S2b** | **Grimório como aplicação** | **07–18/set** | **21/set–09/out** |
+| S3 | Rotina contábil (guias, obrigações) | 21/set–02/out | 12–30/out |
+| S4 | Pipeline de documento | 05–16/out | 02–20/nov |
+| S5 | ERPAdapter + reconciliação | 19–30/out | 23/nov–11/dez |
+| S6 | Contas a pagar, proativo, billing | 02–13/nov | 04–22/jan/2027 |
+
+**O que a diferença de capacidade realmente muda.** No cenário solo o S6 cai
+depois do recesso, em jan/2027. Isso é aceitável e vale dizer por quê: a data
+que não se move é o **destaque CBS/IBS chegando ao Simples/MEI em jan/2027**, e
+quem responde por ela é o **motor fiscal (S3)**, que fecha em 30/out mesmo no
+cenário solo. O S6 é comercial — billing, proativo, onboarding self-service —,
+não conformidade. Escorregar ali custa receita, não risco fiscal.
+
+**O que não se corta em nenhum cenário:** o teste de tool registry (S1), o RLS
+(S1), o teste de escopo do Grimório fora do admin (S2b) e a fila de revisão
+humana do OCR (S4). Os quatro são a diferença entre um produto que um escritório
+assina e um que ele devolve.
+
+---
+
+## 2. Visão geral
+
+```
+Ago              Set              Out              Nov            Jan/27
+S1  ████          Isolamento de 3 níveis: usuario + RLS + tool registry + T0
+S2     ████       Tool registry + SessionContext + medição por tenant
+S2b       ████    Grimório: aplicação própria (Hoje, Carteira, Ficha)
+S3           ████ Rotina contábil: guias, obrigações, retenções
+S4              ████ Pipeline de documento (OCR → revisão humana)
+S5                 ████ ERPAdapter: ArquivoAdapter + reconciliação + DLQ
+S6                    ████ Contas a pagar + proativo + billing + onboarding
+T-Onda ██████     Onda Simples 1º/set — trilha comercial, sem dev novo
+T-Piloto                 ████████  2–3 escritórios reais
+```
+
+---
+
+## 3. Os sprints
+
+### Sprint 1 — Isolamento de três níveis (10–21/ago)
+
+O primeiro commit é o teste, não a feature.
+
+- [ ] **Teste de tool registry** (DEC-05) — varre os schemas expostos ao modelo e
+      falha com `tenant_id`, `cliente_id`, `cnpj`, `empresa_id`, `escritorio_id`.
+      Vale já para `DadosNotaExtraidos`, antes de existir registry.
+- [ ] **RLS no Postgres** (DEC-04): policies por `RunSQL` em toda tabela de
+      domínio, role de aplicação sem `BYPASSRLS`, `SET LOCAL app.tenant_id` em
+      middleware (HTTP) e em `task_prerun` (Celery).
+- [ ] Teste: query **sem** `app.tenant_id` setado devolve zero linhas — inclusive
+      dentro de task do Celery.
+- [ ] **Nível `usuario`** (DEC-03): model novo, migração do telefone que hoje
+      mora em `Cliente`, reescrita de `ClienteManager.por_telefone` preservando
+      a lógica de nono dígito (`clients/telefone.py`).
+- [ ] Desambiguação "de qual empresa você quer falar?" fixada na sessão.
+- [ ] **T0 como camada da frente** (DEC-08): menu, 2ª via de guia, status de
+      obrigação e "recebeu meu documento" respondidos sem LLM.
+- [ ] Extensão de `tests/test_multitenancy.py`: mesmo telefone em dois clientes
+      do **mesmo** escritório.
+- [ ] **Filas por prioridade** no Celery (DEC-10) — item pequeno, entra aqui.
+
+✅ **Já pronto:** tenant = escritório, roteamento pelo número que recebe, 14
+testes de isolamento, auditoria encadeada, tiers, idempotência.
+
+**Gate S1** — nenhuma tool nova antes de tudo isto verde:
+- 200 tentativas de cross-tenant por prompt injection, **0 vazamentos**;
+- RLS bloqueia mesmo com um `.objects.filter()` de tenant omitido de propósito;
+- T0 resolve ≥ 40% de uma amostra de 100 mensagens reais.
+
+---
+
+### Sprint 2 — Tool registry e medição por tenant (24/ago–04/set)
+
+- [ ] **`SessionContext`** formal: tenant, cliente, usuário, canal, resolvido no
+      webhook. Único caminho de escopo para dentro das tools.
+- [ ] **Tool registry**: as 9 intenções atuais do `if/elif` do orquestrador viram
+      tools com schema, sem identificador de escopo.
+- [ ] System prompt + definição de tools **por tenant** (cacheáveis).
+- [ ] Tools de leitura sem dependência de ERP: `consultar_nota`,
+      `consultar_faturamento_acumulado` (aproveita `fiscal/teto_mei.py`),
+      `agendar_atendimento`, `abrir_chamado`.
+- [ ] **Medição por tenant** (DEC-08): tokens, custo, latência, tool calls, erro.
+- [ ] **Limite de gasto por tenant com degradação para T1** antes de cortar.
+
+**Gate S2** — teste de registry passa com o registry real; custo por cliente/mês
+**medido**, não estimado; p95 fora de pico < 8s.
+
+---
+
+### Sprint 2b — Grimório como aplicação própria (07–18/set)
+
+Executa a DEC-12. **Não é retrabalho de UI**: é a superfície onde o contador
+trabalha, e as três telas que os sprints seguintes exigem (revisão de OCR, DLQ,
+consumo) nascem dentro dela em vez de virarem mais páginas penduradas no admin.
+
+- [ ] **Casca da aplicação**: URLs próprias em `apps/painel`, layout próprio,
+      Tailwind com build próprio (CLI standalone, sem Node no servidor),
+      HTMX para atualização parcial. Marca do tenant já vem de
+      `painel/branding.py`.
+- [ ] **Mixin de escopo de tenant para views**, fora do admin — e **teste
+      dedicado no primeiro dia**: sair do admin é sair de `EscopoEscritorioMixin`,
+      e é aí que o isolamento se perde sem ninguém notar.
+- [ ] **Hoje** (home): o que exige o contador agora — nota rejeitada, certificado
+      vencendo, MEI perto do teto, cliente sem responder. Ação no lugar onde o
+      problema aparece.
+- [ ] **Carteira**: uma linha por empresa, com drill-down.
+- [ ] **Ficha da empresa**: linha do tempo única — conversas, notas, documentos,
+      guias, obrigações, integrações.
+- [ ] **Operação**: consumo e custo por tenant (a tela que o S2 alimenta), o que
+      o agente não entendeu.
+- [ ] Admin permanece como **backoffice** da equipe Magic BI, escopado como hoje.
+
+✅ **Reusado sem reescrita:** `painel/metricas.py` (317 linhas testadas — séries
+mensais, carteira, integrações, documentos, radar de teto), `painel/apresentacao.py`,
+`painel/branding.py`.
+
+**Gate S2b**
+- O contador cumpre um dia de trabalho **sem abrir o `/admin/`**;
+- teste prova que uma view nova sem o mixin não devolve dado de outro tenant;
+- as telas renderizam certo em screenshot real, não só em teste (as cinco
+  armadilhas de 27/jul não quebraram nenhum teste — só apareceram na imagem).
+
+---
+
+### Sprint 3 — Rotina contábil: o que o escritório de fato pede (21/set–02/out)
+
+- [ ] `consultar_das(competencia)`, `segunda_via_guia(tipo, competencia)` —
+      DAS, DARF, GPS, FGTS, ISS.
+- [ ] `status_obrigacoes()` — DCTFWeb, EFD, eSocial, SPED.
+- [ ] `consultar_folha(competencia)`, `listar_certidoes()`.
+- [ ] **`fiscal/` ganha retenções**: ISS, IRRF, INSS, PIS/COFINS/CSLL.
+- [ ] **Teste de que `fiscal/` não importa `agent/`** — hoje `teto_mei.py`
+      importa `clients.models`; a dependência é invertida no mesmo commit.
+- [ ] Tabela **`confirmacoes`**: a confirmação em duas etapas hoje vive na
+      transição da `Intencao`; vira registro explícito, porque o critério de
+      aceite exige que seja consultável, não inferido da trilha.
+
+✅ **Já pronto:** motor fiscal com DPS via `nfelib` contra o XSD oficial,
+assinatura XMLDSig, numeração/série, cancelamento, radar de teto do MEI,
+confirmação em duas etapas, e a regra de que o cliente não cancela sozinho.
+
+**Gate S3** — as guias vêm de dado real do primeiro escritório, não de mock;
+`fiscal/` compila sem nada de `agent/` no import graph.
+
+---
+
+### Sprint 4 — Pipeline de documento (05–16/out)
+
+O maior ROI do produto, e o terreno onde o concorrente mais forte já está (§8).
+
+- [ ] Storage S3-compatível: **bucket por tenant, prefixo por cliente**.
+- [ ] OCR: chave de acesso NF-e, valor, CNPJ emitente, vencimento.
+- [ ] Classificação: nota de entrada, nota de serviço, boleto, extrato, contrato.
+- [ ] Validação determinística → confirmação com o cliente ("R$ 1.240,00 da
+      Fornecedor X, vence 15/09. Confirma?") → recibo de volta no WhatsApp.
+- [ ] Tool `receber_documento(arquivo)`.
+- [ ] **Fila de revisão humana** — dentro do Grimório do S2b, na área Documentos.
+
+**Gate S4**
+- Documento com baixa confiança **nunca** vira lançamento automático, com teste
+  que force o caminho;
+- ≥ 80% dos documentos de alta confiança percorrem foto → recibo sem humano.
+
+---
+
+### Sprint 5 — ERPAdapter e reconciliação (19–30/out)
+
+- [ ] `AdapterBase` convertido para a porta tipada (`buscar_cliente`,
+      `listar_titulos`, `lancar_conta_pagar`, `enviar_documento`,
+      `consultar_obrigacoes`).
+- [ ] **`ArquivoAdapter`** — importação/exportação TXT/CSV por pasta monitorada
+      (DEC-09). Vem **antes** de qualquer API.
+- [ ] Sincronização assíncrona e idempotente (chave natural + hash).
+- [ ] Fila de reconciliação com retry exponencial e **DLQ na área ERP do
+      Grimório**, com o erro em português e reprocessamento.
+- [ ] Segundo adapter: definido pelo sistema que o primeiro escritório contratado
+      usa — decisão adiada de propósito.
+
+✅ **Já pronto:** contrato de adapter, resolver, normalização, OAuth2 e os
+adapters Conta Azul/Bling — que continuam servindo o produto MEI/micro (DEC-02).
+
+**Gate S5** — carteira de um escritório real importada por arquivo, ponta a
+ponta; uma falha de sincronização aparece na DLQ em vez de sumir no log.
+
+---
+
+### Sprint 6 — Contas a pagar, proativo, billing e onboarding (02–13/nov)
+
+- [ ] `listar_contas_pagar(periodo, status)` e `lancar_conta_pagar(...)`.
+- [ ] `solicitar_admissao` / `solicitar_demissao`.
+- [ ] **Proativo**: vencimento de guia, folha fechada, documento pendente, teto
+      do Simples se aproximando, certidão vencendo. Template utility aprovado,
+      **opt-out por usuário** e janela de horário comercial **por tenant**.
+- [ ] **Orçamento do proativo medido antes do primeiro disparo** — em volume ele
+      custa mais que o LLM (§7).
+- [ ] **Billing**: por cliente ativo/mês + medidor de tokens.
+- [ ] **Onboarding self-service**: cadastro do tenant → verificação de negócio
+      Meta → embedded signup do WABA → upload de certificado **por cliente**
+      (DEC-06) → conexão do ERP com teste de conectividade → importação inicial
+      da carteira → configuração de tools, tom, horário e limite de gasto.
+
+**Gate S6** — um escritório novo entra **sozinho**, sem intervenção da equipe
+Magic BI, e emite a primeira nota da carteira dele no mesmo dia.
+
+**Ordem de corte, se o sprint estourar:** billing e onboarding podem escorregar;
+proativo e contas a pagar, não.
+
+---
+
+## 4. Trilhas paralelas
+
+### T-Onda — Simples → Emissor Nacional (agora até 30/set)
+Em **1º/set/2026** as ME/EPP do Simples passam a emitir NFS-e exclusivamente
+pelo Emissor Nacional. **Não exige desenvolvimento**: o adapter da NFS-e Nacional
+já está escrito. É trilha comercial — oferta "migre emitindo pelo WhatsApp" para
+a base do primeiro tenant, feita pelo contador. Cai dentro do S2, sem consumir
+sprint.
+
+### T-Piloto — 2 a 3 escritórios reais (nov/dez)
+Roda depois do S6, sem feature nova, medindo os critérios de aceite (§5).
+
+### Relógio regulatório (não se move)
+| Data | Evento | Efeito aqui |
+|---|---|---|
+| 03/ago/2026 ✅ | NF-e passou a rejeitar IBS/CBS incorreto | Já ocorrido — validação determinística existente cobre |
+| **1º/set/2026** | Simples só emite pelo Emissor Nacional | T-Onda |
+| **jan/2027** | Destaque CBS/IBS chega a Simples/MEI | Respondido pelo S3, que fecha em out nos dois cenários |
+
+---
+
+## 5. Critérios de aceite — estado hoje e onde fecham
+
+| Critério | Hoje | Fecha em |
+|---|---|---|
+| 200 tentativas cross-tenant por prompt injection, 0 vazamentos | Isolamento entre escritórios testado (14 casos); falta o adversarial e o 3º nível | **S1** |
+| Nenhum schema de tool com identificador de escopo | Verdade por construção, **não verificada** | **S1** |
+| Escopo de tenant vale fora do admin | Não existe superfície fora do admin ainda | **S2b** |
+| Contador trabalha um dia sem abrir o `/admin/` | Não | **S2b** |
+| Nenhuma nota sem confirmação registrada em `confirmacoes` | Confirmação existe e é auditada; tabela consultável, não | **S3** |
+| Custo de LLM por cliente/mês < R$ 0,60 | **Não medido** | S2 mede · S6 comprova |
+| Resolução sem humano ≥ 60% | Não medido | T-Piloto |
+| p95 < 8s fora de pico, < 15s em pico | Não medido | S2 (fora de pico) · T-Piloto (pico) |
+
+---
+
+## 6. O que muda nos cronogramas anteriores
+
+**`magicbi-mvp-cronograma.md` — encerrado, papel cumprido.** As 8 semanas
+provaram as duas hipóteses e entregaram fundação, segurança de sessão, adapters
+reais e painel. As pendências que sobreviveram foram resolvidas por decisão, não
+por atraso: DEC-12 (painel) e DEC-01 (stack). Fica como registro histórico.
+
+**`magicbi-cronograma.md` — reenquadrado, não descartado.** F0–F4 estão
+absorvidas pelo que já existe; F4.5 vira T-Onda. **F5 e F6 seguem válidas** como
+roadmap do produto MEI/micro (D1 ciclo cobrança→nota, D2 emissão recorrente,
+D3 radar de teto com transição assistida, D4 copiloto da reforma, D5 fluxo de
+caixa preditivo, D7 memória fiscal) — e com DEC-02 elas ganham um segundo uso:
+cada uma vira também recurso que o **escritório** oferece à carteira, e portanto
+argumento de renovação do contrato do tenant.
+
+O **D3** é o exemplo mais claro de por que os dois produtos são complementares e
+não concorrentes: o radar de teto detecta o MEI que vai estourar (produto MEI) e
+entrega o caso ao escritório para executar a migração MEI→ME (produto Hermes).
+Nenhum dos dois lados funciona sozinho.
+
+---
+
+## 7. Orçamento unitário — o que realmente pesa
+
+Por empresa cliente/mês, a ~25 mensagens:
+
+| Item | Ordem de grandeza | Observação |
+|---|---|---|
+| LLM (Groq, com T0 absorvendo 40%) | centavos | O critério de R$ 0,60 é folgado se DEC-08 for cumprido |
+| **Template utility proativo** | **domina a conta** | Cada disparo é cobrado pela Meta; 5 avisos/mês × 1.000 empresas × 50 tenants decide a margem |
+| OCR | proporcional ao volume | Pico nos dias 5–10 |
+| Infra (Postgres, Redis, S3, workers) | diluído por tenant | 50 × 1.000 não força arquitetura nova |
+
+**Consequência de produto:** o proativo precisa de teto por tenant e opt-out por
+usuário desde o primeiro disparo (S6), não depois da primeira fatura.
+
+---
+
+## 8. Riscos do cronograma
+
+| Risco | Sinal | Resposta |
+|---|---|---|
+| **Nibo já entrega o S4** (WhatsApp com protocolo + IA que lê documento e sugere lançamento) | Base instalada crescendo | Não competir no OCR: diferenciar por ERP-agnóstico (`ArquivoAdapter`, S5), agente que **executa** com confirmação em duas etapas, e governança verificável |
+| Domínio/Alterdata/Questor lançarem camada conversacional nativa | Anúncio de qualquer um | Acelerar S5; o valor passa a ser multi-sistema, não o canal |
+| **Isolamento se perder ao sair do admin** (S2b) | Uma view nova sem o mixin | Teste de escopo no primeiro dia do S2b, antes da primeira tela — e o RLS do S1 como rede embaixo |
+| **Quarta rodada de "não gostei"** no painel | Feedback visual no S2b | Screenshot real a cada tela, revisado **antes** do fim do sprint — não na entrega |
+| Migração do nível `usuario` quebrar atendimento | Testes de isolamento vermelhos | S1 é o único sprint que mexe em schema de produção — feature flag e migração reversível |
+| RLS derrubar worker do Celery | Task sem tenant setado | `task_prerun` + teste que roda uma task sem contexto esperando zero linhas |
+| Escopo do S6 estourar | Metade do sprint | Ordem de corte já definida no S6 |
+| Capacidade real ser de um dev e o calendário ser o de três | Atraso já no S2 | Adotar a coluna de 3 semanas do §1 **antes** do S2, não depois |

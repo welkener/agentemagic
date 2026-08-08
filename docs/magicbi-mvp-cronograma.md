@@ -1,5 +1,14 @@
 # Magic BI — Cronograma do MVP (testar e homologar a ideia)
 
+> ⚠ **ENCERRADO em 08/ago/2026 — documento histórico.** O MVP cumpriu o papel:
+> as duas hipóteses foram provadas e a fundação, a segurança de sessão, os
+> adapters reais e o painel estão em produção. As duas pendências que
+> sobreviveram até o fim (painel React e Hermes real) foram resolvidas **por
+> decisão**, não por atraso — DEC-07 e DEC-01 em
+> [`hermes-contabil-decisoes.md`](hermes-contabil-decisoes.md).
+>
+> O cronograma vigente é [`hermes-contabil-cronograma.md`](hermes-contabil-cronograma.md).
+>
 > **Objetivo:** em ~8 semanas, provar com clientes reais da base da Rotina as **duas
 > hipóteses** do produto, gastando o mínimo antes do investimento do plano completo:
 >

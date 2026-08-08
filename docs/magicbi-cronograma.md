@@ -1,5 +1,22 @@
 # Magic BI × Rotina Contábil — Cronograma de lançamento
 
+> ⚠ **REENQUADRADO em 08/ago/2026 — leia primeiro [`hermes-contabil-cronograma.md`](hermes-contabil-cronograma.md).**
+> A plataforma passa a sustentar **dois produtos complementares** (DEC-02 em
+> [`hermes-contabil-decisoes.md`](hermes-contabil-decisoes.md)): Fiscus/Lumen
+> para a empresa final — que é o que este documento planeja — e Hermes Contábil
+> para o escritório contábil como tenant. Não é pivô: os dois dividem tenancy,
+> RLS, sessão, auditoria, tiers, motor fiscal e canal.
+> Efeito neste documento:
+> - **F0–F4**: absorvidas pelo que já está escrito e testado — ver
+>   [`hermes-contabil-ajuste.md`](hermes-contabil-ajuste.md) §1.
+> - **F4.5 (Onda Simples)**: vira a trilha T-Onda do cronograma novo; não exige
+>   desenvolvimento, o adapter da NFS-e Nacional já existe.
+> - **F5 e F6 seguem válidas e sem mudança de escopo** (D1–D7). Ganham só um
+>   segundo uso: cada uma vira também recurso que o **escritório** oferece à
+>   carteira, e portanto argumento de renovação do contrato do tenant. O **D3**
+>   (radar de teto + migração MEI→ME) é o caso onde os dois produtos se encaixam:
+>   o produto MEI detecta, o produto do escritório executa.
+>
 > Consolida o roadmap técnico dos documentos anteriores com as decisões novas: marca
 > Magic BI, Hermes/Lumen como comunicador oficial, credenciamento prévio via WhatsApp e
 > a matriz de custódia. Horizonte: **24 semanas** a partir do kickoff (referência:
