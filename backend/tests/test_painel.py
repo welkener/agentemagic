@@ -44,10 +44,28 @@ def nota_emitida(cliente):
     return intencao
 
 
+# Precisa de banco mesmo sem tocar em model: o middleware de escopo
+
+
+# declara o tenant no Postgres a cada requisição (apps/tenants/rls.py).
+
+
+@pytest.mark.django_db
+
+
 def test_raiz_redireciona_pro_admin(client):
     resposta = client.get("/")
     assert resposta.status_code == 302
     assert resposta.url == "/admin/"
+
+
+# Precisa de banco mesmo sem tocar em model: o middleware de escopo
+
+
+# declara o tenant no Postgres a cada requisição (apps/tenants/rls.py).
+
+
+@pytest.mark.django_db
 
 
 def test_painel_antigo_redireciona_pro_admin(client):

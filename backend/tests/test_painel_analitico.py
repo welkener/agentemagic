@@ -295,6 +295,12 @@ class TestPaginas:
 
         assert resposta.status_code == 200
 
+    # Precisa de banco mesmo sem tocar em model: o middleware de escopo
+
+    # declara o tenant no Postgres a cada requisição (apps/tenants/rls.py).
+
+    @pytest.mark.django_db
+
     def test_recusam_anonimo(self, client, url):
         resposta = client.get(url)
 

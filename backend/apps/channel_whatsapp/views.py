@@ -19,6 +19,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
 from apps.tenants.models import escritorio_por_phone_number_id
+from apps.tenants.rls import escopo_irrestrito
 
 from .models import MensagemProcessada
 from .tasks import processar_mensagem
@@ -77,7 +78,15 @@ class WebhookWhatsAppView(View):
             # Multi-tenant: o número que RECEBEU identifica o escritório. Sem
             # escritório resolvido, a mensagem é descartada — processar num
             # tenant arbitrário seria vazamento entre escritórios.
-            escritorio = escritorio_por_phone_number_id(phone_number_id)
+            #
+            # A resolução precisa rodar SEM escopo (`escopo_irrestrito`), e não é
+            # brecha: é ovo-e-galinha. A requisição é anônima — o Meta não faz
+            # login —, então descobrir de quem é a mensagem é justamente o ato
+            # que PRECEDE o escopo. A leitura é restrita a uma coluna indexada de
+            # `tenants_escritorio` e o resultado vira imediatamente o escopo do
+            # resto (a task recebe `escritorio_id` e o `task_prerun` o aplica).
+            with escopo_irrestrito():
+                escritorio = escritorio_por_phone_number_id(phone_number_id)
             if escritorio is None:
                 logger.warning(
                     "webhook_numero_sem_escritorio", phone_number_id=phone_number_id

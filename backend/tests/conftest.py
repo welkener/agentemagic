@@ -5,14 +5,48 @@ import pytest
 from django.utils import timezone
 
 from apps.clients.models import Cliente, Perfil
+from apps.tenants import rls
 from apps.tenants.models import Escritorio
 from apps.security.models import SessaoWhatsapp
+
+
+@pytest.fixture(autouse=True)
+def rls_ativa(request):
+    """Põe TODO teste que toca o banco sob Row Level Security (DEC-04).
+
+    Sem isto a suíte roda como dono das tabelas, e dono ignora policy: os testes
+    ficariam verdes provando nada. Foi verificado antes de escrever qualquer
+    policy — `postgres` tem `usesuper` E `rolbypassrls`, e nem
+    `FORCE ROW LEVEL SECURITY` o alcança.
+
+    A consequência é deliberada e é o ponto: um caminho de produção que esqueça
+    de declarar o tenant **não vê linha nenhuma aqui**, e o teste fica vermelho —
+    em vez de a falha aparecer com cliente na frente.
+
+    **Montar cenário é irrestrito; exercitar o produto não é.** O teste cria dado
+    de dois escritórios ao mesmo tempo — coisa que nenhum tenant pode fazer —, e
+    por isso o modo de montagem começa ligado. O que devolve o rigor é que as
+    duas portas de entrada de produção saem dele sozinhas: `escopo_de_tenant`
+    desliga o irrestrito ao entrar (operar em nome de um escritório e enxergar a
+    plataforma são afirmações contraditórias), e o `task_prerun` do Celery o
+    desliga sempre. Então uma requisição ou uma task dentro do teste vale como a
+    de verdade, e uma que esqueça de declarar o tenant fica **vermelha aqui**.
+    """
+    if not {"db", "transactional_db", "django_db_setup"} & set(request.fixturenames):
+        yield
+        return
+
+    request.getfixturevalue("db")  # garante que a transação do teste já abriu
+    rls.assumir_papel_restrito()
+    rls.definir_irrestrito(True)
+    yield
 
 
 @pytest.fixture
 def escritorio(db):
     """Escritório contábil dono da carteira — raiz de tenant (ver apps/tenants/models.py)."""
-    return Escritorio.objects.create(nome="Rotina Contábil", slug="rotina", ativo=True)
+    with rls.escopo_irrestrito():
+        return Escritorio.objects.create(nome="Rotina Contábil", slug="rotina", ativo=True)
 
 
 @pytest.fixture
@@ -23,27 +57,28 @@ def cliente(db, escritorio):
     exercitam o próprio gate de sessão (apps/security) usam clientes à parte,
     sem `SessaoWhatsapp` ativa (ver tests/test_security.py).
     """
-    c = Cliente.objects.create(
-        escritorio=escritorio,
-        cnpj="12345678000190",
-        nome="Padaria Estrela Ltda",
-        telefone_whatsapp="5511999998888",
-        email_contato="dono@padariaestrela.example.com",
-        cnae_padrao="5611-2/01",
-        ativo=True,
-    )
-    Perfil.objects.create(
-        cliente=c,
-        persona="lumen",
-        ferramentas_habilitadas=["erp_mock", "nfse_mock"],
-        tier_maximo=1,
-    )
-    agora = timezone.now()
-    SessaoWhatsapp.objects.create(
-        cliente=c,
-        wa_id=c.telefone_whatsapp,
-        status=SessaoWhatsapp.Status.ATIVA,
-        validado_em=agora,
-        expira_em=agora + timedelta(days=7),
-    )
+    with rls.escopo_irrestrito():
+        c = Cliente.objects.create(
+            escritorio=escritorio,
+            cnpj="12345678000190",
+            nome="Padaria Estrela Ltda",
+            telefone_whatsapp="5511999998888",
+            email_contato="dono@padariaestrela.example.com",
+            cnae_padrao="5611-2/01",
+            ativo=True,
+        )
+        Perfil.objects.create(
+            cliente=c,
+            persona="lumen",
+            ferramentas_habilitadas=["erp_mock", "nfse_mock"],
+            tier_maximo=1,
+        )
+        agora = timezone.now()
+        SessaoWhatsapp.objects.create(
+            cliente=c,
+            wa_id=c.telefone_whatsapp,
+            status=SessaoWhatsapp.Status.ATIVA,
+            validado_em=agora,
+            expira_em=agora + timedelta(days=7),
+        )
     return c

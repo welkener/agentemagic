@@ -16,6 +16,7 @@ from unfold.admin import ModelAdmin
 
 from .escopo import EscopoEscritorioMixin, escopo_do_usuario
 from .models import Escritorio, MembroEscritorio, grupo_do_escritorio
+from .rls import escopo_irrestrito
 
 
 class EscritorioForm(forms.ModelForm):
@@ -135,7 +136,19 @@ class ConvidarMembroForm(forms.ModelForm):
             # Sem isto, o responsável poderia puxar um superuser da Magic BI
             # pro escritório dele e passar a administrar a conta da plataforma.
             raise forms.ValidationError("Esse usuário é da equipe Magic BI — fale com a plataforma.")
-        if hasattr(existente, "membro_escritorio"):
+        # "Este usuário já pertence a ALGUM escritório?" é pergunta de
+        # plataforma, não de tenant — e por isso roda irrestrita. Sem isso a RLS
+        # esconde o vínculo do vizinho, a validação conclui que o usuário está
+        # livre e quem barra passa a ser a constraint do banco: erro 500 em vez
+        # de mensagem. O isolamento se mantinha (o vínculo não era roubado), mas
+        # "seguro" e "quebrado" não são a mesma coisa.
+        #
+        # A resposta não diz QUAL escritório, e é o limite certo de revelação:
+        # o responsável precisa saber que não pode convidar, não de quem é o
+        # colega.
+        with escopo_irrestrito():
+            ja_tem_vinculo = MembroEscritorio.objects.filter(usuario=existente).exists()
+        if ja_tem_vinculo:
             raise forms.ValidationError("Esse usuário já pertence a um escritório.")
         return username
 

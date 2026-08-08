@@ -114,6 +114,9 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Depois do Authentication de propósito: o escopo é decidido pelo vínculo do
+    # usuário logado, e antes deste ponto `request.user` ainda não existe.
+    "apps.tenants.middleware.EscopoDeTenantMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"

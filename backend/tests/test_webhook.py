@@ -83,6 +83,15 @@ def _post_assinado(client, payload):
     )
 
 
+# Precisa de banco mesmo sem tocar em model: o middleware de escopo
+
+
+# declara o tenant no Postgres a cada requisição (apps/tenants/rls.py).
+
+
+@pytest.mark.django_db
+
+
 def test_handshake_get_valido(client):
     resposta = client.get(
         URL,
@@ -94,6 +103,15 @@ def test_handshake_get_valido(client):
     )
     assert resposta.status_code == 200
     assert resposta.content == b"12345"
+
+
+# Precisa de banco mesmo sem tocar em model: o middleware de escopo
+
+
+# declara o tenant no Postgres a cada requisição (apps/tenants/rls.py).
+
+
+@pytest.mark.django_db
 
 
 def test_handshake_get_token_errado(client):
