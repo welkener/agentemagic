@@ -75,14 +75,19 @@ T-Piloto                 ████████  2–3 escritórios reais
 
 O primeiro commit é o teste, não a feature.
 
-- [ ] **Teste de tool registry** (DEC-05) — varre os schemas expostos ao modelo e
-      falha com `tenant_id`, `cliente_id`, `cnpj`, `empresa_id`, `escritorio_id`.
-      Vale já para `DadosNotaExtraidos`, antes de existir registry.
-- [ ] **RLS no Postgres** (DEC-04): policies por `RunSQL` em toda tabela de
-      domínio, role de aplicação sem `BYPASSRLS`, `SET LOCAL app.tenant_id` em
-      middleware (HTTP) e em `task_prerun` (Celery).
-- [ ] Teste: query **sem** `app.tenant_id` setado devolve zero linhas — inclusive
-      dentro de task do Celery.
+- [x] **Teste de tool registry** (DEC-05) — `apps/agents/registry.py` +
+      `tests/test_tool_registry.py` (commit `ff4f99f`). `@exposto_ao_modelo`
+      recusa campo de escopo **no import**; inspeciona o JSON Schema (não
+      `model_fields`), porque alias é o que o modelo enxerga; desce em `$defs`,
+      listas e uniões. `criar_agente()` fecha o desvio de mandar schema não
+      registrado, e um teste varre o código atrás de `pydantic_ai` importado
+      fora do registry.
+- [x] **RLS no Postgres** (DEC-04) — `apps/tenants/rls.py`, migração `0003_rls`,
+      middleware e `task_prerun` (commit `0d21941`). Papel `magicbi_app` sem
+      `BYPASSRLS`, assumido por `SET LOCAL ROLE` — a conexão do Django segue
+      dona (migra) e cada requisição vale como restrita.
+- [x] Teste: query **sem** `app.tenant_id` devolve zero linhas, inclusive dentro
+      de task do Celery (`tests/test_rls.py`, 13 testes).
 - [ ] **Nível `usuario`** (DEC-03): model novo, migração do telefone que hoje
       mora em `Cliente`, reescrita de `ClienteManager.por_telefone` preservando
       a lógica de nono dígito (`clients/telefone.py`).
@@ -97,9 +102,25 @@ O primeiro commit é o teste, não a feature.
 testes de isolamento, auditoria encadeada, tiers, idempotência.
 
 **Gate S1** — nenhuma tool nova antes de tudo isto verde:
-- 200 tentativas de cross-tenant por prompt injection, **0 vazamentos**;
-- RLS bloqueia mesmo com um `.objects.filter()` de tenant omitido de propósito;
-- T0 resolve ≥ 40% de uma amostra de 100 mensagens reais.
+- [ ] 200 tentativas de cross-tenant por prompt injection, **0 vazamentos**;
+- [x] RLS bloqueia mesmo com um `.objects.filter()` de tenant omitido de
+      propósito (`test_filtro_esquecido_nao_vaza`);
+- [ ] T0 resolve ≥ 40% de uma amostra de 100 mensagens reais.
+
+**Consequências do S1 que valem para tudo daqui em diante** (achadas rodando,
+não previstas):
+
+1. **Toda requisição toca o banco**, mesmo as que não usam model — declarar
+   escopo é um `SET LOCAL`. Teste novo de view precisa de `django_db`.
+2. **A requisição inteira é uma transação** (`transaction.atomic` no middleware),
+   porque `SET LOCAL` não existe fora de uma. Bom por si só num sistema fiscal,
+   mas é mudança de comportamento: view que estourar no meio não deixa escrita
+   pela metade.
+3. **Task sem `escritorio_id` não enxerga nada.** Toda task nova declara o tenant
+   no argumento, ou é manutenção de plataforma e escreve `escopo_irrestrito()`
+   com o motivo ao lado.
+4. **Deploy exige rodar a migração** — é ela que cria o papel `magicbi_app` e os
+   grants. Sem isso o servidor sobe com RLS inerte, e nada acusa.
 
 ---
 
