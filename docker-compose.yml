@@ -1,20 +1,27 @@
 # Magic BI — MVP local (Django + Celery + Postgres + Redis)
 # Uso: docker compose up --build
+#
+# ⚠ **Este arquivo é de DESENVOLVIMENTO. O servidor de teste usa
+# `docker-compose.deploy.yml`** — que publica 8020 (a porta que o Nginx Proxy
+# Manager procura), roda o Celery inline e lê os segredos do `.env`.
+#
+#     docker compose -f docker-compose.deploy.yml up -d --build
+#
+# O aviso está aqui porque o erro já foi cometido: em 09/ago/2026 o deploy do
+# Sprint 2 subiu o servidor por este arquivo. O resultado foi o site fora do ar
+# com 504 (a porta publicada virou 8000 e o proxy aponta para 8020) e o web sem
+# conectar ao banco (senha diferente da do `.env`). Nada disso aparece em quem
+# só reinicia o contêiner existente — o efeito só surge quando ele é recriado.
 services:
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: magicbi
       POSTGRES_USER: magicbi
-      # Lê do `.env`, com `magicbi` de padrão para o desenvolvimento local.
-      #
-      # Estava cravado, e o defeito só apareceu em 09/ago/2026, no deploy do
-      # Sprint 2: o servidor tem `POSTGRES_PASSWORD` no `.env` e o banco foi
-      # inicializado com ela, mas o compose mandava a aplicação conectar com
-      # "magicbi". Nada quebrou por meses porque o contêiner em execução tinha
-      # sido criado sob uma versão anterior do arquivo — a divergência só se
-      # revela quando o contêiner é recriado, que é justamente o momento do
-      # deploy. Senha de banco é o tipo de valor que não pode ter duas fontes.
+      # Lê do `.env`, com `magicbi` de padrão para o desenvolvimento local — a
+      # mesma forma que `docker-compose.deploy.yml` usa. Estava cravado, e um
+      # arquivo dizendo uma senha enquanto o outro diz outra é armadilha para
+      # quem trocar de arquivo sem perceber.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-magicbi}
     volumes:
       - pgdata:/var/lib/postgresql/data
