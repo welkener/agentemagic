@@ -6,7 +6,16 @@ services:
     environment:
       POSTGRES_DB: magicbi
       POSTGRES_USER: magicbi
-      POSTGRES_PASSWORD: magicbi
+      # Lê do `.env`, com `magicbi` de padrão para o desenvolvimento local.
+      #
+      # Estava cravado, e o defeito só apareceu em 09/ago/2026, no deploy do
+      # Sprint 2: o servidor tem `POSTGRES_PASSWORD` no `.env` e o banco foi
+      # inicializado com ela, mas o compose mandava a aplicação conectar com
+      # "magicbi". Nada quebrou por meses porque o contêiner em execução tinha
+      # sido criado sob uma versão anterior do arquivo — a divergência só se
+      # revela quando o contêiner é recriado, que é justamente o momento do
+      # deploy. Senha de banco é o tipo de valor que não pode ter duas fontes.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-magicbi}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -29,7 +38,7 @@ services:
     environment: &app_env
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev-inseguro-troque-em-producao}
       DJANGO_DEBUG: "True"
-      DATABASE_URL: postgres://magicbi:magicbi@postgres:5432/magicbi
+      DATABASE_URL: postgres://magicbi:${POSTGRES_PASSWORD:-magicbi}@postgres:5432/magicbi
       REDIS_URL: redis://redis:6379/0
       META_APP_SECRET: ${META_APP_SECRET:-}
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
