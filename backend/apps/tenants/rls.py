@@ -59,6 +59,11 @@ _POR_ESCRITORIO = "escritorio_id = {tenant}"
 _POR_CLIENTE = (
     "cliente_id IN (SELECT id FROM clients_cliente WHERE escritorio_id = {tenant})"
 )
+# O nível `usuario` (DEC-03) pendura no escritório, não no cliente — é o mesmo
+# número podendo falar por várias empresas que motiva o nível existir.
+_POR_USUARIO = (
+    "usuario_id IN (SELECT id FROM clients_usuario WHERE escritorio_id = {tenant})"
+)
 
 TABELAS: dict[str, str] = {
     # O próprio tenant.
@@ -66,6 +71,12 @@ TABELAS: dict[str, str] = {
     "tenants_membroescritorio": _POR_ESCRITORIO,
     # Raiz da carteira.
     "clients_cliente": _POR_ESCRITORIO,
+    # Quem fala no WhatsApp, e por quais empresas (DEC-03). O vínculo prova o
+    # tenant pelos DOIS lados; escolhi o cliente porque é o mesmo predicado do
+    # resto da carteira e o par (usuario, cliente) já é obrigado a ser do mesmo
+    # escritório em `VinculoUsuarioCliente.clean`.
+    "clients_usuario": _POR_ESCRITORIO,
+    "clients_vinculousuariocliente": _POR_CLIENTE,
     # Canal de teste: `escritorio_id` nulo é configuração da plataforma, visível
     # a todos de propósito (é o fallback que o `configuracao_ativa` já usa).
     "channel_evolution_configuracaoevolution": (
@@ -75,6 +86,7 @@ TABELAS: dict[str, str] = {
     "clients_perfil": _POR_CLIENTE,
     "credentials_credencial": _POR_CLIENTE,
     "security_sessaowhatsapp": _POR_CLIENTE,
+    "security_empresaemfoco": _POR_USUARIO,
     "security_tokenmagiclink": _POR_CLIENTE,
     "security_codigo2fa": _POR_CLIENTE,
     "fiscal_seriedps": _POR_CLIENTE,
@@ -122,8 +134,19 @@ def sql_para_tabela(tabela: str) -> list[str]:
     ]
 
 
-def sql_completo() -> str:
-    """Migração inteira: papel, grants e policies."""
+def sql_completo(tabelas=None) -> str:
+    """Migração inteira: papel, grants e policies.
+
+    `tabelas` existe porque migração é registro histórico, não estado atual.
+    Renderizar sempre o mapa vivo funcionou enquanto havia uma migração de RLS
+    só; na segunda (`0004_rls_nivel_usuario`) a tabela nova apareceu no SQL da
+    **primeira**, que roda antes de ela existir, e o `migrate` quebrou num banco
+    limpo — sem sintoma nenhum no ambiente onde tudo já estava criado. Cada
+    migração passa a congelar a lista que existia no dia dela; quem garante que
+    nenhuma tabela ficou de fora é `tests/test_rls.py`, comparando o mapa vivo
+    com o que o banco tem de policy.
+    """
+    tabelas = list(TABELAS) if tabelas is None else list(tabelas)
     linhas = [
         # NOLOGIN: ninguém conecta como ele. O acesso vem por `SET ROLE` a partir
         # da conexão do Django, o que mantém uma credencial só para administrar.
@@ -153,16 +176,17 @@ def sql_completo() -> str:
         f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
         f"GRANT USAGE, SELECT ON SEQUENCES TO {PAPEL_APLICACAO};",
     ]
-    for tabela in TABELAS:
+    for tabela in tabelas:
         linhas.extend(sql_para_tabela(tabela))
     return "\n".join(linhas)
 
 
-def sql_reverso() -> str:
+def sql_reverso(tabelas=None) -> str:
     """Desfaz as policies. O papel fica — apagar papel com grants pendurados
     falharia, e um papel órfão não faz mal."""
+    tabelas = list(TABELAS) if tabelas is None else list(tabelas)
     linhas = []
-    for tabela in TABELAS:
+    for tabela in tabelas:
         linhas.append(f"DROP POLICY IF EXISTS isolamento_tenant ON {tabela};")
         linhas.append(f"ALTER TABLE {tabela} DISABLE ROW LEVEL SECURITY;")
     return "\n".join(linhas)

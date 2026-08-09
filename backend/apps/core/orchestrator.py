@@ -38,6 +38,7 @@ from apps.agents.agente_nf.services import (
     solicitar_cancelamento,
 )
 from apps.audit.services import registrar
+from apps.core import t0
 from apps.governance.tiers import tier_da_intencao, verificar_tier
 from apps.security.models import Codigo2FA
 from apps.security.services import (
@@ -167,13 +168,28 @@ class Orquestrador:
 
     def __init__(self):
         self._agente_erp = AgenteErp()
+        # Número de quem escreveu, preenchido por `processar`. Guardado na
+        # instância porque atravessa a cadeia inteira até a trilha de auditoria,
+        # e um parâmetro a mais em oito métodos só esconderia isso.
+        self._wa_id = ""
+        # Qual camada da escada resolveu a última mensagem: t0 | t1 | fallback.
+        # Vai para a trilha e é o que permite medir a meta do DEC-08.
+        self._camada = "t1"
 
-    def processar(self, mensagem: str, cliente, message_id: str | None = None) -> str:
+    def processar(
+        self,
+        mensagem: str,
+        cliente,
+        message_id: str | None = None,
+        wa_id: str | None = None,
+    ) -> str:
         """Processa uma mensagem do WhatsApp e devolve o texto de resposta.
 
         `cliente` pode ser None (número desconhecido). `message_id` alimenta a
         chave de idempotência de qualquer escrita fiscal disparada por esta
-        mensagem (retry do Celery não duplica uma emissão).
+        mensagem (retry do Celery não duplica uma emissão). `wa_id` é o número
+        de quem escreveu — é contra ele que a sessão é conferida, já que uma
+        empresa pode ter vários números autorizados (DEC-03).
         """
         if cliente is None:
             return (
@@ -181,7 +197,9 @@ class Orquestrador:
                 "Fale com a Rotina Contábil para ativar seu atendimento. 😊"
             )
 
-        if not sessao_ativa(cliente):
+        self._wa_id = wa_id or cliente.telefone_whatsapp
+
+        if not sessao_ativa(cliente, self._wa_id):
             return self._exigir_revalidacao(cliente)
 
         perfil = getattr(cliente, "perfil", None)
@@ -201,10 +219,26 @@ class Orquestrador:
         if em_coleta is not None:
             return self._continuar_coleta(em_coleta, mensagem, cliente, perfil)
 
+        # T0 na frente (DEC-08): saudação, menu e agradecimento são volume puro
+        # e não dependem de dado nenhum — pagar um LLM por eles é desperdício de
+        # dinheiro e de segundos. Vem depois da coleta e da confirmação de
+        # propósito: "ok" no meio de uma emissão é confirmação, não simpatia.
+        pronta = t0.responder(mensagem)
+        if pronta is not None:
+            registrar(
+                "orquestrador_mensagem_processada",
+                {"mensagem": mensagem, "intencao": "conversa", "camada": "t0"},
+                cliente=cliente,
+            )
+            return pronta
+
         intencao_nome = self._classificar_intencao(mensagem)
         registrar(
             "orquestrador_mensagem_processada",
-            {"mensagem": mensagem, "intencao": intencao_nome},
+            # `camada` é o que torna a meta do DEC-08 ("T0 resolve ≥ 40%")
+            # verificável com número real em vez de estimativa — a trilha já
+            # guarda toda mensagem, então a taxa sai de uma consulta.
+            {"mensagem": mensagem, "intencao": intencao_nome, "camada": self._camada},
             cliente=cliente,
         )
         return self._despachar(intencao_nome, mensagem, cliente, perfil, message_id)
@@ -241,11 +275,31 @@ class Orquestrador:
     # Roteamento de intenção
     # ------------------------------------------------------------------
     def _classificar_intencao(self, mensagem: str) -> str:
+        """Escada de modelo: T0 estrito → Groq (T1) → palavra-chave permissiva.
+
+        A camada que decidiu fica em `self._camada`, e não no retorno, para que
+        o método continue devolvendo só a intenção — vários testes o substituem
+        por um `lambda` de uma linha, e uma tupla os quebraria sem que o produto
+        tivesse mudado.
+        """
+        estrita = t0.classificar(mensagem)
+        if estrita is not None:
+            self._camada = "t0"
+            return estrita
+
         if _groq_disponivel():
             try:
-                return self._classificar_via_groq(mensagem)
+                intencao = self._classificar_via_groq(mensagem)
+                self._camada = "t1"
+                return intencao
             except Exception as exc:
                 logger.warning("groq_roteador_indisponivel_fallback_palavra_chave", erro=str(exc))
+
+        # Aqui o chute é aceitável — e é por isso que este classificador NÃO é o
+        # do T0. Sem LLM, responder alguma coisa plausível vale mais que recusar;
+        # com LLM disponível, deixar o palpite passar na frente dele emitiria
+        # nota a partir de mensagem ambígua.
+        self._camada = "fallback"
         return self._classificar_por_palavra_chave(mensagem)
 
     def _classificar_via_groq(self, mensagem: str) -> str:
@@ -502,7 +556,9 @@ class Orquestrador:
         partes = ["cliente confirmou pelo WhatsApp"]
         if message_id:
             partes.append(f"mensagem {message_id}")
-        wa_id = getattr(cliente, "telefone_whatsapp", "")
+        # O número de quem escreveu, não o da empresa: com vários autorizados
+        # por CNPJ (DEC-03), é ele que responde "quem autorizou".
+        wa_id = self._wa_id or getattr(cliente, "telefone_whatsapp", "")
         if wa_id:
             partes.append(f"wa_id {wa_id}")
         return " — ".join(partes)
@@ -588,7 +644,9 @@ class Orquestrador:
         )
 
     def _exigir_revalidacao(self, cliente) -> str:
-        enviado = enviar_magic_link(cliente, cliente.telefone_whatsapp)
+        # O link revalida o número que está escrevendo — é ele que vai ficar
+        # gravado como `wa_id` da sessão.
+        enviado = enviar_magic_link(cliente, self._wa_id or cliente.telefone_whatsapp)
         if enviado:
             return (
                 "Sua sessão expirou por segurança. Te mandei um link de "

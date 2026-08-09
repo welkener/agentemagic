@@ -19,7 +19,7 @@ from django.db import IntegrityError, transaction
 
 from apps.agents.agente_nf.models import Intencao
 from apps.audit.models import Auditoria
-from apps.clients.models import Cliente, Perfil
+from apps.clients.models import Cliente, Perfil, Usuario
 from apps.credentials.models import Credencial
 from apps.tenants.models import Escritorio, MembroEscritorio
 
@@ -97,13 +97,41 @@ def test_mesmo_escritorio_nao_duplica_cnpj(dois_escritorios):
 
 
 @pytest.mark.django_db
-def test_mesmo_escritorio_nao_duplica_telefone(dois_escritorios):
+def test_mesmo_telefone_em_duas_empresas_do_mesmo_escritorio(dois_escritorios):
+    """O caso que a modelagem antiga PROIBIA — e que é rotina (DEC-03).
+
+    Até 08/ago/2026 o telefone era campo do `Cliente`, único por escritório, e
+    esta mesma situação levantava `IntegrityError`. O sócio de duas empresas, o
+    financeiro de três lojas e o contador terceirizado simplesmente não cabiam
+    no cadastro; o atendimento falhava depois, em silêncio.
+
+    Agora as duas empresas existem, e quem é único é o **usuário**: um número,
+    uma pessoa, duas empresas. Escolher entre elas é o que
+    `apps/core/desambiguacao.py` faz — perguntando, nunca adivinhando.
+    """
+    a, _ = dois_escritorios
+    primeira = _cria_cliente(a, "Primeiro")
+    segunda = Cliente.objects.create(
+        escritorio=a, cnpj="99999999000199", nome="Segunda empresa", telefone_whatsapp=TELEFONE
+    )
+
+    usuarios = Usuario.objects.filter(escritorio=a)
+    assert usuarios.count() == 1, "o mesmo número não pode virar duas pessoas"
+    assert set(usuarios.first().clientes_ativos()) == {primeira, segunda}
+
+
+@pytest.mark.django_db
+def test_mesmo_escritorio_nao_duplica_o_usuario_do_telefone(dois_escritorios):
+    """A unicidade não sumiu — mudou de lugar, e agora vale de verdade.
+
+    No modelo antigo "5511999999999" e "551199999999" passavam pela constraint
+    por serem strings diferentes, apesar de serem o mesmo assinante. O número é
+    canonicalizado antes de gravar, então as duas grafias colidem.
+    """
     a, _ = dois_escritorios
     _cria_cliente(a, "Primeiro")
     with pytest.raises(IntegrityError), transaction.atomic():
-        Cliente.objects.create(
-            escritorio=a, cnpj="99999999000199", nome="Duplicado", telefone_whatsapp=TELEFONE
-        )
+        Usuario.objects.create(escritorio=a, telefone_whatsapp=TELEFONE)
 
 
 # ---------------------------------------------------------------------------

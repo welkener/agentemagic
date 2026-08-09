@@ -16,7 +16,8 @@ from typing import Callable
 import structlog
 
 from apps.audit.services import registrar
-from apps.clients.models import Cliente
+from apps.clients.models import Usuario
+from apps.core import desambiguacao
 from apps.core.orchestrator import Orquestrador
 
 logger = structlog.get_logger(__name__)
@@ -32,12 +33,12 @@ def processar(
     escritorio=None,
 ) -> str:
     # O tenant vem do número/instância que RECEBEU a mensagem (resolvido na
-    # view), não do remetente — então o telefone do cliente só é procurado
-    # dentro da carteira daquele escritório. Sem isso, dois escritórios com o
-    # mesmo CNPJ/telefone na carteira se cruzariam.
+    # view), não do remetente — então o telefone só é procurado dentro da
+    # carteira daquele escritório. Sem isso, dois escritórios com o mesmo
+    # CNPJ/telefone na carteira se cruzariam.
     # `por_telefone` (e não filtro por string crua) porque o WhatsApp entrega o
     # número brasileiro ora com o nono dígito, ora sem — ver apps/clients/telefone.py.
-    cliente = Cliente.objects.por_telefone(telefone, escritorio=escritorio)
+    usuario = Usuario.objects.por_telefone(telefone, escritorio=escritorio)
 
     origem = "texto"
     if media_id:
@@ -46,6 +47,9 @@ def processar(
         texto = texto or ""
         if not texto:
             resposta = "Não consegui entender o áudio 😕 Pode escrever a mensagem?"
+            # Áudio ilegível não tem conteúdo para desambiguar empresa — a
+            # trilha fica com a empresa em foco, se houver, e sem dono se não.
+            cliente = desambiguacao.empresa_em_foco(usuario)
             registrar(
                 "whatsapp_transcricao_falhou", {"message_id": message_id, "media_id": media_id}, cliente=cliente
             )
@@ -57,13 +61,24 @@ def processar(
             )
             return resposta
 
+    # Quem fala pode responder por mais de uma empresa (DEC-03). Enquanto não
+    # se sabe qual, não há o que orquestrar: `resolucao.resposta` preenchida
+    # significa que a mensagem foi consumida escolhendo a empresa.
+    resolucao = desambiguacao.resolver(usuario, texto)
+    cliente = resolucao.cliente
+
     registrar(
         "whatsapp_mensagem_recebida",
         {"message_id": message_id, "telefone": telefone, "texto": texto, "origem": origem},
         cliente=cliente,
     )
 
-    resposta = Orquestrador().processar(texto, cliente, message_id=message_id)
+    if resolucao.resposta is not None:
+        resposta = resolucao.resposta
+    else:
+        resposta = Orquestrador().processar(
+            texto, cliente, message_id=message_id, wa_id=telefone
+        )
 
     enviado = enviar_fn(telefone, resposta)
     registrar(

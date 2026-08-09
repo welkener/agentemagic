@@ -92,7 +92,6 @@ class Command(BaseCommand):
             defaults={
                 "escritorio": escritorio,
                 "nome": "Padaria do Teste Ltda",
-                "telefone_whatsapp": opcoes["telefone"],
                 "email_contato": "dono@padariateste.example.com",
                 "cnae_padrao": "5611-2/01",
                 "codigo_municipio_ibge": "3550308",  # São Paulo
@@ -106,6 +105,9 @@ class Command(BaseCommand):
                 "ativo": True,
             },
         )
+        # Telefone é do usuário (DEC-03), não campo da empresa.
+        cliente.vincular_usuario(opcoes["telefone"], principal=True)
+
         Perfil.objects.update_or_create(
             cliente=cliente,
             defaults={

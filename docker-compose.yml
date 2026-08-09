@@ -44,9 +44,27 @@ services:
       redis:
         condition: service_healthy
 
-  worker:
+  # Filas por prioridade (DEC-10). Dois workers, e não um escutando as três:
+  # com um só, o Celery reveza entre as filas e um lote de documentos volta a
+  # empurrar a emissão fiscal para trás — que é justamente o que separar as
+  # filas veio impedir. Worker separado é a única forma de reservar capacidade.
+  worker-fiscal:
     build: ./backend
-    command: celery -A config worker -l info
+    # `conversa` junto porque as duas são interativas e hoje têm volume baixo;
+    # `-Q fiscal,conversa` nesta ordem faz o fiscal ser servido primeiro.
+    command: celery -A config worker -l info -Q fiscal,conversa --concurrency=4
+    environment: *app_env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker-documento:
+    build: ./backend
+    # Concorrência menor de propósito: OCR e importação são pesados de CPU e
+    # memória, e o servidor é compartilhado com outros projetos.
+    command: celery -A config worker -l info -Q documento --concurrency=2
     environment: *app_env
     depends_on:
       postgres:

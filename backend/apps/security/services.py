@@ -40,8 +40,22 @@ def _chave_assinatura() -> str:
 # ---------------------------------------------------------------------------
 # Sessão — verificação a cada mensagem recebida
 # ---------------------------------------------------------------------------
-def sessao_ativa(cliente) -> bool:
+def sessao_ativa(cliente, wa_id: str | None = None) -> bool:
     """True se o cliente tem sessão ATIVA, não expirada e com wa_id consistente.
+
+    `wa_id` é o número de **quem está escrevendo agora**. Passe-o sempre que
+    houver mensagem: com o nível `usuario` (DEC-03) uma empresa tem vários
+    números autorizados, e comparar a sessão com "o telefone da empresa" deixou
+    de significar alguma coisa — o certo é comparar com quem digitou.
+
+    Sem `wa_id` (telas do Grimório, relatórios), a checagem de número é pulada e
+    valem só status e vencimento. É leitura de estado, não porta de entrada.
+
+    **Limite conhecido:** a sessão é uma por empresa. Se o sócio validar e depois
+    o financeiro escrever, o financeiro recebe o pedido de validação e, ao
+    validar, assume a sessão. Falha para o lado seguro (pede identidade em vez
+    de conceder), mas duas pessoas da mesma empresa não ficam ativas ao mesmo
+    tempo. Sessão por par (usuário, empresa) é o passo seguinte.
 
     Expira/bloqueia a sessão em caso de vencimento ou divergência de número —
     nunca falha em silêncio, sempre grava o motivo na auditoria.
@@ -62,14 +76,16 @@ def sessao_ativa(cliente) -> bool:
     # cadastro bloquearia a sessão do cliente como se fosse clonagem — e a
     # anticlonagem continua estrita, porque igualdade canônica só aproxima
     # grafias do mesmo número, nunca números diferentes.
-    if sessao.wa_id and not mesmo_numero(sessao.wa_id, cliente.telefone_whatsapp):
-        # Número da sessão validada diverge do cadastro atual — nunca herda
-        # a sessão automaticamente (proteção contra clonagem/troca de número).
+    if wa_id and sessao.wa_id and not mesmo_numero(sessao.wa_id, wa_id):
+        # Quem escreve não é quem validou. Nunca herda a sessão automaticamente
+        # — é a proteção contra clonagem e troca de número, e é também o que
+        # impede que cadastrar o telefone de um colega conceda, sozinho,
+        # autoridade fiscal sobre a empresa.
         sessao.status = SessaoWhatsapp.Status.BLOQUEADA
         sessao.save(update_fields=["status", "atualizado_em"])
         registrar(
             "sessao_whatsapp_wa_id_divergente_bloqueada",
-            {"wa_id_sessao": sessao.wa_id, "wa_id_atual": cliente.telefone_whatsapp},
+            {"wa_id_sessao": sessao.wa_id, "wa_id_atual": wa_id},
             cliente=cliente,
         )
         return False

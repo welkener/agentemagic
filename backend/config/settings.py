@@ -189,6 +189,42 @@ CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
 CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_TIMEZONE = TIME_ZONE
 
+# --- Filas por prioridade (DEC-10) -----------------------------------------
+# A sazonalidade é o inimigo declarado do produto: pico nos dias 5–10 (DAS,
+# folha) e 15–20. Com fila única, um lote de OCR de 300 documentos entra na
+# frente da confirmação de uma emissão fiscal que tem prazo legal — e nenhum
+# aumento de worker conserta ordem de chegada. Dimensionar fila é mais barato
+# que dimensionar worker.
+#
+#   fiscal    — emissão, cancelamento, DPS. Tem prazo legal e pessoa esperando.
+#   documento — OCR, importação por arquivo, sincronização de ERP. Lote, pesado,
+#               tolera minutos.
+#   conversa  — mensagem do WhatsApp. Não tem prazo legal, mas tem gente do
+#               outro lado olhando o "digitando..."; é latência percebida.
+#
+# `task_default_queue` aponta para `conversa` em vez do `celery` implícito: se
+# uma task nova escapar do roteamento, ela cai na fila de menor consequência, e
+# não numa fila que nenhum worker está escutando. Quem impede o escape virar
+# hábito é `tests/test_filas_celery.py`, que exige rota declarada para toda task
+# registrada.
+CELERY_TASK_DEFAULT_QUEUE = "conversa"
+CELERY_TASK_ROUTES = {
+    "apps.channel_whatsapp.tasks.*": {"queue": "conversa"},
+    "apps.channel_evolution.tasks.*": {"queue": "conversa"},
+    # Manutenção de plataforma: roda uma vez por dia e leva milissegundos.
+    # Fica na fila de menor prioridade porque atraso aqui não custa nada — a
+    # expiração de sessão já acontece sob demanda na primeira mensagem.
+    "apps.security.tasks.*": {"queue": "conversa"},
+}
+# Uma task por vez por worker. Sem isto o Celery pré-carrega um lote inteiro no
+# processo, e a mensagem que chegou depois espera o lote acabar mesmo com worker
+# livre — o efeito é exatamente o que as filas vieram evitar.
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+# Reconhecer só depois de executar: se o worker morre no meio de uma emissão, a
+# task volta para a fila em vez de sumir. A idempotência por `message_id` é que
+# torna isso seguro (ver apps/channel_whatsapp/views.py).
+CELERY_TASK_ACKS_LATE = True
+
 # ---------------------------------------------------------------------------
 # WhatsApp Cloud API (Meta)
 # ---------------------------------------------------------------------------

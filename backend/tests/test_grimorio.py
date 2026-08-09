@@ -170,6 +170,76 @@ def test_ficha_da_propria_empresa_abre(client, duas_carteiras):
 
 
 @pytest.mark.django_db
+def test_ficha_mostra_quem_fala_pela_empresa(client, duas_carteiras):
+    """DEC-03 na tela: o contador precisa ver quantos números podem pedir
+    documento fiscal em nome daquele CNPJ."""
+    a, _, cliente_a, _ = duas_carteiras
+    with rls.escopo_irrestrito():
+        cliente_a.vincular_usuario(
+            "5511977776666", papel="financeiro", nome="Marta do financeiro"
+        )
+    client.force_login(_contador(a, "contador.alfa"))
+
+    corpo = client.get(f"/grimorio/empresa/{cliente_a.pk}/").content.decode()
+
+    assert "Quem fala no WhatsApp" in corpo
+    assert "5511977776666" in corpo
+    assert "Marta do financeiro" in corpo
+    assert "Financeiro" in corpo
+
+
+@pytest.mark.django_db
+def test_ficha_avisa_quando_o_numero_fala_por_mais_de_uma_empresa(client, duas_carteiras):
+    """Sem este aviso, o contador vê o agente perguntando "de qual empresa?" na
+    conversa e não entende de onde veio."""
+    a, _, cliente_a, _ = duas_carteiras
+    with rls.escopo_irrestrito():
+        segunda = Cliente.objects.create(
+            escritorio=a, cnpj="77777777000177", nome="Segunda do Alfa", ativo=True
+        )
+        Perfil.objects.create(cliente=segunda, tier_maximo=1)
+        cliente_a.vincular_usuario("5511955554444")
+        segunda.vincular_usuario("5511955554444")
+    client.force_login(_contador(a, "contador.alfa"))
+
+    corpo = client.get(f"/grimorio/empresa/{cliente_a.pk}/").content.decode()
+
+    assert "fala por 2 empresas" in corpo
+
+
+@pytest.mark.django_db
+def test_hoje_mostra_quanto_o_t0_resolveu(client, duas_carteiras):
+    """A meta do DEC-08 vira número na tela, não estimativa em reunião."""
+    from apps.audit.services import registrar
+
+    a, _, cliente_a, _ = duas_carteiras
+    with rls.escopo_irrestrito():
+        for i in range(30):
+            registrar(
+                "orquestrador_mensagem_processada",
+                {"mensagem": f"oi {i}", "intencao": "conversa", "camada": "t0" if i < 21 else "t1"},
+                cliente=cliente_a,
+            )
+    client.force_login(_contador(a, "contador.alfa"))
+
+    corpo = client.get(HOJE).content.decode()
+
+    assert "Respondido sem IA" in corpo
+    assert "70%" in corpo
+
+
+@pytest.mark.django_db
+def test_hoje_nao_inventa_taxa_com_pouca_mensagem(client, duas_carteiras):
+    """3 mensagens dariam 67% e não significariam nada."""
+    a, _, _, _ = duas_carteiras
+    client.force_login(_contador(a, "contador.alfa"))
+
+    corpo = client.get(HOJE).content.decode()
+
+    assert "ainda medindo" in corpo
+
+
+@pytest.mark.django_db
 def test_rls_segura_sozinha_se_a_view_esquecer_o_escopo(client, duas_carteiras):
     """A terceira camada, testada sem as outras duas.
 

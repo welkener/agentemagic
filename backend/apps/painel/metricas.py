@@ -14,7 +14,7 @@ número maior, e ninguém desconfia.
 """
 from collections import OrderedDict
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.db.models import Count, DecimalField, Max, Q, Sum
@@ -121,6 +121,65 @@ def distribuicao_por_estado(usuario) -> list[tuple[str, int]]:
         for valor, rotulo in Intencao.Estado.choices
         if contagem.get(valor, 0)
     ]
+
+
+@dataclass
+class UsoDaEscada:
+    """Quanto do atendimento o T0 resolveu sem LLM (DEC-08).
+
+    O DEC-08 mira 40% e diz explicitamente que sem medição não há como saber se
+    o critério de R$ 0,60/cliente/mês foi atingido — "hoje o número não existe".
+    Passa a existir: cada mensagem grava a camada que a resolveu, e esta função
+    lê a trilha. Estimativa nenhuma no meio.
+    """
+
+    total: int
+    t0: int
+    t1: int
+    fallback: int
+
+    @property
+    def taxa_t0(self) -> int:
+        """Percentual inteiro — o painel não ganha nada com a casa decimal."""
+        return round(self.t0 * 100 / self.total) if self.total else 0
+
+    @property
+    def atingiu_a_meta(self) -> bool:
+        return self.taxa_t0 >= META_T0
+
+    @property
+    def sem_dados(self) -> bool:
+        """Menos que isso é ruído: 2 de 3 mensagens dariam 67% e não significam
+        nada. A tela diz "ainda medindo" em vez de exibir um número falso."""
+        return self.total < MINIMO_PARA_MEDIR
+
+
+META_T0 = 40  # DEC-08
+MINIMO_PARA_MEDIR = 20
+
+
+def uso_da_escada(usuario, dias: int = 30) -> UsoDaEscada:
+    """Distribuição das mensagens por camada nos últimos `dias`.
+
+    Só conta mensagem que chegou a ser roteada. Mensagem de número não
+    cadastrado nem gera este evento, e incluí-la inflaria o denominador com
+    tráfego que camada nenhuma atendeu.
+    """
+    desde = timezone.now() - timedelta(days=dias)
+    eventos = _escopar(
+        Auditoria.objects.filter(
+            evento="orquestrador_mensagem_processada", criado_em__gte=desde
+        ),
+        usuario,
+    )
+    contagem = {"t0": 0, "t1": 0, "fallback": 0}
+    for dados in eventos.values_list("dados", flat=True).iterator(chunk_size=1000):
+        # `camada` só existe em evento gravado depois de 09/ago/2026. Mensagem
+        # anterior conta como t1, que é onde ela de fato foi resolvida.
+        camada = (dados or {}).get("camada", "t1")
+        if camada in contagem:
+            contagem[camada] += 1
+    return UsoDaEscada(total=sum(contagem.values()), **contagem)
 
 
 # ---------------------------------------------------------------------------
@@ -491,6 +550,10 @@ class Ficha:
     notas: list
     eventos: list
     serie: dict
+    # Quem fala por esta empresa no WhatsApp (DEC-03). Vive na ficha porque a
+    # pergunta "quem é esse número que mandou emitir a nota" é a primeira que o
+    # contador faz quando algo sai errado.
+    vinculos: list
 
 
 def ficha_da_empresa(usuario, cliente_id: int) -> "Ficha | None":
@@ -518,6 +581,11 @@ def ficha_da_empresa(usuario, cliente_id: int) -> "Ficha | None":
     eventos = list(
         _escopar(Auditoria.objects.filter(cliente=cliente), usuario).order_by("-criado_em")[:30]
     )
+    vinculos = list(
+        cliente.vinculos.filter(ativo=True, usuario__ativo=True)
+        .select_related("usuario")
+        .order_by("-principal", "usuario__nome", "pk")
+    )
     return Ficha(
         cliente=cliente,
         linha=linha,
@@ -525,6 +593,7 @@ def ficha_da_empresa(usuario, cliente_id: int) -> "Ficha | None":
         notas=notas,
         eventos=eventos,
         serie=serie_mensal_do_cliente(usuario, cliente),
+        vinculos=vinculos,
     )
 
 

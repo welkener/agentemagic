@@ -65,15 +65,22 @@ def test_sessao_expirada_e_marcada_e_bloqueia(cliente_sem_sessao):
 
 @pytest.mark.django_db
 def test_wa_id_divergente_bloqueia_sessao(cliente_sem_sessao):
+    """Quem escreve não é quem validou → bloqueia.
+
+    Desde o DEC-03 a comparação é contra o número de **quem está escrevendo**,
+    não contra o cadastro da empresa: uma empresa pode ter vários números
+    autorizados, e comparar com "o telefone da empresa" deixou de ter sentido.
+    """
     agora = timezone.now()
     SessaoWhatsapp.objects.create(
         cliente=cliente_sem_sessao,
-        wa_id="5511900000000",  # número diferente do cadastro atual
+        wa_id="5511900000000",  # validou com este número...
         status=SessaoWhatsapp.Status.ATIVA,
         validado_em=agora,
         expira_em=agora + timedelta(days=7),
     )
-    assert sessao_ativa(cliente_sem_sessao) is False
+    # ...e agora chega mensagem de outro.
+    assert sessao_ativa(cliente_sem_sessao, "5511999998888") is False
     sessao = SessaoWhatsapp.objects.get(cliente=cliente_sem_sessao)
     assert sessao.status == SessaoWhatsapp.Status.BLOQUEADA
 

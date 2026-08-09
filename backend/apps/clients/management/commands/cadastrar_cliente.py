@@ -54,7 +54,6 @@ class Command(BaseCommand):
             cnpj=dados.cnpj,
             defaults={
                 "nome": dados.razao_social,
-                "telefone_whatsapp": opcoes["telefone"],
                 "email_contato": dados.email,
                 "codigo_municipio_ibge": dados.codigo_municipio_ibge,
                 "cnae_padrao": dados.cnae_padrao,
@@ -63,6 +62,10 @@ class Command(BaseCommand):
                 "ativo": True,
             },
         )
+        # O telefone é do usuário, não da empresa (DEC-03) — fora do
+        # `update_or_create` porque criar a pessoa é outro passo, não um campo.
+        cliente.vincular_usuario(opcoes["telefone"], principal=True)
+
         Perfil.objects.get_or_create(
             cliente=cliente,
             defaults={

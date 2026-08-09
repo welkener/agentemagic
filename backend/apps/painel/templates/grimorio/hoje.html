@@ -95,6 +95,25 @@ travou, não quantas notas saíram.
     <div class="indicador__valor">{{ faturamento_mes|moeda }}</div>
     <div class="indicador__nota">soma das notas emitidas por aqui</div>
   </div>
+  {% comment %}
+  Custo do atendimento (DEC-08). Está entre os indicadores, e não escondido numa
+  tela técnica, porque é o número que sustenta o preço de atacado negociado com
+  o escritório — e porque uma queda aqui é sintoma de que o vocabulário dos
+  clientes andou e o T0 ficou para trás.
+  {% endcomment %}
+  <div class="indicador">
+    <div class="indicador__rotulo">Respondido sem IA (30 dias)</div>
+    {% if escada.sem_dados %}
+      <div class="indicador__valor">—</div>
+      <div class="indicador__nota">ainda medindo · {{ escada.total }} mensage{{ escada.total|pluralize:"m,ns" }}</div>
+    {% else %}
+      <div class="indicador__valor">{{ escada.taxa_t0 }}%</div>
+      <div class="indicador__nota">
+        {{ escada.t0 }} de {{ escada.total }} mensagens ·
+        {% if escada.atingiu_a_meta %}dentro da meta de 40%{% else %}abaixo da meta de 40%{% endif %}
+      </div>
+    {% endif %}
+  </div>
 </div>
 
 <div class="cartao">

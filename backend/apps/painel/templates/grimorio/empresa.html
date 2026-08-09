@@ -119,6 +119,51 @@
   </div>
 
   <div>
+    {% comment %}
+    Quem fala por esta empresa (DEC-03). Vem antes das integrações porque é a
+    primeira pergunta quando algo sai errado — "quem foi que mandou emitir?" —,
+    e porque um número a mais aqui é um número a mais autorizado a pedir
+    documento fiscal em nome do CNPJ.
+    {% endcomment %}
+    <div class="cartao" style="margin-bottom:18px">
+      <div class="cartao__cabeca">
+        <h2>Quem fala no WhatsApp</h2>
+        <span class="etiqueta">{{ ficha.vinculos|length }}</span>
+      </div>
+      <div class="cartao__corpo">
+        {% if ficha.vinculos %}
+          <div style="display:flex;flex-direction:column;gap:11px">
+            {% for v in ficha.vinculos %}
+            <div>
+              <div>
+                {{ v.usuario.telefone_whatsapp }}
+                {% if v.principal %}<span class="etiqueta etiqueta--success">principal</span>{% endif %}
+              </div>
+              <div class="secundario">
+                {% if v.usuario.nome %}{{ v.usuario.nome }} · {% endif %}{{ v.get_papel_display }}
+                {% with outras=v.usuario.clientes_ativos %}
+                  {% if outras|length > 1 %}
+                    {% comment %}
+                    Aviso, não decoração: este número também responde por outra
+                    empresa, então o agente pergunta de qual se trata antes de
+                    agir. Sem isto na tela, o contador vê a conversa "estranha"
+                    e não entende por quê.
+                    {% endcomment %}
+                    · <span class="etiqueta etiqueta--warning">fala por {{ outras|length }} empresas</span>
+                  {% endif %}
+                {% endwith %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="vazio">
+            Nenhum número vinculado — esta empresa ainda não fala pelo WhatsApp.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
     <div class="cartao" style="margin-bottom:18px">
       <div class="cartao__cabeca"><h2>Integrações</h2></div>
       <div class="cartao__corpo">

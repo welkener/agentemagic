@@ -6,7 +6,7 @@ threshold. Camada de AUTENTICAÇÃO (quem está falando) — não confundir com
 """
 from django.db import models
 
-from apps.clients.models import Cliente
+from apps.clients.models import Cliente, Usuario
 
 
 class SessaoWhatsapp(models.Model):
@@ -42,6 +42,44 @@ class SessaoWhatsapp(models.Model):
 
     def __str__(self):
         return f"Sessão de {self.cliente} ({self.status})"
+
+
+class EmpresaEmFoco(models.Model):
+    """De qual empresa este telefone está falando agora (DEC-03).
+
+    Só existe quando o número fala por mais de uma empresa. `SessaoWhatsapp`
+    não serve para guardar isso: ela é um-para-um com o **cliente**, e a
+    pergunta aqui é anterior — qual cliente. Daí um registro próprio, chaveado
+    pelo usuário.
+
+    `cliente` nulo é estado de propósito, e é o que distingue "já perguntei,
+    estou esperando o número" de "ninguém perguntou nada ainda". Sem essa
+    diferença, um "2" solto vindo de quem não recebeu menu nenhum seria lido
+    como escolha.
+
+    **Por que expira.** Falar da empresa errada aqui não é confusão de tela: é
+    nota fiscal no CNPJ errado. Se a conversa esfriou, perguntar de novo custa
+    uma mensagem; assumir custa uma retificação.
+    """
+
+    usuario = models.OneToOneField(Usuario, on_delete=models.CASCADE, related_name="foco")
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="foco_de_usuarios",
+        help_text="Empresa escolhida. Vazio = menu enviado, resposta pendente.",
+    )
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "empresa em foco"
+        verbose_name_plural = "empresas em foco"
+
+    def __str__(self):
+        alvo = self.cliente or "aguardando escolha"
+        return f"{self.usuario} → {alvo}"
 
 
 class TokenMagicLink(models.Model):

@@ -96,6 +96,7 @@ class HojeView(EscopoGrimorioMixin, TemplateView):
         contexto["faturamento_mes"] = sum(
             (l.faturamento_mes or 0) for l in carteira
         )
+        contexto["escada"] = metricas.uso_da_escada(usuario)
         return contexto
 
 

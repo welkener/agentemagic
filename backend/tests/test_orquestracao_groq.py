@@ -6,11 +6,18 @@ produção. Estes testes fecham isso sem gastar chamada real: dublam
 `pydantic_ai.Agent`, que é a única fronteira externa.
 
 O que se garante aqui:
-1. com chave, o roteador LLM é quem decide (e o núcleo respeita a decisão dele);
+1. o LLM decide o que o T0 não resolveu — e o núcleo respeita a decisão dele;
 2. o prompt descreve todas as intenções do schema — um modelo de 8B não
    adivinha `cancelar_nota` a partir de "escolha do schema";
 3. LLM fora do ar volta pro fallback determinístico, sem derrubar a mensagem;
 4. o guard vale nos DOIS caminhos: o LLM nunca decide CNAE.
+
+**Atualizado em 09/ago/2026 (DEC-08).** A escada inverteu: o T0 determinístico
+atende primeiro e o LLM só vê o que sobrou. Mensagem inequívoca ("como está meu
+estoque?") não chega mais aqui — e isso é a feature, não regressão. Os testes
+abaixo passaram a usar mensagem ambígua de propósito, e o dublê agora conta
+chamadas, porque "o LLM decidiu" e "o LLM nem foi chamado" precisavam deixar de
+ser indistinguíveis.
 """
 import pytest
 
@@ -42,9 +49,11 @@ class _AgenteDublado:
     a resposta combinada, sem tocar a rede."""
 
     ultima_construcao: dict = {}
+    chamadas_ao_roteador: int = 0
 
     def __init__(self, modelo, output_type=None, system_prompt=None, **kwargs):
         if output_type is IntencaoClassificada:
+            type(self).chamadas_ao_roteador += 1
             type(self).ultima_construcao = {
                 "modelo": modelo,
                 "output_type": output_type,
@@ -71,6 +80,7 @@ def groq_dublado(monkeypatch, settings):
     import pydantic_ai
 
     monkeypatch.setattr(pydantic_ai, "Agent", _AgenteDublado)
+    _AgenteDublado.chamadas_ao_roteador = 0
 
     def responder(intencao, extracao=None):
         _RESPOSTA_COMBINADA["intencao"] = intencao
@@ -88,11 +98,39 @@ def groq_dublado(monkeypatch, settings):
 def test_roteador_llm_decide_e_o_nucleo_obedece(cliente, groq_dublado):
     groq_dublado("consultar_contas_receber")
 
-    # Mensagem que a palavra-chave classificaria como ESTOQUE — se a resposta
-    # for de contas a receber, foi o LLM que decidiu, não o fallback.
-    resposta = Orquestrador().processar("como está meu estoque?", cliente)
+    # Mensagem sem evidência inequívoca: o T0 se cala e o LLM decide. Se a
+    # resposta for de contas a receber, foi ele — nenhuma palavra da frase
+    # apontaria para lá sozinha.
+    resposta = Orquestrador().processar("me dá um panorama da firma aí", cliente)
 
     assert "receber" in resposta.lower()
+    assert _AgenteDublado.chamadas_ao_roteador == 1
+
+
+@pytest.mark.django_db
+def test_t0_resolve_o_inequivoco_sem_gastar_llm(cliente, groq_dublado):
+    """A inversão do DEC-08, medida onde ela se paga.
+
+    O dublê está armado para responder "contas a receber". Se a resposta vier
+    de estoque E o roteador não tiver sido construído nenhuma vez, então a
+    mensagem foi resolvida de graça — que é o ponto inteiro da camada.
+    """
+    groq_dublado("consultar_contas_receber")
+
+    resposta = Orquestrador().processar("como está meu estoque?", cliente)
+
+    assert "estoque" in resposta.lower()
+    assert _AgenteDublado.chamadas_ao_roteador == 0
+
+
+@pytest.mark.django_db
+def test_saudacao_nao_chega_ao_llm(cliente, groq_dublado):
+    groq_dublado("desconhecida")
+
+    resposta = Orquestrador().processar("bom dia", cliente)
+
+    assert "Lumen" in resposta
+    assert _AgenteDublado.chamadas_ao_roteador == 0
 
 
 @pytest.mark.django_db

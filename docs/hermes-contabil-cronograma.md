@@ -71,9 +71,16 @@ T-Piloto                 ████████  2–3 escritórios reais
 
 ## 3. Os sprints
 
-### Sprint 1 — Isolamento de três níveis (10–21/ago)
+### Sprint 1 — Isolamento de três níveis (10–21/ago) — ✅ **fechado em 09/ago**
 
 O primeiro commit é o teste, não a feature.
+
+Fechou adiantado porque o escopo já estava metade escrito (registry e RLS
+saíram nos commits `ff4f99f` e `0d21941`). O que restava — nível `usuario`,
+desambiguação, T0 na frente e filas — saiu junto, com 489 testes verdes e a
+migração ensaiada contra uma cópia do banco de desenvolvimento. Um item do gate
+segue aberto e está marcado como tal: a medição do T0 existe, o **número real**
+depende de tráfego.
 
 - [x] **Teste de tool registry** (DEC-05) — `apps/agents/registry.py` +
       `tests/test_tool_registry.py` (commit `ff4f99f`). `@exposto_ao_modelo`
@@ -88,15 +95,21 @@ O primeiro commit é o teste, não a feature.
       dona (migra) e cada requisição vale como restrita.
 - [x] Teste: query **sem** `app.tenant_id` devolve zero linhas, inclusive dentro
       de task do Celery (`tests/test_rls.py`, 13 testes).
-- [ ] **Nível `usuario`** (DEC-03): model novo, migração do telefone que hoje
-      mora em `Cliente`, reescrita de `ClienteManager.por_telefone` preservando
-      a lógica de nono dígito (`clients/telefone.py`).
-- [ ] Desambiguação "de qual empresa você quer falar?" fixada na sessão.
-- [ ] **T0 como camada da frente** (DEC-08): menu, 2ª via de guia, status de
-      obrigação e "recebeu meu documento" respondidos sem LLM.
-- [ ] Extensão de `tests/test_multitenancy.py`: mesmo telefone em dois clientes
-      do **mesmo** escritório.
-- [ ] **Filas por prioridade** no Celery (DEC-10) — item pequeno, entra aqui.
+- [x] **Nível `usuario`** (DEC-03) — `clients.Usuario` +
+      `VinculoUsuarioCliente`, migração `clients/0009_nivel_usuario`,
+      `UsuarioManager.por_telefone` no lugar do manager de `Cliente`
+      (`tests/test_nivel_usuario.py`, 27 testes). A lógica de nono dígito em
+      `clients/telefone.py` ficou intacta — o que mudou foi de quem é o número.
+- [x] Desambiguação "de qual empresa você quer falar?" — `core/desambiguacao.py`
+      + `security.EmpresaEmFoco`, resolvida no pipeline antes do orquestrador.
+- [x] **T0 como camada da frente** (DEC-08) — `core/t0.py`, com classificador
+      **estrito** separado do fallback permissivo
+      (`tests/test_t0_camada_da_frente.py`).
+- [x] Extensão de `tests/test_multitenancy.py`: mesmo telefone em dois clientes
+      do **mesmo** escritório — o caso agora passa, e o teste que exigia
+      `IntegrityError` foi invertido.
+- [x] **Filas por prioridade** no Celery (DEC-10) — três filas, workers
+      separados no compose, e teste que exige rota declarada para toda task.
 
 ✅ **Já pronto:** tenant = escritório, roteamento pelo número que recebe, 14
 testes de isolamento, auditoria encadeada, tiers, idempotência.
@@ -105,7 +118,28 @@ testes de isolamento, auditoria encadeada, tiers, idempotência.
 - [ ] 200 tentativas de cross-tenant por prompt injection, **0 vazamentos**;
 - [x] RLS bloqueia mesmo com um `.objects.filter()` de tenant omitido de
       propósito (`test_filtro_esquecido_nao_vaza`);
-- [ ] T0 resolve ≥ 40% de uma amostra de 100 mensagens reais.
+- [ ] T0 resolve ≥ 40% de uma amostra de 100 mensagens reais — **instrumentado,
+      não medido.** Cada mensagem grava a camada que a resolveu, `metricas
+      .uso_da_escada` lê a trilha e o Grimório mostra a taxa. O que falta é
+      volume real: a suíte cobre um corpus de conveniência (40 frases), e a
+      amostra de 100 mensagens reais só existe depois de o número voltar ao ar.
+
+**O que o S1 mudou e não estava previsto** (achado escrevendo, não planejado):
+
+- **`sessao_ativa` comparava o número da sessão com o cadastro da empresa.** Com
+  vários números autorizados por CNPJ isso deixou de significar algo. Passou a
+  comparar com **quem está escrevendo** — mais correto que antes, e é o que
+  impede cadastrar o telefone de um colega conceder autoridade fiscal sozinho.
+  Limite conhecido: a sessão continua sendo uma por empresa, então duas pessoas
+  da mesma empresa não ficam ativas ao mesmo tempo. Falha para o lado seguro
+  (pede validação); sessão por par (usuário, empresa) é o passo seguinte.
+- **Migração de RLS não pode renderizar o mapa vivo de tabelas.** A `0003` cita
+  agora uma lista congelada: assim que o DEC-03 acrescentou `clients_usuario` ao
+  mapa, o SQL da primeira migração passou a citar tabela que só nasce três
+  migrações depois — e quebrou só em banco limpo, ou seja, no deploy.
+- **`clients/0009` não tem reversão automática**, por decisão: devolver o
+  telefone a uma coluna só descartaria todo vínculo além do principal. O reverso
+  recusa com mensagem em vez de quebrar no meio. Voltar = restaurar backup.
 
 **Consequências do S1 que valem para tudo daqui em diante** (achadas rodando,
 não previstas):

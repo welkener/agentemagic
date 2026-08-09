@@ -1,12 +1,12 @@
 from django.contrib import admin, messages
 from django.urls import path
 from django.utils.html import format_html
-from unfold.admin import ModelAdmin, StackedInline
+from unfold.admin import ModelAdmin, StackedInline, TabularInline
 
 from apps.fiscal.dps import conferir_cadastro
 from apps.tenants.escopo import EscopoEscritorioMixin
 
-from .models import Cliente, Perfil
+from .models import Cliente, Perfil, Usuario, VinculoUsuarioCliente
 from .receita import ErroConsultaCnpj, consultar_cnpj
 
 # Campos que a Receita preenche. Separados dos de julgamento fiscal justamente
@@ -25,6 +25,40 @@ class PerfilInline(StackedInline):
     extra = 0
 
 
+class VinculoInline(TabularInline):
+    """Quem fala por esta empresa no WhatsApp (DEC-03).
+
+    Inline, e não tela separada, porque a pergunta ("quem é esse número?")
+    sempre aparece com a empresa na frente — nunca isolada.
+    """
+
+    model = VinculoUsuarioCliente
+    extra = 0
+    autocomplete_fields = ("usuario",)
+    fields = ("usuario", "papel", "principal", "ativo")
+    verbose_name = "usuário do WhatsApp"
+    verbose_name_plural = "usuários do WhatsApp (quem fala por esta empresa)"
+
+
+@admin.register(Usuario)
+class UsuarioAdmin(EscopoEscritorioMixin, ModelAdmin):
+    campo_escritorio = "escritorio"
+    list_display = ("telefone_whatsapp", "nome", "escritorio", "empresas", "ativo")
+    list_filter = ("ativo",)
+    search_fields = ("telefone_whatsapp", "nome")
+
+    @admin.display(description="empresas")
+    def empresas(self, obj):
+        nomes = [c.nome for c in obj.clientes_ativos()]
+        if not nomes:
+            return "—"
+        if len(nomes) == 1:
+            return nomes[0]
+        # Várias empresas é o caso que o DEC-03 veio permitir — merece destaque
+        # na lista, porque é ele que faz o agente perguntar antes de agir.
+        return format_html("<strong>{}</strong>", " · ".join(nomes))
+
+
 @admin.register(Cliente)
 class ClienteAdmin(EscopoEscritorioMixin, ModelAdmin):
     campo_escritorio = "escritorio"  # o Cliente É a raiz do tenant
@@ -38,12 +72,15 @@ class ClienteAdmin(EscopoEscritorioMixin, ModelAdmin):
         "criado_em",
     )
     list_filter = ("ativo",)
-    search_fields = ("nome", "cnpj", "telefone_whatsapp")
-    inlines = [PerfilInline]
+    # `telefone_whatsapp` saiu da busca porque deixou de ser coluna do banco
+    # (DEC-03): quem procura por número usa a tela de usuários do WhatsApp, que
+    # é onde o número passou a morar.
+    search_fields = ("nome", "cnpj")
+    inlines = [PerfilInline, VinculoInline]
     actions = ["buscar_na_receita"]
 
     fieldsets = (
-        (None, {"fields": ("escritorio", "nome", "cnpj", "telefone_whatsapp", "email_contato", "ativo")}),
+        (None, {"fields": ("escritorio", "nome", "cnpj", "email_contato", "ativo")}),
         (
             "Preenchido pela consulta pública (ação “Buscar dados na Receita”)",
             {
