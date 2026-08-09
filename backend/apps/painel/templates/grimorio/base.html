@@ -1,0 +1,56 @@
+{% load static %}<!DOCTYPE html>
+{% comment %}
+Casca do Grimório. A marca do escritório entra como custom properties no
+<body> — nunca escrita no template. Este produto é SaaS multi-tenant, e uma
+cor de cliente hardcoded aqui apareceria no painel de todos os outros.
+
+`{% comment %}` e não `{# #}`: o de chave-cerquilha não atravessa linha, e um
+comentário de duas linhas vaza como texto na página (achado de 27/jul/2026).
+{% endcomment %}
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}Grimório{% endblock %} — {{ marca.nome }}</title>
+  <link rel="stylesheet" href="{% static 'grimorio/grimorio.css' %}">
+</head>
+<body style="--marca-primaria: {{ marca.cor_primaria }}; --marca-acento: {{ marca.cor_acento }};">
+<div class="app">
+
+  <nav class="lateral">
+    <div class="marca">
+      <div class="marca__brasao">
+        {% if marca.logo %}<img src="{{ marca.logo }}" alt="">{% else %}{{ marca.sigla }}{% endif %}
+      </div>
+      <div>
+        <div class="marca__nome">{{ marca.nome }}</div>
+        <div class="marca__plataforma">Grimório · Magic BI</div>
+      </div>
+    </div>
+
+    <div class="menu">
+      <a href="{% url 'grimorio:hoje' %}" class="{% if secao == 'hoje' %}ativo{% endif %}">
+        Hoje
+        {% if total_pendencias %}<span class="menu__contador">{{ total_pendencias }}</span>{% endif %}
+      </a>
+      <a href="{% url 'grimorio:carteira' %}" class="{% if secao == 'carteira' %}ativo{% endif %}">Carteira</a>
+      <a href="{% url 'grimorio:documentos' %}" class="{% if secao == 'documentos' %}ativo{% endif %}">Notas e documentos</a>
+      <a href="{% url 'grimorio:integracoes' %}" class="{% if secao == 'integracoes' %}ativo{% endif %}">Integrações</a>
+
+      <div class="menu__grupo">Administração</div>
+      <a href="/admin/">Cadastros</a>
+    </div>
+
+    <div class="lateral__rodape">
+      {{ request.user.get_username }}<br>
+      <a href="/admin/logout/">Sair</a>
+    </div>
+  </nav>
+
+  <main class="conteudo">
+    {% block conteudo %}{% endblock %}
+  </main>
+
+</div>
+</body>
+</html>

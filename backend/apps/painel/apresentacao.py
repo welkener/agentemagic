@@ -54,3 +54,80 @@ VISUAL_TETO = {
 
 def visual_do_teto(uso) -> dict:
     return VISUAL_TETO[uso.situacao]
+
+
+def moeda(valor) -> str:
+    """`Decimal("1240.5")` → `"R$ 1.240,50"`.
+
+    Escrito à mão porque as duas alternativas óbvias erram em pt-BR: o
+    `intcomma` do humanize lê a vírgula decimal como separador de grupo e
+    devolve "31,647,50", e `USE_THOUSAND_SEPARATOR` sozinho não põe o "R$".
+    """
+    if valor is None:
+        return "—"
+    inteiro = f"{float(valor):,.2f}"
+    return "R$ " + inteiro.replace(",", "@").replace(".", ",").replace("@", ".")
+
+
+def sparkline(valores, largura: int = 560, altura: int = 150, margem: int = 12) -> dict:
+    """Caminhos SVG de uma série — sem biblioteca de gráfico.
+
+    Uma série só, sem interação e sem legenda: importar Chart.js para isto seria
+    peso e uma dependência externa (o CSP do deploy e o disco do servidor
+    agradecem). Devolve `linha`, `area` e os pontos já em coordenadas.
+
+    Série toda zerada é o caso que quebra o desenho ingênuo: `max - min` daria
+    zero e a divisão estouraria. Aqui ela vira uma reta na base, que é a leitura
+    correta — "não houve nota nenhuma", e não "gráfico indisponível".
+    """
+    valores = [float(v or 0) for v in valores]
+    if not valores:
+        return {"linha": "", "area": "", "pontos": [], "vazio": True}
+
+    topo = max(valores)
+    util_x = largura - 2 * margem
+    util_y = altura - 2 * margem
+    passo = util_x / (len(valores) - 1) if len(valores) > 1 else 0
+
+    pontos = []
+    for i, valor in enumerate(valores):
+        x = margem + i * passo
+        # `topo or 1` cobre a série inteiramente zerada.
+        y = altura - margem - (valor / (topo or 1)) * util_y
+        pontos.append({"x": round(x, 1), "y": round(y, 1), "valor": valor})
+
+    linha = "M " + " L ".join(f"{p['x']},{p['y']}" for p in pontos)
+    area = (
+        f"M {pontos[0]['x']},{altura - margem} "
+        + " ".join(f"L {p['x']},{p['y']}" for p in pontos)
+        + f" L {pontos[-1]['x']},{altura - margem} Z"
+    )
+    return {
+        "linha": linha,
+        "area": area,
+        "pontos": pontos,
+        "largura": largura,
+        "altura": altura,
+        "vazio": topo == 0,
+    }
+
+
+def resumo_da_intencao(intencao) -> str:
+    """Uma linha que identifica a nota para quem vai decidir sobre ela.
+
+    Tomador e valor, que é o que o contador precisa para reconhecer o caso sem
+    abrir o registro. Payload incompleto é normal aqui (nota em coleta), então
+    cada parte só entra se existir — resumo com "None" seria pior que resumo
+    curto.
+    """
+    payload = intencao.payload or {}
+    partes = []
+    if payload.get("tomador"):
+        partes.append(str(payload["tomador"]))
+    if intencao.valor is not None:
+        partes.append(moeda(intencao.valor))
+    elif payload.get("valor") is not None:
+        partes.append(moeda(payload["valor"]))
+    if payload.get("descricao_servico"):
+        partes.append(str(payload["descricao_servico"]))
+    return " · ".join(partes) if partes else "sem dados preenchidos"

@@ -37,3 +37,35 @@ def site_logo(request) -> str | None:
     if escritorio and escritorio.logo:
         return escritorio.logo.url
     return None
+
+
+def marca_do_usuario(usuario) -> dict:
+    """Marca resolvida pelo usuário (não pelo request) — para o Grimório.
+
+    O admin resolve por request porque o django-unfold entrega o request aos
+    callables acima. As views do Grimório já têm o usuário em mãos, e depender
+    do request aqui só acrescentaria um objeto a carregar.
+
+    As cores saem do `Escritorio` e entram como custom properties no CSS — é o
+    que faz a marca do tenant valer na aplicação inteira sem nada hardcoded
+    (lição registrada em 25/jul/2026, quando "Rotina Contábil" apareceu escrito
+    dentro de um template).
+    """
+    escritorio = escritorio_do_usuario(usuario) or escritorio_ativo()
+    if escritorio is None:
+        return {
+            "nome": "Magic BI",
+            "sigla": "MB",
+            "cor_primaria": "#1a1a2e",
+            "cor_acento": "#5B67C9",
+            "logo": None,
+        }
+    return {
+        "nome": escritorio.nome,
+        # Iniciais como brasão quando não há logo — melhor que espaço vazio, e
+        # não inventa imagem que o escritório não forneceu.
+        "sigla": "".join(p[0] for p in escritorio.nome.split()[:2]).upper(),
+        "cor_primaria": escritorio.cor_primaria,
+        "cor_acento": escritorio.cor_acento,
+        "logo": escritorio.logo.url if escritorio.logo else None,
+    }

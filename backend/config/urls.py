@@ -14,13 +14,16 @@ admin.site.index_title = "Visão geral"
 admin.site.index_template = "painel/dashboard.html"
 
 urlpatterns = [
-    # Raiz sem rota própria — manda pro admin (que já é o dashboard) em vez de 404.
-    path("", RedirectView.as_view(url="/admin/", permanent=False)),
+    # A raiz é o Grimório (DEC-12): a aplicação do contador, não o admin. O
+    # admin continua em `/admin/` como backoffice — cadastro, exceção e equipe
+    # da plataforma.
+    path("", RedirectView.as_view(url="/grimorio/", permanent=False)),
+    path("grimorio/", include("apps.painel.urls")),
     path("admin/", admin.site.urls),
-    # `/painel/` foi absorvido pelo índice do admin (26/jul/2026 — ver
-    # apps/painel/views.py). Redirect mantido porque a URL já circulou em
-    # e-mails de Magic Link, docs e no servidor de teste.
-    path("painel/", RedirectView.as_view(url="/admin/", permanent=False), name="painel_dashboard"),
+    # `/painel/` já circulou em e-mails de Magic Link, na documentação e no
+    # servidor de teste. Continua respondendo — agora apontando para a
+    # aplicação, não mais para o índice do admin.
+    path("painel/", RedirectView.as_view(url="/grimorio/", permanent=False), name="painel_dashboard"),
     # Webhook do WhatsApp Cloud API (GET = handshake, POST = mensagens)
     path("webhook/whatsapp", include("apps.channel_whatsapp.urls")),
     # Webhook da Evolution API — SÓ TESTE LOCAL, nunca produção (ver apps/channel_evolution/apps.py)

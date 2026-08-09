@@ -1,0 +1,95 @@
+{% extends "grimorio/base.html" %}
+{% load grimorio_tags %}
+{% block titulo %}Integrações{% endblock %}
+
+{% block conteudo %}
+<div class="topo">
+  <div>
+    <h1>Integrações</h1>
+    <p>
+      {{ completas|length }} empresa{{ completas|length|pluralize }} operando por inteiro ·
+      {{ incompletas|length }} com pendência.
+    </p>
+  </div>
+</div>
+
+{% comment %}
+Esta é a tela do onboarding: enquanto houver linha aqui com pendência, aquele
+cliente não opera por inteiro. As incompletas vêm primeiro — quem já está
+operando não precisa de atenção.
+{% endcomment %}
+
+<div class="cartao">
+  <div class="cartao__cabeca">
+    <h2>O que falta ligar</h2>
+    {% if incompletas %}
+      <span class="etiqueta etiqueta--warning">{{ incompletas|length }} pendente{{ incompletas|length|pluralize }}</span>
+    {% endif %}
+  </div>
+  <div class="tabela-rolagem">
+    <table class="tabela">
+      <thead>
+        <tr><th>Empresa</th><th>Certificado</th><th>ERP</th><th>WhatsApp</th><th>Pendências</th></tr>
+      </thead>
+      <tbody>
+        {% for l in incompletas %}
+        <tr>
+          <td>
+            <a class="principal" href="{% url 'grimorio:empresa' l.cliente.pk %}">{{ l.cliente.nome }}</a>
+            <div class="secundario">{{ l.cliente.cnpj|cnpj }}</div>
+          </td>
+          <td>
+            {% if not l.certificado %}<span class="etiqueta etiqueta--warning">falta</span>
+            {% elif l.certificado_vencido %}<span class="etiqueta etiqueta--danger">vencido</span>
+            {% else %}<span class="etiqueta etiqueta--success">ok</span>{% endif %}
+          </td>
+          <td>
+            {% if l.credenciais_erp %}<span class="etiqueta etiqueta--success">{{ l.credenciais_erp|length }} conectado(s)</span>
+            {% else %}<span class="etiqueta etiqueta--warning">falta</span>{% endif %}
+          </td>
+          <td>
+            {% if l.sessao and l.sessao.status == "ATIVA" %}<span class="etiqueta etiqueta--success">ok</span>
+            {% else %}<span class="etiqueta etiqueta--warning">falta</span>{% endif %}
+          </td>
+          <td class="secundario">{{ l.pendencias|join:" · " }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5">
+          <div class="vazio">
+            <div class="vazio__titulo">Toda a carteira está ligada</div>
+            Certificado, ERP e canal em ordem em todas as empresas.
+          </div>
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if completas %}
+<div class="cartao" style="margin-top:18px">
+  <div class="cartao__cabeca"><h2>Operando por inteiro</h2></div>
+  <div class="tabela-rolagem">
+    <table class="tabela">
+      <thead><tr><th>Empresa</th><th>Certificado vence em</th><th>ERP</th></tr></thead>
+      <tbody>
+        {% for l in completas %}
+        <tr>
+          <td>
+            <a class="principal" href="{% url 'grimorio:empresa' l.cliente.pk %}">{{ l.cliente.nome }}</a>
+            <div class="secundario">{{ l.cliente.cnpj|cnpj }}</div>
+          </td>
+          <td class="secundario">
+            {% if l.dias_para_vencer is not None %}{{ l.dias_para_vencer }} dia(s){% else %}—{% endif %}
+          </td>
+          <td class="secundario">
+            {% for c in l.credenciais_erp %}{{ c.integracao }}{% if not forloop.last %}, {% endif %}{% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

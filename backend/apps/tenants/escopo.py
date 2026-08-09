@@ -13,7 +13,7 @@ também os `ForeignKey`, o contador do escritório A conseguiria criar uma
 credencial apontando pro cliente do B pelo dropdown. Por isso o mixin mexe nos
 dois — ver `formfield_for_foreignkey`.
 """
-from apps.tenants.models import Escritorio
+from apps.tenants.models import Escritorio, MembroEscritorio
 
 
 def escopo_do_usuario(usuario) -> "tuple[bool, Escritorio | None]":
@@ -27,7 +27,27 @@ def escopo_do_usuario(usuario) -> "tuple[bool, Escritorio | None]":
         return False, None
     if usuario.is_superuser:
         return True, None
-    membro = getattr(usuario, "membro_escritorio", None)
+
+    # A consulta roda SEM escopo, e é a única maneira de funcionar: descobrir a
+    # que escritório o usuário pertence é o ato que PRECEDE o escopo, e
+    # `MembroEscritorio` é ela própria uma tabela com policy de RLS. Consultá-la
+    # já escopada devolveria nada, o vínculo pareceria não existir, e todo
+    # contador legítimo levaria 403 — inclusive no middleware, que chama esta
+    # função justamente para descobrir qual tenant declarar.
+    #
+    # Não é brecha: a pergunta é "de quem é ESTE usuário", a resposta é uma
+    # linha só, e ela vira imediatamente o escopo de tudo que vem depois. Mesmo
+    # padrão do webhook, que resolve o tenant pelo número que recebeu a mensagem.
+    #
+    # Achado no primeiro screenshot real do Grimório, não em teste: a fixture
+    # deixa o modo de montagem ligado, então a suíte inteira passava por cima
+    # deste caminho sem exercitá-lo. `tests/test_rls.py` cobre isso agora.
+    from apps.tenants.rls import escopo_irrestrito
+
+    with escopo_irrestrito():
+        membro = MembroEscritorio.objects.filter(usuario=usuario).select_related(
+            "escritorio"
+        ).first()
     return False, membro.escritorio if membro is not None else None
 
 

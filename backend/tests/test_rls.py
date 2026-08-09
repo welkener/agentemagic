@@ -214,6 +214,60 @@ def test_task_devolve_o_escopo_de_quem_chamou(dois_escritorios):
 
 
 # ---------------------------------------------------------------------------
+# O ovo-e-galinha: resolver o tenant precisa acontecer ANTES de haver escopo
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_vinculo_do_contador_e_resolvido_mesmo_sem_escopo(dois_escritorios):
+    """Reproduz o bug que a suíte inteira deixou passar.
+
+    `MembroEscritorio` também tem policy. Se `escopo_do_usuario` a consultasse
+    já sob RLS, o vínculo pareceria não existir, o middleware não declararia
+    tenant nenhum e todo contador legítimo levaria 403 — que foi exatamente o
+    que apareceu no primeiro screenshot do Grimório.
+
+    A suíte não pegava porque a fixture deixa o modo de montagem ligado; aqui
+    ele é desligado de propósito, para valer como produção.
+    """
+    from django.contrib.auth import get_user_model
+
+    from apps.tenants.escopo import escopo_do_usuario
+    from apps.tenants.models import MembroEscritorio
+
+    a, _ = dois_escritorios
+    with rls.escopo_irrestrito():
+        contador = get_user_model().objects.create_user(username="ovo.galinha", is_staff=True)
+        MembroEscritorio.objects.create(usuario=contador, escritorio=a)
+
+    rls.definir_irrestrito(False)  # como numa requisição de verdade
+
+    irrestrito, escritorio = escopo_do_usuario(contador)
+    assert not irrestrito
+    assert escritorio is not None, "vínculo sumiu sob RLS — contador levaria 403"
+    assert escritorio.pk == a.pk
+
+
+@pytest.mark.django_db
+def test_grimorio_abre_para_o_contador_em_condicao_de_producao(client, dois_escritorios):
+    """O mesmo bug, pela porta da frente: requisição HTTP com o modo de
+    montagem desligado antes de entrar."""
+    from django.contrib.auth import get_user_model
+
+    from apps.tenants.models import MembroEscritorio
+
+    a, _ = dois_escritorios
+    with rls.escopo_irrestrito():
+        contador = get_user_model().objects.create_user(username="contador.producao", is_staff=True)
+        MembroEscritorio.objects.create(usuario=contador, escritorio=a)
+    client.force_login(contador)
+
+    rls.definir_irrestrito(False)
+
+    resposta = client.get("/grimorio/")
+    assert resposta.status_code == 200, "contador legítimo recusado sob RLS real"
+    assert "Cliente do A" in resposta.content.decode() or "Operação de hoje" in resposta.content.decode()
+
+
+# ---------------------------------------------------------------------------
 # Cobertura: tabela nova é decisão, não efeito colateral
 # ---------------------------------------------------------------------------
 @pytest.mark.django_db

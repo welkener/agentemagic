@@ -22,6 +22,7 @@ from django.db.models.functions import Coalesce, TruncMonth
 from django.utils import timezone
 
 from apps.agents.agente_nf.models import Intencao
+from apps.audit.models import Auditoria
 from apps.clients.models import Cliente
 from apps.credentials.models import Credencial
 from apps.fiscal import teto_mei
@@ -291,6 +292,266 @@ def integracoes(usuario) -> list[LinhaIntegracao]:
             )
         )
     return linhas
+
+
+# ---------------------------------------------------------------------------
+# Pendências — "o que exige você agora"
+# ---------------------------------------------------------------------------
+# A tela inicial do Grimório não é um resumo do mês: é uma fila de trabalho. O
+# contador com 200 empresas não quer saber quantas notas saíram, quer saber
+# quais três coisas travam hoje. Por isso as pendências vêm de fontes diferentes
+# unificadas numa lista só, ordenada por urgência — não por tabela de origem.
+#
+# `severidade` não é enfeite: define a ordem e o sinal visual. "Crítica" é o que
+# tem prazo ou já falhou; "atenção" é o que vai virar crítico se ninguém agir.
+CRITICA, ATENCAO = "critica", "atencao"
+
+# Um certificado A1 vale um ano e derruba a emissão do cliente inteiro quando
+# vence. Trinta dias é o que dá para renovar sem correria — abaixo disso o
+# assunto deixa de ser aviso e vira tarefa.
+DIAS_ALERTA_CERTIFICADO = 30
+
+
+@dataclass
+class Pendencia:
+    severidade: str
+    categoria: str
+    titulo: str
+    detalhe: str
+    cliente: "Cliente | None" = None
+    acao_rotulo: str = ""
+    acao_url: str = ""
+
+    @property
+    def critica(self) -> bool:
+        return self.severidade == CRITICA
+
+
+def pendencias(usuario) -> list[Pendencia]:
+    """Tudo que exige ação do contador, de todas as fontes, em uma fila só."""
+    itens: list[Pendencia] = []
+
+    # --- Notas paradas esperando decisão humana ---------------------------
+    aguardando = (
+        _escopar(
+            Intencao.objects.filter(estado=Intencao.Estado.AGUARDANDO_APROVACAO), usuario
+        )
+        .select_related("cliente")
+        .order_by("criado_em")
+    )
+    for intencao in aguardando:
+        cancelamento = intencao.tipo_acao == "cancelar_nfse"
+        itens.append(
+            Pendencia(
+                severidade=CRITICA,
+                categoria="cancelamento" if cancelamento else "nota",
+                titulo=(
+                    "Pedido de cancelamento aguardando você"
+                    if cancelamento
+                    # Cancelamento nunca é decidido pelo cliente (regra de
+                    # `_pedir_cancelamento`): se está aqui, é porque só o
+                    # contador pode resolver.
+                    else "Nota aguardando aprovação"
+                ),
+                detalhe=apresentacao.resumo_da_intencao(intencao),
+                cliente=intencao.cliente,
+                acao_rotulo="Analisar",
+                acao_url=f"/admin/agente_nf/intencao/{intencao.pk}/change/",
+            )
+        )
+
+    # --- Notas que a prefeitura recusou -----------------------------------
+    rejeitadas = (
+        _escopar(Intencao.objects.filter(estado=Intencao.Estado.REJEITADO), usuario)
+        .select_related("cliente")
+        .order_by("-atualizado_em")[:20]
+    )
+    for intencao in rejeitadas:
+        itens.append(
+            Pendencia(
+                severidade=CRITICA,
+                categoria="rejeicao",
+                titulo="Nota rejeitada",
+                detalhe=apresentacao.resumo_da_intencao(intencao),
+                cliente=intencao.cliente,
+                acao_rotulo="Ver motivo",
+                acao_url=f"/admin/agente_nf/intencao/{intencao.pk}/change/",
+            )
+        )
+
+    # --- Integrações: certificado e canal ---------------------------------
+    for linha in integracoes(usuario):
+        dias = linha.dias_para_vencer
+        if linha.certificado is None:
+            itens.append(
+                Pendencia(
+                    severidade=ATENCAO,
+                    categoria="certificado",
+                    titulo="Sem certificado digital",
+                    detalhe="Não emite nota até vincular um certificado.",
+                    cliente=linha.cliente,
+                    acao_rotulo="Vincular",
+                    acao_url="/admin/credentials/credencial/add/",
+                )
+            )
+        elif dias is not None and dias < 0:
+            itens.append(
+                Pendencia(
+                    severidade=CRITICA,
+                    categoria="certificado",
+                    titulo="Certificado vencido",
+                    detalhe=f"Venceu há {abs(dias)} dia(s). A emissão está parada.",
+                    cliente=linha.cliente,
+                    acao_rotulo="Renovar",
+                    acao_url=f"/admin/credentials/credencial/{linha.certificado.pk}/change/",
+                )
+            )
+        elif dias is not None and dias <= DIAS_ALERTA_CERTIFICADO:
+            itens.append(
+                Pendencia(
+                    severidade=ATENCAO,
+                    categoria="certificado",
+                    titulo="Certificado vence em breve",
+                    detalhe=f"Faltam {dias} dia(s).",
+                    cliente=linha.cliente,
+                    acao_rotulo="Renovar",
+                    acao_url=f"/admin/credentials/credencial/{linha.certificado.pk}/change/",
+                )
+            )
+
+    # --- Radar de teto do MEI ---------------------------------------------
+    for linha in carteira(usuario):
+        uso = linha.uso_teto
+        if uso.aplicavel and uso.situacao != "tranquilo":
+            estourou = uso.situacao.startswith("estourado")
+            # Quem já passou do teto não tem "quanto falta" — tem quanto
+            # excedeu. Dizer "faltam R$ 0,00 para o limite" a quem estourou é
+            # pior que não dizer nada: some justamente a informação que decide
+            # a conversa com o cliente (e, acima de 20%, o desenquadramento é
+            # retroativo).
+            excedente = uso.faturamento - uso.teto
+            itens.append(
+                Pendencia(
+                    severidade=CRITICA if estourou else ATENCAO,
+                    categoria="teto",
+                    titulo=f"Teto do MEI: {linha.visual_teto['rotulo']}",
+                    detalhe=(
+                        f"{uso.percentual}% do teto — "
+                        + (
+                            f"ultrapassou em {apresentacao.moeda(excedente)}."
+                            if estourou
+                            else f"faltam {apresentacao.moeda(uso.restante)} para o limite."
+                        )
+                    ),
+                    cliente=linha.cliente,
+                    acao_rotulo="Ver empresa",
+                    acao_url=f"/grimorio/empresa/{linha.cliente.pk}/",
+                )
+            )
+        if linha.cadastro_faltante:
+            itens.append(
+                Pendencia(
+                    severidade=ATENCAO,
+                    categoria="cadastro",
+                    titulo="Cadastro incompleto para emitir",
+                    detalhe="Falta: " + ", ".join(linha.cadastro_faltante) + ".",
+                    cliente=linha.cliente,
+                    acao_rotulo="Completar",
+                    acao_url=f"/admin/clients/cliente/{linha.cliente.pk}/change/",
+                )
+            )
+        if not linha.sessao_ativa:
+            itens.append(
+                Pendencia(
+                    severidade=ATENCAO,
+                    categoria="canal",
+                    titulo="WhatsApp não vinculado",
+                    detalhe="O cliente não consegue falar com o agente até validar o número.",
+                    cliente=linha.cliente,
+                    acao_rotulo="Ver empresa",
+                    acao_url=f"/grimorio/empresa/{linha.cliente.pk}/",
+                )
+            )
+
+    # Crítico primeiro. Dentro do mesmo nível, a ordem de inserção preserva o
+    # agrupamento por assunto — o contador resolve "todos os certificados" de
+    # uma vez, e não pulando de tema em tema.
+    itens.sort(key=lambda p: 0 if p.critica else 1)
+    return itens
+
+
+# ---------------------------------------------------------------------------
+# Ficha da empresa — tudo de um cliente num lugar só
+# ---------------------------------------------------------------------------
+@dataclass
+class Ficha:
+    cliente: Cliente
+    linha: LinhaCarteira
+    integracao: "LinhaIntegracao | None"
+    notas: list
+    eventos: list
+    serie: dict
+
+
+def ficha_da_empresa(usuario, cliente_id: int) -> "Ficha | None":
+    """A empresa inteira numa tela: números, notas, integrações e histórico.
+
+    Devolve `None` quando o cliente não pertence ao escopo — e é assim que a
+    view vira 404. Nunca se pergunta "existe?" antes de "é meu?": a resposta
+    "existe, mas não é seu" já é informação sobre a carteira do vizinho.
+    """
+    cliente = (
+        _escopar(Cliente.objects.all(), usuario, campo="escritorio")
+        .filter(pk=cliente_id)
+        .select_related("escritorio")
+        .first()
+    )
+    if cliente is None:
+        return None
+
+    linha = next((l for l in carteira(usuario) if l.cliente.pk == cliente.pk), None)
+    integracao = next((i for i in integracoes(usuario) if i.cliente.pk == cliente.pk), None)
+
+    notas = list(
+        _escopar(Intencao.objects.filter(cliente=cliente), usuario).order_by("-atualizado_em")[:25]
+    )
+    eventos = list(
+        _escopar(Auditoria.objects.filter(cliente=cliente), usuario).order_by("-criado_em")[:30]
+    )
+    return Ficha(
+        cliente=cliente,
+        linha=linha,
+        integracao=integracao,
+        notas=notas,
+        eventos=eventos,
+        serie=serie_mensal_do_cliente(usuario, cliente),
+    )
+
+
+def serie_mensal_do_cliente(usuario, cliente, meses: int = 12) -> dict:
+    """Mesma série do dashboard, restrita a uma empresa."""
+    hoje = timezone.localdate()
+    indice = hoje.year * 12 + (hoje.month - 1) - (meses - 1)
+    primeiro_mes = date(indice // 12, indice % 12 + 1, 1)
+
+    linhas = (
+        notas_emitidas(usuario)
+        .filter(cliente=cliente, atualizado_em__date__gte=primeiro_mes)
+        .annotate(mes=TruncMonth("atualizado_em"))
+        .values("mes")
+        .annotate(quantidade=Count("id"), faturamento=ZERO)
+    )
+    por_mes = {
+        (l["mes"].year, l["mes"].month): l for l in linhas if l["mes"] is not None
+    }
+    rotulos, quantidades, faturamentos = [], [], []
+    for passo in range(meses):
+        cursor = date((indice + passo) // 12, (indice + passo) % 12 + 1, 1)
+        linha = por_mes.get((cursor.year, cursor.month))
+        rotulos.append(f"{MESES_PT[cursor.month - 1]}/{str(cursor.year)[2:]}")
+        quantidades.append(linha["quantidade"] if linha else 0)
+        faturamentos.append(float(linha["faturamento"]) if linha else 0.0)
+    return {"rotulos": rotulos, "quantidades": quantidades, "faturamentos": faturamentos}
 
 
 # ---------------------------------------------------------------------------

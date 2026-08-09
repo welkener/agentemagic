@@ -1,0 +1,81 @@
+{% extends "grimorio/base.html" %}
+{% load grimorio_tags %}
+{% block titulo %}Carteira{% endblock %}
+
+{% block conteudo %}
+<div class="topo">
+  <div>
+    <h1>Carteira</h1>
+    <p>{{ linhas|length }} empresa{{ linhas|length|pluralize }} — ordenadas por faturamento no ano.</p>
+  </div>
+  <form method="get" class="filtros">
+    <input type="search" name="q" class="busca" value="{{ busca }}"
+           placeholder="Nome ou CNPJ" aria-label="Buscar empresa">
+    <button class="botao" type="submit">Buscar</button>
+  </form>
+</div>
+
+<div class="filtros" style="margin-bottom:16px">
+  {% for chave, rotulo in filtros.items %}
+    <a class="filtro {% if filtro_ativo == chave %}ativo{% endif %}"
+       href="?filtro={{ chave }}{% if busca %}&q={{ busca }}{% endif %}">{{ rotulo }}</a>
+  {% endfor %}
+</div>
+
+<div class="cartao">
+  <div class="tabela-rolagem">
+    <table class="tabela">
+      <thead>
+        <tr>
+          <th>Empresa</th>
+          <th>Situação</th>
+          <th class="num">Notas no ano</th>
+          <th class="num">Faturamento no ano</th>
+          <th>Teto do MEI</th>
+          <th>Última nota</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in linhas %}
+        <tr>
+          <td>
+            <a class="principal" href="{% url 'grimorio:empresa' l.cliente.pk %}">{{ l.cliente.nome }}</a>
+            <div class="secundario">{{ l.cliente.cnpj|cnpj }}</div>
+          </td>
+          <td>
+            {% comment %}
+            Cada estado traz texto escrito, nunca só cor — mesma regra de
+            apresentacao.py: parte da população não distingue verde de vermelho.
+            {% endcomment %}
+            {% if not l.pronto_para_emitir %}
+              <span class="etiqueta etiqueta--warning">cadastro incompleto</span>
+            {% elif not l.sessao_ativa %}
+              <span class="etiqueta etiqueta--warning">WhatsApp não vinculado</span>
+            {% else %}
+              <span class="etiqueta etiqueta--success">operando</span>
+            {% endif %}
+          </td>
+          <td class="num">{{ l.notas_ano }}</td>
+          <td class="num">{{ l.faturamento_ano|moeda }}</td>
+          <td>
+            {% if l.uso_teto.aplicavel %}
+              {% include "grimorio/_teto.html" with uso=l.uso_teto visual=l.visual_teto %}
+            {% else %}
+              <span class="secundario">não é MEI</span>
+            {% endif %}
+          </td>
+          <td class="secundario">{{ l.ultima_nota|date:"d/m/Y"|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6">
+          <div class="vazio">
+            <div class="vazio__titulo">Nenhuma empresa neste filtro</div>
+            Troque o filtro acima ou limpe a busca.
+          </div>
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

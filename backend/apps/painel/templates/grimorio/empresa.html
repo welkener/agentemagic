@@ -1,0 +1,187 @@
+{% extends "grimorio/base.html" %}
+{% load grimorio_tags %}
+{% block titulo %}{{ ficha.cliente.nome }}{% endblock %}
+
+{% block conteudo %}
+<div class="topo">
+  <div>
+    <h1>{{ ficha.cliente.nome }}</h1>
+    <p>
+      CNPJ {{ ficha.cliente.cnpj|cnpj }} ·
+      {{ ficha.cliente.get_opcao_simples_nacional_display }}
+      {% if ficha.cliente.telefone_whatsapp %}· WhatsApp {{ ficha.cliente.telefone_whatsapp }}{% endif %}
+    </p>
+  </div>
+  <div class="filtros">
+    <a class="botao" href="/admin/clients/cliente/{{ ficha.cliente.pk }}/change/">Editar cadastro</a>
+    <a class="botao" href="{% url 'grimorio:carteira' %}">Voltar à carteira</a>
+  </div>
+</div>
+
+{% if pendencias_da_empresa %}
+<div class="cartao" style="margin-bottom:18px">
+  <div class="cartao__cabeca"><h2>Pendências desta empresa</h2></div>
+  <div class="cartao__corpo">
+    <div class="fila">
+      {% for p in pendencias_da_empresa %}
+      <div class="pendencia {% if p.critica %}pendencia--critica{% else %}pendencia--atencao{% endif %}">
+        <div class="pendencia__texto">
+          <div class="pendencia__titulo">{{ p.titulo }}</div>
+          <div class="pendencia__detalhe">{{ p.detalhe }}</div>
+        </div>
+        {% comment %}
+        Pendência de teto e de canal apontam para a ficha da empresa — que é
+        esta página. Botão que não leva a lugar nenhum treina o contador a
+        ignorar botão.
+        {% endcomment %}
+        {% if p.acao_url != request.path %}
+        <a class="botao {% if p.critica %}botao--principal{% endif %}" href="{{ p.acao_url }}">{{ p.acao_rotulo }}</a>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="indicadores">
+  <div class="indicador">
+    <div class="indicador__rotulo">Notas no ano</div>
+    <div class="indicador__valor">{{ ficha.linha.notas_ano }}</div>
+  </div>
+  <div class="indicador">
+    <div class="indicador__rotulo">Faturamento no ano</div>
+    <div class="indicador__valor">{{ ficha.linha.faturamento_ano|moeda }}</div>
+  </div>
+  {% if ficha.linha.uso_teto.aplicavel %}
+  <div class="indicador">
+    <div class="indicador__rotulo">Teto do MEI</div>
+    <div class="indicador__valor">{{ ficha.linha.uso_teto.percentual|floatformat:1 }}%</div>
+    <div class="indicador__nota">
+      {% comment %}
+      Mesma correção da fila do "Hoje": quem já passou do teto não tem "quanto
+      falta". "Restam R$ 0,00" esconde justamente o número que decide a
+      conversa — e, acima de 20%, o desenquadramento é retroativo.
+      {% endcomment %}
+      {% if ficha.linha.uso_teto.restante %}restam {{ ficha.linha.uso_teto.restante|moeda }} · {% endif %}{{ ficha.linha.visual_teto.rotulo }}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="grade-2">
+  <div>
+    <div class="cartao" style="margin-bottom:18px">
+      <div class="cartao__cabeca"><h2>Notas</h2></div>
+      <div class="tabela-rolagem">
+        <table class="tabela">
+          <thead>
+            <tr><th>Data</th><th>Tomador</th><th class="num">Valor</th><th>Estado</th><th>Protocolo</th></tr>
+          </thead>
+          <tbody>
+            {% for n in ficha.notas %}
+            <tr>
+              <td class="secundario">{{ n.atualizado_em|date:"d/m/Y" }}</td>
+              <td>{{ n.payload.tomador|default:"—" }}</td>
+              <td class="num">{{ n.valor|moeda }}</td>
+              <td>
+                {% if n.estado == "CONCLUIDO" and not n.cancelada %}
+                  <span class="etiqueta etiqueta--success">emitida</span>
+                {% elif n.cancelada %}
+                  <span class="etiqueta etiqueta--danger">cancelada</span>
+                {% elif n.estado == "REJEITADO" %}
+                  <span class="etiqueta etiqueta--danger">rejeitada</span>
+                {% elif n.estado == "AGUARDANDO_APROVACAO" %}
+                  <span class="etiqueta etiqueta--warning">aguardando você</span>
+                {% else %}
+                  <span class="etiqueta">{{ n.get_estado_display }}</span>
+                {% endif %}
+              </td>
+              <td class="secundario">
+                {{ n.protocolo|default:"—" }}
+                {% if n.danfse_url and not n.cancelada %}<br><a href="{{ n.danfse_url }}">DANFSE</a>{% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5"><div class="vazio">Nenhuma nota registrada.</div></td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="cartao">
+      <div class="cartao__cabeca"><h2>Faturamento por mês</h2></div>
+      <div class="cartao__corpo">
+        {% include "grimorio/_grafico.html" with grafico=grafico rotulos=ficha.serie.rotulos %}
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="cartao" style="margin-bottom:18px">
+      <div class="cartao__cabeca"><h2>Integrações</h2></div>
+      <div class="cartao__corpo">
+        {% if ficha.integracao %}
+          <div style="display:flex;flex-direction:column;gap:11px">
+            <div>
+              <div class="secundario">Certificado digital</div>
+              {% if ficha.integracao.certificado %}
+                {% if ficha.integracao.certificado_vencido %}
+                  <span class="etiqueta etiqueta--danger">vencido</span>
+                {% else %}
+                  <span class="etiqueta etiqueta--success">válido</span>
+                  <span class="secundario">vence em {{ ficha.integracao.dias_para_vencer }} dia(s)</span>
+                {% endif %}
+              {% else %}
+                <span class="etiqueta etiqueta--warning">não vinculado</span>
+              {% endif %}
+            </div>
+            <div>
+              <div class="secundario">ERP</div>
+              {% if ficha.integracao.credenciais_erp %}
+                {% for c in ficha.integracao.credenciais_erp %}
+                  <span class="etiqueta etiqueta--success">{{ c.integracao }}</span>
+                {% endfor %}
+              {% else %}
+                <span class="etiqueta etiqueta--warning">nenhum conectado</span>
+              {% endif %}
+            </div>
+            <div>
+              <div class="secundario">Canal WhatsApp</div>
+              {% if ficha.linha.sessao_ativa %}
+                <span class="etiqueta etiqueta--success">vinculado</span>
+              {% else %}
+                <span class="etiqueta etiqueta--warning">não vinculado</span>
+              {% endif %}
+            </div>
+          </div>
+        {% else %}
+          <div class="vazio">Sem dados de integração.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="cartao">
+      <div class="cartao__cabeca"><h2>Histórico</h2></div>
+      <div class="cartao__corpo">
+        {% comment %}
+        A trilha de auditoria é append-only com hash encadeado — é ela que
+        responde "quem autorizou esta nota e a partir de quê" meses depois.
+        Aqui ela vira leitura para o contador, sem virar tela de banco de dados.
+        {% endcomment %}
+        <div class="linha-tempo">
+          {% for e in ficha.eventos %}
+          <div class="evento">
+            <div class="evento__quando">{{ e.criado_em|date:"d/m/Y H:i" }}</div>
+            <div class="evento__o-que">{{ e.evento }}</div>
+          </div>
+          {% empty %}
+          <div class="vazio">Nenhum evento registrado.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

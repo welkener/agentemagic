@@ -42,6 +42,8 @@ class EscopoDeTenantMiddleware:
         with transaction.atomic():
             rls.assumir_papel_restrito()
 
+            # `escopo_do_usuario` resolve o vínculo sem escopo por dentro — ver
+            # o porquê em `apps/tenants/escopo.py`.
             irrestrito, escritorio = escopo_do_usuario(getattr(request, "user", None))
 
             if irrestrito:

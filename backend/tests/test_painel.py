@@ -53,10 +53,15 @@ def nota_emitida(cliente):
 @pytest.mark.django_db
 
 
-def test_raiz_redireciona_pro_admin(client):
+def test_raiz_leva_ao_grimorio(client):
+    """A raiz passou a ser a aplicação do contador (DEC-12), não o admin.
+
+    O admin continua em /admin/ como backoffice — o que mudou é qual das duas
+    superfícies é o lugar de trabalho.
+    """
     resposta = client.get("/")
     assert resposta.status_code == 302
-    assert resposta.url == "/admin/"
+    assert resposta.url == "/grimorio/"
 
 
 # Precisa de banco mesmo sem tocar em model: o middleware de escopo
@@ -68,11 +73,12 @@ def test_raiz_redireciona_pro_admin(client):
 @pytest.mark.django_db
 
 
-def test_painel_antigo_redireciona_pro_admin(client):
-    """A URL /painel/ já circulou em e-mails de Magic Link e no servidor de teste."""
+def test_painel_antigo_leva_ao_grimorio(client):
+    """A URL /painel/ já circulou em e-mails de Magic Link e no servidor de
+    teste — continua respondendo, agora apontando para a aplicação."""
     resposta = client.get("/painel/")
     assert resposta.status_code == 302
-    assert resposta.url == "/admin/"
+    assert resposta.url == "/grimorio/"
 
 
 @pytest.mark.django_db

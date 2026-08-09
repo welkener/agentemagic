@@ -1,0 +1,24 @@
+{% comment %}
+Gráfico de uma série em SVG inline. Sem biblioteca: uma linha sem interação não
+justifica uma dependência externa, e o servidor de deploy tem disco apertado.
+
+Os caminhos vêm prontos de `apresentacao.sparkline` — template não faz conta.
+{% endcomment %}
+{% if grafico.vazio %}
+  <div class="vazio">Nenhuma nota emitida no período.</div>
+{% else %}
+<svg class="grafico" viewBox="0 0 {{ grafico.largura }} {{ grafico.altura }}"
+     preserveAspectRatio="none" role="img"
+     aria-label="Notas emitidas por mês nos últimos {{ grafico.pontos|length }} meses">
+  <path class="grafico__area" d="{{ grafico.area }}"></path>
+  <path class="grafico__linha" d="{{ grafico.linha }}"></path>
+  {% for p in grafico.pontos %}
+    <circle class="grafico__ponto" cx="{{ p.x }}" cy="{{ p.y }}" r="3">
+      <title>{{ p.valor }}</title>
+    </circle>
+  {% endfor %}
+</svg>
+<div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--texto-fraco);margin-top:6px">
+  {% for rotulo in rotulos %}<span>{{ rotulo }}</span>{% endfor %}
+</div>
+{% endif %}

@@ -1,0 +1,61 @@
+{% extends "grimorio/base.html" %}
+{% load grimorio_tags %}
+{% block titulo %}Notas e documentos{% endblock %}
+
+{% block conteudo %}
+<div class="topo">
+  <div>
+    <h1>Notas e documentos</h1>
+    <p>Notas autorizadas e o rastro que cada uma deixou, agrupadas por mês.</p>
+  </div>
+</div>
+
+{% comment %}
+"Documento" aqui é a nota autorizada e seus artefatos. Ainda NÃO existe DANFSE
+em PDF guardado nem XML assinado em storage — a tela mostra o que há (protocolo,
+chave, link) e diz o que falta, em vez de exibir um botão de download que não
+baixa nada. O pipeline de documento (OCR de entrada) é o Sprint 4.
+{% endcomment %}
+
+{% for mes, notas in grupos.items %}
+<div class="cartao" style="margin-bottom:18px">
+  <div class="cartao__cabeca">
+    <h2>{{ mes }}</h2>
+    <span class="etiqueta">{{ notas|length }} nota{{ notas|length|pluralize }}</span>
+  </div>
+  <div class="tabela-rolagem">
+    <table class="tabela">
+      <thead>
+        <tr><th>Data</th><th>Empresa</th><th>Tomador</th><th class="num">Valor</th><th>Protocolo / chave</th><th>DANFSE</th></tr>
+      </thead>
+      <tbody>
+        {% for n in notas %}
+        <tr>
+          <td class="secundario">{{ n.atualizado_em|date:"d/m" }}</td>
+          <td><a href="{% url 'grimorio:empresa' n.cliente.pk %}">{{ n.cliente.nome }}</a></td>
+          <td>{{ n.payload.tomador|default:"—" }}</td>
+          <td class="num">{{ n.valor|moeda }}</td>
+          <td class="secundario">
+            {{ n.protocolo|default:"—" }}
+            {% if n.chave_nfse %}<br>{{ n.chave_nfse }}{% endif %}
+          </td>
+          <td>
+            {% if n.cancelada %}<span class="etiqueta etiqueta--danger">cancelada</span>
+            {% elif n.danfse_url %}<a href="{{ n.danfse_url }}">abrir</a>
+            {% else %}<span class="secundario">—</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% empty %}
+<div class="cartao"><div class="cartao__corpo">
+  <div class="vazio">
+    <div class="vazio__titulo">Nenhuma nota emitida ainda</div>
+    Assim que a primeira nota da carteira for autorizada, ela aparece aqui.
+  </div>
+</div></div>
+{% endfor %}
+{% endblock %}

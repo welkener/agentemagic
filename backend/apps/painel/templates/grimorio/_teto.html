@@ -1,0 +1,17 @@
+{% comment %}
+Radar do teto do MEI. Barra + percentual + rótulo escrito.
+
+O rótulo não é redundância com a cor: passar de 20% acima do teto muda a
+consequência jurídica (o desenquadramento vira retroativo), e é exatamente o
+indicador em que ler errado custa caro. O texto vem de `apresentacao.VISUAL_TETO`.
+{% endcomment %}
+<div class="teto">
+  <div class="teto__trilho">
+    <div class="teto__preenchido {% if visual.variante == 'danger' %}teto__preenchido--danger{% elif visual.variante == 'warning' %}teto__preenchido--warning{% endif %}"
+         style="width: {% if uso.percentual > 100 %}100{% else %}{{ uso.percentual|floatformat:0 }}{% endif %}%"></div>
+  </div>
+  <div class="teto__legenda">
+    {{ uso.percentual|floatformat:1 }}% · {{ visual.rotulo }}
+    {% if uso.proporcional %}<br><span class="secundario">teto proporcional (abriu no ano)</span>{% endif %}
+  </div>
+</div>
