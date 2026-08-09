@@ -13,6 +13,14 @@
       {% else %}
         Nada travado na carteira.
       {% endif %}
+      {% comment %}
+      Os chamados entram na linha de resumo, e não só no cartão: eles são a
+      única fila em que alguém está do outro lado esperando, e o contador
+      precisa saber que ela existe antes de rolar a tela.
+      {% endcomment %}
+      {% if solicitacoes %}
+        · {{ solicitacoes|length }} pedido{{ solicitacoes|length|pluralize }} de cliente
+      {% endif %}
     </p>
   </div>
 </div>
@@ -43,6 +51,46 @@ travou, não quantas notas saíram.
           <div class="pendencia__detalhe">{{ p.detalhe }}</div>
         </div>
         <a class="botao botao--principal" href="{{ p.acao_url }}">{{ p.acao_rotulo }}</a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% comment %}
+Chamados abertos pela conversa. Ficam logo abaixo do que é crítico e ACIMA de
+"para acompanhar", e a ordem é decisão de produto: do outro lado de cada linha
+daqui há uma pessoa esperando resposta, enquanto "sem certificado digital"
+repetido cinco vezes é aviso de sistema que espera sem reclamar. Vistos na tela
+renderizada, os chamados tinham caído embaixo dessa lista — invisíveis na
+prática, que é o mesmo que não existir.
+
+E existem porque o cliente ouviu "a equipe já está vendo" quando abriu. Fila que
+não aparece transforma essa frase em mentira que ele descobre pelo silêncio.
+{% endcomment %}
+{% if solicitacoes %}
+<div class="cartao" style="margin-bottom:24px">
+  <div class="cartao__cabeca">
+    <h2>Pedidos dos clientes no WhatsApp</h2>
+    <span class="etiqueta">{{ solicitacoes|length }} em aberto</span>
+  </div>
+  <div class="cartao__corpo">
+    <div class="fila">
+      {% for s in solicitacoes %}
+      <div class="pendencia">
+        <div class="pendencia__texto">
+          <div class="pendencia__titulo">{{ s.assunto }}</div>
+          <div class="pendencia__empresa">
+            {{ s.cliente.nome }}
+            {% if s.usuario %}· {{ s.usuario.nome|default:s.usuario.telefone_whatsapp }}{% endif %}
+          </div>
+          <div class="pendencia__detalhe">
+            {{ s.get_tipo_display }} {{ s.protocolo }} · aberto em {{ s.criado_em|date:"d/m H:i" }}
+            {% if s.preferencia_data %}· prefere {{ s.preferencia_data|date:"d/m" }}{% endif %}
+          </div>
+        </div>
+        <a class="botao" href="/admin/atendimento/solicitacao/{{ s.pk }}/change/">Abrir</a>
       </div>
       {% endfor %}
     </div>

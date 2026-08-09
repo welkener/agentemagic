@@ -30,9 +30,10 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
+from apps.agents.agente_nf import conversa
 from apps.agents.agente_nf.models import Intencao
-from apps.core import orchestrator as orq
-from apps.core.orchestrator import DadosNotaExtraidos, Orquestrador
+from apps.agents.agente_nf.conversa import DadosNotaExtraidos
+from apps.core.orchestrator import Orquestrador
 
 
 @pytest.fixture
@@ -40,10 +41,10 @@ def extracao_dublada(monkeypatch):
     """Mapeia mensagem -> campos extraídos, como a Groq faria."""
     roteiro: dict[str, DadosNotaExtraidos] = {}
 
-    def fake_extrair(self, mensagem):
+    def fake_extrair(ctx, mensagem):
         return roteiro.get(mensagem.strip().lower(), DadosNotaExtraidos())
 
-    monkeypatch.setattr(Orquestrador, "_extrair_dados_nota", fake_extrair)
+    monkeypatch.setattr(conversa, "extrair_dados_nota", fake_extrair)
     return roteiro
 
 
@@ -52,7 +53,7 @@ def roteador_dublado(monkeypatch):
     """Classificação determinística, sem depender do LLM nem das palavras-chave."""
     rotas: dict[str, str] = {}
 
-    def fake_classificar(self, mensagem):
+    def fake_classificar(self, ctx, mensagem):
         return rotas.get(mensagem.strip().lower(), "desconhecida")
 
     monkeypatch.setattr(Orquestrador, "_classificar_intencao", fake_classificar)
@@ -179,7 +180,7 @@ class TestColetaExpira:
         agente.processar("emite uma nota", cliente, message_id="e1")
 
         antiga = Intencao.objects.get(cliente=cliente)
-        vencida = timezone.now() - timedelta(minutes=orq.COLETA_TTL_MINUTOS + 5)
+        vencida = timezone.now() - timedelta(minutes=conversa.COLETA_TTL_MINUTOS + 5)
         Intencao.objects.filter(pk=antiga.pk).update(atualizado_em=vencida)
 
         resposta = agente.processar("emite nota de 300, consultoria", cliente, message_id="e2")

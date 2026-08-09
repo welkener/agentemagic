@@ -38,6 +38,11 @@ class EscritorioForm(forms.ModelForm):
             "ativo",
             "whatsapp_phone_number_id",
             "whatsapp_token",
+            # O teto de gasto com IA é editável pelo próprio contador: é o
+            # dinheiro dele, e um limite só restringe quem o define. Deixar isso
+            # com a Magic BI transformaria "quero gastar menos este mês" num
+            # chamado de suporte.
+            "limite_gasto_mensal_brl",
         ]
 
     def save(self, commit=True):
@@ -47,6 +52,13 @@ class EscritorioForm(forms.ModelForm):
             instancia.whatsapp_token = novo
         if commit:
             instancia.save()
+            # O modo de orçamento fica em cache por um minuto. Sem invalidar
+            # aqui, quem acabou de aumentar o teto para destravar o atendimento
+            # continuaria degradado — e no exato momento em que está tentando
+            # entender por que o atendimento está estranho.
+            from apps.observabilidade import orcamento
+
+            orcamento.esquecer(instancia)
         return instancia
 
 
@@ -69,6 +81,7 @@ class EscritorioAdmin(EscopoEscritorioMixin, ModelAdmin):
         "canal_whatsapp",
         "cor_primaria",
         "cor_acento",
+        "limite_gasto_mensal_brl",
         "ativo",
         "atualizado_em",
     )

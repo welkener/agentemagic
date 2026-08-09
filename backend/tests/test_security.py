@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from apps.agents.agente_nf.models import Intencao
 from apps.clients.models import Cliente, Perfil
-from apps.core.orchestrator import DadosNotaExtraidos, Orquestrador
+from apps.core.orchestrator import Orquestrador
 from apps.security.models import Codigo2FA, SessaoWhatsapp, TokenMagicLink
 from apps.security.services import (
     enviar_magic_link,
@@ -184,14 +184,12 @@ def test_exige_2fa_desligado_por_padrao(cliente):
 
 
 @pytest.mark.django_db
-def test_fluxo_completo_com_2fa_acima_do_threshold(cliente):
+def test_fluxo_completo_com_2fa_acima_do_threshold(cliente, extrair_fixo):
     cliente.perfil.valor_2fa_acima_de = 1000
     cliente.perfil.save()
 
     orq = Orquestrador()
-    orq._extrair_dados_nota = lambda mensagem: DadosNotaExtraidos(
-        tomador="Empresa Grande", valor=5000.0, descricao_servico="Consultoria"
-    )
+    extrair_fixo(tomador="Empresa Grande", valor=5000.0, descricao_servico="Consultoria")
 
     resposta = orq.processar("emite nota de 5000 pra Empresa Grande", cliente, message_id="wamid.2fa")
     assert "Confirma a emissão" in resposta
@@ -212,14 +210,12 @@ def test_fluxo_completo_com_2fa_acima_do_threshold(cliente):
 
 
 @pytest.mark.django_db
-def test_2fa_codigo_errado_demais_vezes_cancela(cliente):
+def test_2fa_codigo_errado_demais_vezes_cancela(cliente, extrair_fixo):
     cliente.perfil.valor_2fa_acima_de = 1000
     cliente.perfil.save()
 
     orq = Orquestrador()
-    orq._extrair_dados_nota = lambda mensagem: DadosNotaExtraidos(
-        tomador="Empresa Grande", valor=5000.0, descricao_servico="Consultoria"
-    )
+    extrair_fixo(tomador="Empresa Grande", valor=5000.0, descricao_servico="Consultoria")
     orq.processar("emite nota de 5000 pra Empresa Grande", cliente, message_id="wamid.2fa-errado")
     orq.processar("sim", cliente)
 
@@ -232,14 +228,12 @@ def test_2fa_codigo_errado_demais_vezes_cancela(cliente):
 
 
 @pytest.mark.django_db
-def test_2fa_codigo_expirado_cancela(cliente):
+def test_2fa_codigo_expirado_cancela(cliente, extrair_fixo):
     cliente.perfil.valor_2fa_acima_de = 1000
     cliente.perfil.save()
 
     orq = Orquestrador()
-    orq._extrair_dados_nota = lambda mensagem: DadosNotaExtraidos(
-        tomador="Empresa Grande", valor=5000.0, descricao_servico="Consultoria"
-    )
+    extrair_fixo(tomador="Empresa Grande", valor=5000.0, descricao_servico="Consultoria")
     orq.processar("emite nota de 5000 pra Empresa Grande", cliente, message_id="wamid.2fa-exp")
     orq.processar("sim", cliente)
 

@@ -1,0 +1,204 @@
+{% extends "grimorio/base.html" %}
+{% load grimorio_tags %}
+{% block titulo %}Operação{% endblock %}
+
+{% comment %}
+A única tela do Grimório voltada ao escritório como NEGÓCIO, e não à carteira
+dele. O que se decide aqui é preço e teto de gasto — por isso os dois critérios
+de aceite da plataforma (custo por cliente/mês e p95) aparecem como veredicto
+"dentro/acima", e não como número solto que só quem leu a spec interpreta.
+{% endcomment %}
+
+{% block conteudo %}
+<div class="topo">
+  <div>
+    <h1>Operação</h1>
+    <p>
+      O que o atendimento por IA consumiu neste mês, e quanto ele custou.
+      {% if orcamento.limite %}
+        Teto configurado: {{ orcamento.limite|moeda }}.
+      {% else %}
+        Nenhum teto de gasto configurado.
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+{% if orcamento.modo == "cortado" %}
+<div class="cartao" style="margin-bottom:18px">
+  <div class="cartao__cabeca">
+    <h2>O teto do mês foi atingido</h2>
+    <span class="etiqueta etiqueta--danger">respondendo sem IA</span>
+  </div>
+  <div class="cartao__corpo">
+    O atendimento <strong>continua funcionando</strong>: saudação, menu e os
+    pedidos mais claros são respondidos pelo motor determinístico, de graça. O
+    que se perde é precisão em mensagem ambígua e o preenchimento automático dos
+    campos da nota — o cliente passa a informar campo a campo. Para voltar ao
+    normal, aumente o teto em Cadastros → Escritórios.
+  </div>
+</div>
+{% elif orcamento.modo == "degradado" %}
+<div class="cartao" style="margin-bottom:18px">
+  <div class="cartao__cabeca">
+    <h2>Perto do teto do mês</h2>
+    <span class="etiqueta etiqueta--warning">{{ orcamento.percentual }}% do limite</span>
+  </div>
+  <div class="cartao__corpo">
+    A leitura dos campos da nota passou para o modelo mais barato. O cliente
+    pode ser perguntado mais vezes sobre valor e tomador; nada foi interrompido.
+  </div>
+</div>
+{% endif %}
+
+<div class="indicadores">
+  <div class="indicador">
+    <div class="indicador__rotulo">Custo de IA no mês</div>
+    <div class="indicador__valor">{{ consumo.total_brl|moeda_fina }}</div>
+    <div class="indicador__nota">{{ consumo.chamadas }} chamada{{ consumo.chamadas|pluralize }} ao modelo</div>
+  </div>
+
+  <div class="indicador">
+    <div class="indicador__rotulo">Custo por empresa/mês</div>
+    {% if consumo.pior_cliente %}
+      <div class="indicador__valor">{{ consumo.pior_cliente.1|moeda_fina }}</div>
+      <div class="indicador__nota">
+        pior caso ({{ consumo.pior_cliente.0 }}) ·
+        média {{ consumo.custo_medio_por_cliente|moeda_fina }} ·
+        {% if consumo.dentro_do_criterio %}
+          dentro do teto de {{ custo_maximo|moeda }}
+        {% else %}
+          <strong>acima do teto de {{ custo_maximo|moeda }}</strong>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="indicador__valor">—</div>
+      <div class="indicador__nota">nenhum consumo atribuído a empresa ainda</div>
+    {% endif %}
+  </div>
+
+  <div class="indicador">
+    <div class="indicador__rotulo">Resposta (p95, 30 dias)</div>
+    {% if p95 is None %}
+      <div class="indicador__valor">—</div>
+      <div class="indicador__nota">amostra pequena demais para percentil</div>
+    {% else %}
+      <div class="indicador__valor">{{ p95 }} ms</div>
+      <div class="indicador__nota">
+        {% if p95 <= p95_maximo %}dentro{% else %}<strong>acima</strong>{% endif %}
+        do alvo de {{ p95_maximo }} ms fora de pico
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="indicador">
+    <div class="indicador__rotulo">Respondido sem IA (30 dias)</div>
+    {% if escada.sem_dados %}
+      <div class="indicador__valor">—</div>
+      <div class="indicador__nota">ainda medindo · {{ escada.total }} mensage{{ escada.total|pluralize:"m,ns" }}</div>
+    {% else %}
+      <div class="indicador__valor">{{ escada.taxa_t0 }}%</div>
+      <div class="indicador__nota">
+        {{ escada.t0 }} de {{ escada.total }} ·
+        {% if escada.atingiu_a_meta %}dentro da meta de 40%{% else %}abaixo da meta de 40%{% endif %}
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="cartao" style="margin-bottom:18px">
+  <div class="cartao__cabeca">
+    <h2>Onde o dinheiro foi</h2>
+    <span class="etiqueta">{{ consumo.tokens_entrada }} tokens de entrada · {{ consumo.tokens_saida }} de saída</span>
+  </div>
+  <div class="cartao__corpo">
+    {% if consumo.por_modelo %}
+    <div class="tabela-rolagem">
+    <table class="tabela">
+      <thead><tr><th>Modelo</th><th>Chamadas</th><th>Custo no mês</th></tr></thead>
+      <tbody>
+        {% for modelo, custo, quantas in consumo.por_modelo %}
+        <tr>
+          <td>{{ modelo }}</td>
+          <td>{{ quantas }}</td>
+          <td>{{ custo|moeda_fina }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div class="vazio">
+      <div class="vazio__titulo">Nenhuma chamada ao modelo neste mês</div>
+      Ou o mês começou agora, ou o determinístico está dando conta de tudo.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% comment %}
+O "tool calls por tenant" da DEC-08, na forma que decide alguma coisa: o que a
+carteira de fato pede. Capacidade cara e nunca usada é candidata a sair do
+prompt (menos token em toda mensagem); assunto que só aparece como "não
+entendi" é candidato a virar capacidade.
+{% endcomment %}
+<div class="cartao" style="margin-bottom:18px">
+  <div class="cartao__cabeca">
+    <h2>O que os clientes pedem (30 dias)</h2>
+  </div>
+  <div class="cartao__corpo">
+    {% if ferramentas %}
+    <div class="tabela-rolagem">
+    <table class="tabela">
+      <thead><tr><th>Capacidade</th><th>Vezes</th></tr></thead>
+      <tbody>
+        {% for nome, vezes in ferramentas %}
+        <tr><td>{{ nome }}</td><td>{{ vezes }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div class="vazio">
+      <div class="vazio__titulo">Nenhuma capacidade acionada ainda</div>
+      As conversas não chegaram a pedir nada que o agente executasse.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="cartao">
+  <div class="cartao__cabeca">
+    <h2>Empresas que mais consomem</h2>
+  </div>
+  <div class="cartao__corpo">
+    {% if consumo.por_cliente %}
+    <div class="tabela-rolagem">
+    <table class="tabela">
+      <thead><tr><th>Empresa</th><th>Custo no mês</th></tr></thead>
+      <tbody>
+        {% for nome, custo in consumo.por_cliente %}
+        <tr>
+          <td>{{ nome }}</td>
+          <td>
+            {{ custo|moeda_fina }}
+            {% if custo > custo_maximo %}<span class="etiqueta etiqueta--warning">acima do teto</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="secundario" style="margin:12px 0 0">
+      A conversa que ainda não identificou a empresa custa ao escritório e não
+      aparece nesta lista — atribuí-la a alguém seria inventar o dono.
+    </p>
+    {% else %}
+    <div class="vazio">
+      <div class="vazio__titulo">Sem consumo por empresa ainda</div>
+      As mensagens deste mês foram resolvidas sem chamar o modelo.
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -58,7 +58,7 @@ class TestExemplosNoPrompt:
 
         assert "frase aposentada" not in exemplos_para_prompt()
 
-    def test_o_roteador_recebe_os_exemplos(self, db, monkeypatch, settings):
+    def test_o_roteador_recebe_os_exemplos(self, cliente, monkeypatch, settings):
         """O elo que faz o admin valer alguma coisa: sem isto, cadastrar exemplo
         não muda o comportamento e ninguém percebe."""
         settings.GROQ_API_KEY = "chave-de-teste"
@@ -71,8 +71,17 @@ class TestExemplosNoPrompt:
                 prompts.append(kwargs.get("system_prompt", ""))
 
             def run_sync(self, mensagem):
+                from pydantic_ai.usage import RunUsage
+
                 class R:
                     output = type("O", (), {"intencao": "consultar_pedido"})()
+
+                    # O medidor de consumo (Sprint 2) lê `usage()` de toda
+                    # resposta — dublê sem ele quebra no caminho da medição, não
+                    # no do roteamento.
+                    @staticmethod
+                    def usage():
+                        return RunUsage(input_tokens=90, output_tokens=6, requests=1)
 
                 return R()
 
@@ -80,7 +89,10 @@ class TestExemplosNoPrompt:
 
         monkeypatch.setattr(pydantic_ai, "Agent", AgenteFalso)
 
-        Orquestrador()._classificar_via_groq("me manda o relatório")
+        from apps.agents.contexto import SessionContext
+
+        ctx = SessionContext.da_conversa(cliente=cliente)
+        Orquestrador()._classificar_via_groq(ctx, "me manda o relatório")
 
         assert prompts, "o roteador não chegou a montar o prompt"
         assert "me manda o relatório" in prompts[0]
@@ -148,19 +160,13 @@ class TestTelaDeRevisao:
 
 @pytest.mark.django_db
 class TestEvidenciaDaAutorizacao:
-    def test_motivo_registra_mensagem_e_numero(self, cliente, monkeypatch):
+    def test_motivo_registra_mensagem_e_numero(self, cliente, monkeypatch, extrair_fixo):
         """"cliente confirmou" sozinho não diz QUAL mensagem autorizou nem de
         qual número — e é isso que uma auditoria pede."""
-        from apps.core.orchestrator import DadosNotaExtraidos
-
+        extrair_fixo(tomador="Joao", valor=100.0, descricao_servico="consultoria")
         monkeypatch.setattr(
-            Orquestrador,
-            "_extrair_dados_nota",
-            lambda self, m: DadosNotaExtraidos(
-                tomador="Joao", valor=100.0, descricao_servico="consultoria"
-            ),
+            Orquestrador, "_classificar_intencao", lambda self, ctx, m: "emitir_nota"
         )
-        monkeypatch.setattr(Orquestrador, "_classificar_intencao", lambda self, m: "emitir_nota")
 
         agente = Orquestrador()
         agente.processar("emite nota de 100 pro Joao, consultoria", cliente, message_id="msg-abc")

@@ -53,17 +53,13 @@ def test_emitir_nota_sem_tier_e_recusada(cliente):
 
 
 @pytest.mark.django_db
-def test_emitir_nota_sem_cnae_bloqueia(cliente):
+def test_emitir_nota_sem_cnae_bloqueia(cliente, extrair_fixo):
     cliente.cnae_padrao = ""
     cliente.save()
     # Sem GROQ, a extração cai vazia, então o pedido de campos vem primeiro —
     # simulamos o caso de dados completos monkeypatchando a extração.
     orq = Orquestrador()
-    from apps.core.orchestrator import DadosNotaExtraidos
-
-    orq._extrair_dados_nota = lambda mensagem: DadosNotaExtraidos(
-        tomador="João", valor=500.0, descricao_servico="Corte de cabelo"
-    )
+    extrair_fixo(tomador="João", valor=500.0, descricao_servico="Corte de cabelo")
     resposta = orq.processar("emite nota de 500 pro João, corte de cabelo", cliente)
     assert "CNAE" in resposta
     # Cadastro incompleto não é algo que o cliente resolva respondendo: a coleta
@@ -72,13 +68,9 @@ def test_emitir_nota_sem_cnae_bloqueia(cliente):
 
 
 @pytest.mark.django_db
-def test_fluxo_completo_de_emissao_com_confirmacao(cliente):
+def test_fluxo_completo_de_emissao_com_confirmacao(cliente, extrair_fixo):
     orq = Orquestrador()
-    from apps.core.orchestrator import DadosNotaExtraidos
-
-    orq._extrair_dados_nota = lambda mensagem: DadosNotaExtraidos(
-        tomador="João", valor=500.0, descricao_servico="Corte de cabelo"
-    )
+    extrair_fixo(tomador="João", valor=500.0, descricao_servico="Corte de cabelo")
 
     resposta = orq.processar("emite nota de 500 pro João, corte de cabelo", cliente, message_id="wamid.001")
     assert "Confirma a emissão" in resposta
@@ -97,13 +89,9 @@ def test_fluxo_completo_de_emissao_com_confirmacao(cliente):
 
 
 @pytest.mark.django_db
-def test_fluxo_de_emissao_cancelado(cliente):
+def test_fluxo_de_emissao_cancelado(cliente, extrair_fixo):
     orq = Orquestrador()
-    from apps.core.orchestrator import DadosNotaExtraidos
-
-    orq._extrair_dados_nota = lambda mensagem: DadosNotaExtraidos(
-        tomador="João", valor=500.0, descricao_servico="Corte de cabelo"
-    )
+    extrair_fixo(tomador="João", valor=500.0, descricao_servico="Corte de cabelo")
     orq.processar("emite nota de 500 pro João, corte de cabelo", cliente)
     resposta = orq.processar("não, cancela", cliente)
     assert "cancelei" in resposta.lower()
@@ -111,13 +99,9 @@ def test_fluxo_de_emissao_cancelado(cliente):
 
 
 @pytest.mark.django_db
-def test_retry_do_mesmo_message_id_nao_duplica_intencao(cliente):
+def test_retry_do_mesmo_message_id_nao_duplica_intencao(cliente, extrair_fixo):
     orq = Orquestrador()
-    from apps.core.orchestrator import DadosNotaExtraidos
-
-    orq._extrair_dados_nota = lambda mensagem: DadosNotaExtraidos(
-        tomador="João", valor=500.0, descricao_servico="Corte de cabelo"
-    )
+    extrair_fixo(tomador="João", valor=500.0, descricao_servico="Corte de cabelo")
     orq.processar("emite nota de 500 pro João", cliente, message_id="wamid.retry")
 
     # Fecha a confirmação para simular reprocessamento após conclusão.
@@ -131,13 +115,9 @@ def test_retry_do_mesmo_message_id_nao_duplica_intencao(cliente):
 
 
 @pytest.mark.django_db
-def test_confirmacao_com_resposta_ambigua_pede_esclarecimento(cliente):
+def test_confirmacao_com_resposta_ambigua_pede_esclarecimento(cliente, extrair_fixo):
     orq = Orquestrador()
-    from apps.core.orchestrator import DadosNotaExtraidos
-
-    orq._extrair_dados_nota = lambda mensagem: DadosNotaExtraidos(
-        tomador="João", valor=500.0, descricao_servico="Corte de cabelo"
-    )
+    extrair_fixo(tomador="João", valor=500.0, descricao_servico="Corte de cabelo")
     orq.processar("emite nota de 500 pro João", cliente)
     resposta = orq.processar("talvez", cliente)
     assert "Não entendi" in resposta

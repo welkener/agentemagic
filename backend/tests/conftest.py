@@ -4,6 +4,8 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
+from apps.agents.agente_nf import conversa
+from apps.agents.prompt import esquecer_cache
 from apps.clients.models import Cliente, Perfil
 from apps.tenants import rls
 from apps.tenants.models import Escritorio
@@ -40,6 +42,43 @@ def rls_ativa(request):
     rls.assumir_papel_restrito()
     rls.definir_irrestrito(True)
     yield
+
+
+@pytest.fixture(autouse=True)
+def caches_derivados_limpos():
+    """Zera o que o Sprint 2 passou a cachear entre mensagens.
+
+    Dois caches, os dois com a mesma armadilha: guardam uma decisão tomada a
+    partir do banco (o catálogo de ferramentas do tenant, o modo de orçamento
+    dele) e sobrevivem ao rollback da transação do teste. Sem limpar, um teste
+    que configura um limite de gasto contamina o seguinte — e a falha aparece
+    como flakiness dependente da ordem, que é a mais cara de diagnosticar.
+    """
+    esquecer_cache()
+    from django.core.cache import cache
+
+    cache.clear()
+    yield
+    esquecer_cache()
+    cache.clear()
+
+
+@pytest.fixture
+def extrair_fixo(monkeypatch):
+    """Substitui a extração de campos da nota por um valor fixo.
+
+    A extração é a única chamada ao modelo do fluxo de nota. Dublar aqui — e não
+    a classe do orquestrador, como antes do Sprint 2 — segue o lugar onde ela
+    passou a morar (`agente_nf/conversa.py`); o que os testes afirmam sobre a
+    conversa continua idêntico.
+    """
+
+    def aplicar(**campos):
+        dados = conversa.DadosNotaExtraidos(**campos)
+        monkeypatch.setattr(conversa, "extrair_dados_nota", lambda ctx, mensagem: dados)
+        return dados
+
+    return aplicar
 
 
 @pytest.fixture

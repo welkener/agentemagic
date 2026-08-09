@@ -154,6 +154,17 @@ nº 2 da spec e custa poucas horas.
 
 **Consequência.** Primeiro commit do Sprint 1, antes de qualquer tool nova.
 
+**Estado em 09/ago/2026 — a decisão cresceu um lado que não estava escrito.** O
+teste do Sprint 1 (`apps/agents/registry.py`) cobre o **schema**: nenhum campo
+de escopo no JSON que o modelo preenche, verificado no import. O Sprint 2
+mostrou que faltava a outra metade — a **assinatura** das ferramentas. Um
+handler `def consultar_das(ctx, competencia, cnpj)` não tem schema nenhum e
+reabriria a mesma porta, com alguém preenchendo `cnpj` a partir do texto da
+mensagem. Agora toda ferramenta recebe exatamente `(ctx, mensagem)`, e há teste
+que percorre o catálogo exigindo isso. A frase completa da decisão passa a ser:
+*escopo não entra nem por campo de schema nem por parâmetro de função — só por
+`SessionContext`, montado no webhook* (`apps/agents/contexto.py`).
+
 ---
 
 ## DEC-06 — Certificado A1 continua por **cliente**, não por tenant.
@@ -220,6 +231,31 @@ existe.
 passa a ser caminho principal, então ganha teste próprio de cobertura de
 intenções. A troca de provedor no T2/T3 fica condicionada a medição, não a
 opinião.
+
+**Estado em 09/ago/2026 — os quatro itens estão implementados; dois números
+ainda dependem de tráfego.**
+
+1. ✅ Inversão feita no Sprint 1 (`apps/core/t0.py`), com classificador estrito
+   separado do fallback permissivo.
+2. ✅ `observabilidade.ConsumoLLM` grava tokens (inclusive os servidos do cache
+   do provedor), custo em reais, latência, requisições e erro — uma linha por
+   chamada. Tool calls ficam na trilha, por nome de ferramenta, que decide mais
+   do que um contador (`metricas.ferramentas_mais_usadas`).
+3. ✅ Teto por tenant com degradação em dois passos
+   (`observabilidade/orcamento.py`). **A degradação real acontece na extração**,
+   não no roteador: o roteador já roda no modelo mais barato, então rebaixá-lo
+   não economizaria nada.
+4. ⏳ Depende de medição — que agora existe, mas ainda sem volume.
+
+**A ordem de grandeza, com a tabela de preços do Groq conferida em 09/ago e o
+dólar a 5,10:** uma passagem pelo roteador (≈1.000 tokens de entrada, 100 de
+saída) custa **R$ 0,0003**; pela extração, **R$ 0,0011**. A 25 mensagens por
+empresa/mês, o custo fica na casa de **R$ 0,01** — cerca de sessenta vezes
+abaixo do critério de R$ 0,60. Isso muda a leitura do §7 do cronograma: o LLM
+não é o risco de margem, o **template utility proativo** é. O que a medição
+protege, portanto, não é o custo de hoje; é descobrir o dia em que o desenho
+mudar (contexto maior, T2/T3, prompt por tenant crescendo) e a conta sair da
+ordem de grandeza em que está.
 
 ---
 

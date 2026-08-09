@@ -28,6 +28,7 @@ from django.core.exceptions import PermissionDenied
 from django.http import Http404
 from django.views.generic import TemplateView
 
+from apps.observabilidade import orcamento
 from apps.painel import apresentacao, branding, metricas
 from apps.tenants.escopo import escopo_do_usuario
 
@@ -97,6 +98,42 @@ class HojeView(EscopoGrimorioMixin, TemplateView):
             (l.faturamento_mes or 0) for l in carteira
         )
         contexto["escada"] = metricas.uso_da_escada(usuario)
+        # Chamados abertos pela conversa entram na fila de hoje: o cliente ouviu
+        # "a equipe já está vendo" quando abriu, e a promessa precisa ter dono
+        # visível deste lado. Ver apps/atendimento/models.py.
+        contexto["solicitacoes"] = metricas.solicitacoes_abertas(usuario)
+        return contexto
+
+
+class OperacaoView(EscopoGrimorioMixin, TemplateView):
+    """Consumo, custo e latência do atendimento por IA.
+
+    É a tela que o Sprint 2 alimenta e a única do Grimório voltada ao
+    **escritório como negócio**, não à carteira dele: o que se decide aqui é
+    preço e teto de gasto. Por isso ela mostra o pior cliente do mês em vez da
+    média — o critério de aceite é por cliente/mês, e a média esconde
+    exatamente o caso que estoura.
+    """
+
+    template_name = "grimorio/operacao.html"
+    secao = "operacao"
+
+    def get_context_data(self, **kwargs):
+        contexto = super().get_context_data(**kwargs)
+        usuario = self.request.user
+        contexto["consumo"] = metricas.consumo_do_mes(usuario)
+        contexto["escada"] = metricas.uso_da_escada(usuario)
+        contexto["p95"] = metricas.latencia_p95(usuario)
+        contexto["ferramentas"] = metricas.ferramentas_mais_usadas(usuario)
+        contexto["p95_maximo"] = metricas.P95_MAXIMO_MS
+        contexto["custo_maximo"] = metricas.CUSTO_MAXIMO_POR_CLIENTE_MES
+        # O orçamento é por escritório, então superuser da Magic BI (que enxerga
+        # a plataforma inteira) não tem um só para mostrar. Deixar em branco é
+        # mais honesto que somar o teto de todos os tenants num número que não
+        # governa nada.
+        contexto["orcamento"] = (
+            orcamento.situacao(self.escritorio) if self.escritorio is not None else None
+        )
         return contexto
 
 

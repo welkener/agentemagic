@@ -102,6 +102,7 @@ INSTALLED_APPS = [
     "apps.governance",
     "apps.observabilidade",  # alertas de negócio + captura de erro (Sentry)
     "apps.fiscal",  # DPS: montagem/assinatura do XML + numeração sequencial
+    "apps.atendimento",  # chamados e pedidos de atendimento abertos pela conversa
     "apps.agents.agente_nf",
     "apps.agents.agente_erp",
 ]
@@ -238,6 +239,32 @@ WHATSAPP_PHONE_NUMBER_ID = env("WHATSAPP_PHONE_NUMBER_ID", default="")
 # orquestrador cai no roteamento determinístico por palavra-chave (offline).
 # ---------------------------------------------------------------------------
 GROQ_API_KEY = env("GROQ_API_KEY", default="")
+
+# ---------------------------------------------------------------------------
+# Preço do que o modelo consome (DEC-08 item 2).
+#
+# USD por 1 milhão de tokens, tabela pública do Groq conferida em 09/ago/2026 —
+# não de memória. Entrada servida do cache do provedor é cobrada pela metade, e
+# `observabilidade/precos.py` já aplica esse desconto.
+#
+# Fica em `settings` pelo mesmo motivo do teto do MEI: é número do mundo, não do
+# sistema. Provedor reajusta e o dólar anda sem pedir release. Modelo que não
+# estiver aqui é gravado com custo zero e um aviso no log — nunca somado como
+# grátis em silêncio, que faria o critério de R$ 0,60/cliente/mês passar por
+# engano.
+# ---------------------------------------------------------------------------
+PRECOS_LLM = {
+    "llama-3.1-8b-instant": {"entrada": "0.05", "saida": "0.08"},
+    "openai/gpt-oss-120b": {"entrada": "0.15", "saida": "0.60"},
+}
+# Arredondado para cima sobre os ~5,08 do dia: entre superestimar e subestimar o
+# custo, o erro que dói é o que deixa a fatura passar do previsto.
+COTACAO_USD_BRL = env("COTACAO_USD_BRL", default="5.10")
+
+# Fração do limite mensal em que a degradação começa — acima dela a extração de
+# campos cai para o modelo barato, e só no limite cheio o modelo é cortado
+# (apps/observabilidade/orcamento.py).
+ORCAMENTO_FRACAO_DEGRADACAO = env("ORCAMENTO_FRACAO_DEGRADACAO", default="0.8")
 
 # ---------------------------------------------------------------------------
 # Evolution API — canal de TESTE LOCAL apenas, nunca produção (protocolo não-

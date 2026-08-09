@@ -146,21 +146,13 @@ class TestNaEscada:
         )
         assert evento.dados["camada"] == "fallback"
 
-    def test_confirmacao_pendente_ganha_do_t0(self, cliente, monkeypatch):
+    def test_confirmacao_pendente_ganha_do_t0(self, cliente, extrair_fixo):
         """"ok" no meio de uma emissão é confirmação, não simpatia.
 
         É a razão de o T0 entrar DEPOIS da confirmação e da coleta: um "beleza"
         respondido com "que bom ter ajudado" deixaria a nota pendurada.
         """
-        from apps.core.orchestrator import DadosNotaExtraidos
-
-        monkeypatch.setattr(
-            Orquestrador,
-            "_extrair_dados_nota",
-            lambda self, m: DadosNotaExtraidos(
-                tomador="Joao", valor=100.0, descricao_servico="consultoria"
-            ),
-        )
+        extrair_fixo(tomador="Joao", valor=100.0, descricao_servico="consultoria")
         agente = Orquestrador()
         agente.processar("emite nota de 100 pro Joao, consultoria", cliente)
 

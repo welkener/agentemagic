@@ -183,6 +183,192 @@ def uso_da_escada(usuario, dias: int = 30) -> UsoDaEscada:
 
 
 # ---------------------------------------------------------------------------
+# Operação — o que o Sprint 2 passou a medir (DEC-08 item 2)
+# ---------------------------------------------------------------------------
+# Critérios de aceite da plataforma, para a tela dizer se passou ou não em vez
+# de mostrar um número solto que só quem leu a spec sabe interpretar.
+CUSTO_MAXIMO_POR_CLIENTE_MES = Decimal("0.60")
+P95_MAXIMO_MS = 8000
+
+
+@dataclass
+class ConsumoDoMes:
+    """Quanto o atendimento por IA custou neste mês, e para quem.
+
+    `por_cliente` é a lista que responde ao critério de aceite — o teto é por
+    cliente/mês, então a média esconde exatamente o caso que interessa: uma
+    empresa que fala muito puxa a conta sozinha sem mover a média de mil.
+    """
+
+    total_brl: Decimal
+    chamadas: int
+    tokens_entrada: int
+    tokens_saida: int
+    por_modelo: list[tuple[str, Decimal, int]]
+    por_cliente: list[tuple[str, Decimal]]
+    clientes_ativos: int
+
+    @property
+    def custo_medio_por_cliente(self) -> Decimal:
+        if not self.clientes_ativos:
+            return Decimal("0")
+        return (self.total_brl / self.clientes_ativos).quantize(Decimal("0.0001"))
+
+    @property
+    def pior_cliente(self) -> "tuple[str, Decimal] | None":
+        return self.por_cliente[0] if self.por_cliente else None
+
+    @property
+    def dentro_do_criterio(self) -> bool:
+        """Verdadeiro só se **nenhum** cliente passou do teto.
+
+        Média abaixo do teto com um cliente acima não é critério atingido: é
+        critério atingido em quase todo mundo, que é uma frase diferente.
+        """
+        pior = self.pior_cliente
+        return pior is None or pior[1] <= CUSTO_MAXIMO_POR_CLIENTE_MES
+
+
+def _inicio_do_mes():
+    agora = timezone.now()
+    return agora.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+def consumo_do_mes(usuario) -> ConsumoDoMes:
+    """Consumo de IA da competência corrente, escopado ao escritório."""
+    from apps.observabilidade.models import ConsumoLLM
+
+    linhas = _escopar(
+        ConsumoLLM.objects.filter(momento__gte=_inicio_do_mes()),
+        usuario,
+        campo="escritorio",
+    )
+
+    totais = linhas.aggregate(
+        total=Coalesce(Sum("custo_brl"), Decimal("0"), output_field=DecimalField(max_digits=14, decimal_places=6)),
+        entrada=Coalesce(Sum("tokens_entrada"), 0),
+        saida=Coalesce(Sum("tokens_saida"), 0),
+        chamadas=Count("id"),
+    )
+
+    por_modelo = [
+        (linha["modelo"], linha["custo"], linha["quantas"])
+        for linha in linhas.values("modelo")
+        .annotate(
+            custo=Coalesce(Sum("custo_brl"), Decimal("0"), output_field=DecimalField(max_digits=14, decimal_places=6)),
+            quantas=Count("id"),
+        )
+        .order_by("-custo")
+    ]
+
+    # `cliente__isnull=False`: a chamada do roteador que roda antes de a empresa
+    # estar resolvida é custo do escritório e de ninguém em particular. Somá-la a
+    # um cliente qualquer inventaria atribuição.
+    por_cliente = [
+        (linha["cliente__nome"], linha["custo"])
+        for linha in linhas.filter(cliente__isnull=False)
+        .values("cliente__nome")
+        .annotate(
+            custo=Coalesce(Sum("custo_brl"), Decimal("0"), output_field=DecimalField(max_digits=14, decimal_places=6))
+        )
+        .order_by("-custo")[:20]
+    ]
+
+    ativos = (
+        _escopar(Cliente.objects.filter(ativo=True), usuario, campo="escritorio").count()
+    )
+
+    return ConsumoDoMes(
+        total_brl=totais["total"],
+        chamadas=totais["chamadas"],
+        tokens_entrada=totais["entrada"],
+        tokens_saida=totais["saida"],
+        por_modelo=por_modelo,
+        por_cliente=por_cliente,
+        clientes_ativos=ativos,
+    )
+
+
+def latencia_p95(usuario, dias: int = 30) -> "int | None":
+    """p95 do tempo de resposta, em ms — o número do gate do Sprint 2.
+
+    Lido da trilha e não da tabela de consumo porque o percentil precisa incluir
+    **toda** mensagem: as resolvidas pelo T0 custam zero e respondem em
+    milissegundos, e calcular o p95 só sobre as que chamaram o modelo daria um
+    número pior que a experiência real — pessimista errado é tão inútil quanto
+    otimista errado.
+
+    Devolve None enquanto não houver amostra suficiente. Percentil sobre cinco
+    mensagens é o maior valor de cinco, não um percentil.
+
+    ⚠ Custo: percorre os eventos do período em Python, porque `latencia_ms` mora
+    dentro do JSON da trilha. É aceitável no volume atual e é o primeiro lugar
+    a doer quando um escritório passar de algumas dezenas de milhares de
+    mensagens por mês — a saída então é uma coluna própria, não um índice.
+    """
+    desde = timezone.now() - timedelta(days=dias)
+    eventos = _escopar(
+        Auditoria.objects.filter(
+            evento="orquestrador_mensagem_processada", criado_em__gte=desde
+        ),
+        usuario,
+    )
+    amostras = sorted(
+        valor
+        for dados in eventos.values_list("dados", flat=True).iterator(chunk_size=1000)
+        if isinstance(valor := (dados or {}).get("latencia_ms"), int)
+    )
+    if len(amostras) < MINIMO_PARA_MEDIR:
+        return None
+    # Método do percentil mais próximo (nearest-rank): sem interpolação, o valor
+    # devolvido é uma latência que de fato aconteceu — e um número real é mais
+    # fácil de investigar do que uma média ponderada entre duas medições.
+    posicao = max(int(0.95 * len(amostras) + 0.5) - 1, 0)
+    return amostras[posicao]
+
+
+def ferramentas_mais_usadas(usuario, dias: int = 30) -> list[tuple[str, int]]:
+    """Quais capacidades os clientes de fato usam, e quantas vezes.
+
+    É o "tool calls por tenant" que a DEC-08 pede — lido da trilha, e não do
+    contador do provedor, porque o número que interessa não é quantas vezes o
+    modelo chamou uma função: é **o que a carteira pede**. Ferramenta cara e
+    nunca usada é candidata a sair do prompt (menos token em toda mensagem);
+    assunto que só aparece como `desconhecida` é candidato a virar ferramenta.
+    """
+    desde = timezone.now() - timedelta(days=dias)
+    eventos = _escopar(
+        Auditoria.objects.filter(evento="ferramenta_executada", criado_em__gte=desde),
+        usuario,
+    )
+    contagem: dict[str, int] = {}
+    for dados in eventos.values_list("dados", flat=True).iterator(chunk_size=1000):
+        nome = (dados or {}).get("ferramenta")
+        if nome:
+            contagem[nome] = contagem.get(nome, 0) + 1
+    return sorted(contagem.items(), key=lambda par: (-par[1], par[0]))
+
+
+def solicitacoes_abertas(usuario, limite: int = 50) -> list:
+    """Chamados e pedidos de atendimento ainda não resolvidos.
+
+    Aparecem na tela Hoje porque foram abertos com uma promessa: o cliente
+    ouviu "a equipe já está vendo". Fila que não aparece transforma essa frase
+    em mentira, e o cliente descobre isso pelo silêncio.
+    """
+    from apps.atendimento.models import Solicitacao
+
+    return list(
+        _escopar(
+            Solicitacao.objects.exclude(estado=Solicitacao.Estado.RESOLVIDA),
+            usuario,
+        )
+        .select_related("cliente", "usuario")
+        .order_by("criado_em")[:limite]
+    )
+
+
+# ---------------------------------------------------------------------------
 # Carteira — uma linha por cliente
 # ---------------------------------------------------------------------------
 @dataclass

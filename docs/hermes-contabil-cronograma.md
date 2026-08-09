@@ -28,15 +28,25 @@ O calendário principal mantém essa premissa, com sprints de 2 semanas. Se a
 execução for de **um dev só** — que é o cenário real do que foi entregue até
 aqui —, o mesmo escopo cabe em sprints de 3 semanas:
 
-| Sprint | Entrega | Time de 3 (2 sem) | Dev solo (3 sem) |
-|---|---|---|---|
-| S1 | Isolamento de 3 níveis | 10–21/ago | 10–28/ago |
-| S2 | Tool registry + medição | 24/ago–04/set | 31/ago–18/set |
-| **S2b** | **Grimório como aplicação** | **07–18/set** | **21/set–09/out** |
+| Sprint | Entrega | Time de 3 (2 sem) | Dev solo (3 sem) | Real |
+|---|---|---|---|---|
+| S1 | Isolamento de 3 níveis | 10–21/ago | 10–28/ago | ✅ 09/ago |
+| S2 | Tool registry + medição | 24/ago–04/set | 31/ago–18/set | ✅ 09/ago |
+| **S2b** | **Grimório como aplicação** | **07–18/set** | **21/set–09/out** | ✅ 09/ago |
 | S3 | Rotina contábil (guias, obrigações) | 21/set–02/out | 12–30/out |
 | S4 | Pipeline de documento | 05–16/out | 02–20/nov |
 | S5 | ERPAdapter + reconciliação | 19–30/out | 23/nov–11/dez |
 | S6 | Contas a pagar, proativo, billing | 02–13/nov | 04–22/jan/2027 |
+
+**A coluna "Real" precisa de uma ressalva, senão engana.** Os três primeiros
+sprints fecharam muito à frente das duas estimativas, e a causa não é
+produtividade: parte grande do escopo **já estava escrita** quando o cronograma
+foi montado (registry, RLS, motor fiscal, `painel/metricas.py`), e o plano
+contava esse trabalho como se fosse futuro. O que sobrou de S3 em diante é
+majoritariamente código que não existe — e ali as estimativas do §1 continuam
+valendo. Ler a coluna como velocidade projetada levaria a prometer o S4 para
+agosto, e ele depende de OCR, storage por tenant e fila de revisão humana, que
+não têm nada pronto.
 
 **O que a diferença de capacidade realmente muda.** No cenário solo o S6 cai
 depois do recesso, em jan/2027. Isso é aceitável e vale dizer por quê: a data
@@ -56,9 +66,9 @@ assina e um que ele devolve.
 
 ```
 Ago              Set              Out              Nov            Jan/27
-S1  ████          Isolamento de 3 níveis: usuario + RLS + tool registry + T0
-S2     ████       Tool registry + SessionContext + medição por tenant
-S2b       ████    Grimório: aplicação própria (Hoje, Carteira, Ficha)
+S1  ██✅          Isolamento de 3 níveis: usuario + RLS + tool registry + T0
+S2   ██✅         Tool registry + SessionContext + medição por tenant
+S2b  ██✅         Grimório: aplicação própria (Hoje, Carteira, Ficha, Operação)
 S3           ████ Rotina contábil: guias, obrigações, retenções
 S4              ████ Pipeline de documento (OCR → revisão humana)
 S5                 ████ ERPAdapter: ArquivoAdapter + reconciliação + DLQ
@@ -158,56 +168,118 @@ não previstas):
 
 ---
 
-### Sprint 2 — Tool registry e medição por tenant (24/ago–04/set)
+### Sprint 2 — Tool registry e medição por tenant (24/ago–04/set) — ✅ **fechado em 09/ago**
 
-- [ ] **`SessionContext`** formal: tenant, cliente, usuário, canal, resolvido no
-      webhook. Único caminho de escopo para dentro das tools.
-- [ ] **Tool registry**: as 9 intenções atuais do `if/elif` do orquestrador viram
-      tools com schema, sem identificador de escopo.
-- [ ] System prompt + definição de tools **por tenant** (cacheáveis).
-- [ ] Tools de leitura sem dependência de ERP: `consultar_nota`,
-      `consultar_faturamento_acumulado` (aproveita `fiscal/teto_mei.py`),
-      `agendar_atendimento`, `abrir_chamado`.
-- [ ] **Medição por tenant** (DEC-08): tokens, custo, latência, tool calls, erro.
-- [ ] **Limite de gasto por tenant com degradação para T1** antes de cortar.
+Fechou junto com o S1 porque o S2b (Grimório) já tinha saído adiantado em
+`de7d8a0`, e a tela que o S2 alimenta precisava existir para a medição não ser
+invisível. O que restava era todo o resto — e saiu inteiro.
 
-**Gate S2** — teste de registry passa com o registry real; custo por cliente/mês
-**medido**, não estimado; p95 fora de pico < 8s.
+- [x] **`SessionContext`** formal — `apps/agents/contexto.py`, congelado,
+      montado no webhook (`channel_whatsapp/pipeline.py`) a partir do número que
+      **recebeu** (tenant), do número que **escreveu** (pessoa) e da
+      desambiguação (empresa). Nenhum dos três sai do texto da mensagem.
+      Confere a fronteira de tenant na construção, não no uso.
+- [x] **Tool registry** — `apps/agents/ferramentas/`. As 9 intenções do
+      `if/elif` viraram ferramentas registradas; o fluxo da nota saiu do
+      orquestrador para `agente_nf/conversa.py`. O orquestrador ficou com
+      sessão, continuações, escada de modelo e despacho.
+- [x] **Um tier, um lugar** — conferido em `ferramentas.executar` e em lugar
+      nenhum mais, com `_INTENCOES_VALIDAS` derivado do catálogo em vez de
+      escrito à mão (era a lista que já divergiu em produção em 26/jul).
+- [x] **System prompt + schema por tenant** (`apps/agents/prompt.py`), os dois
+      **gerados da mesma lista** e cacheados por combinação de ferramentas. O
+      `Literal` do roteador é restrito ao que aquele cliente pode executar — o
+      modelo fica *impedido* de devolver o que não pode, em vez de instruído a
+      não tentar.
+- [x] **Tools de leitura sem ERP**: `consultar_nota` (já existia, virou tool),
+      `consultar_faturamento_acumulado` (usa `fiscal/teto_mei.py`),
+      `abrir_chamado` e `agendar_atendimento` — as duas com `apps/atendimento`
+      e fila visível na tela Hoje.
+- [x] **Medição por tenant** — `observabilidade.ConsumoLLM`: tokens (incluindo
+      os servidos do cache do provedor), custo em reais, latência, requisições,
+      tool calls e erro, uma linha por chamada ao modelo. Preços em `settings`
+      (tabela do Groq conferida em 09/ago), cotação configurável.
+- [x] **Teto de gasto com degradação** — `observabilidade/orcamento.py`:
+      abaixo de 80% normal; entre 80% e 100% a **extração** cai para o modelo
+      barato; acima de 100% nenhuma chamada ao modelo. Em nenhum dos três o
+      atendimento para.
+- [x] **Tela Operação no Grimório** — custo do mês, custo por empresa contra o
+      critério de R$ 0,60, p95 e taxa de T0.
+
+**Gate S2**
+- [x] teste de registry passa com o registry **real** — e ganhou o outro lado da
+      DEC-05: nenhuma ferramenta recebe escopo por **parâmetro**, não só por
+      schema (`tests/test_ferramentas_e_contexto.py`);
+- [ ] **custo por cliente/mês medido** — o mecanismo existe e a tela mostra;
+      o número depende de tráfego real, como o T0 do S1;
+- [ ] **p95 fora de pico < 8s** — instrumentado (`latencia_ms` em toda mensagem,
+      `metricas.latencia_p95`), aguardando volume: percentil só é calculado a
+      partir de 20 mensagens.
+
+**O que o S2 mudou e não estava previsto:**
+
+- **`cancelar_nota` não pode ser travado pelo tier.** Centralizar a conferência
+  aplicou o Tier 3 do catálogo à ferramenta — e ela não cancela, **pede** o
+  cancelamento ao contador. O efeito teria sido o perfil comum ouvindo "não
+  liberado" ao tentar avisar que uma nota saiu errada. O catálogo continua
+  dizendo 3 (o *ato* é destrutivo); a ferramenta declara `tier_conferido=False`
+  com o motivo ao lado. A trava do cancelamento é do fluxo, não do tier.
+- **A camada da mensagem passou a ser medida por consumo, não por ramo.**
+  Confirmação e coleta não passam pelo roteador, então não tinham camada e
+  contavam como `t1` por omissão — o que deixava a taxa de T0 pessimista. Agora
+  a pergunta é a que interessa: *esta mensagem custou um modelo?*
+  (`llm.chamadas_feitas`, um `ContextVar`).
+- **Chamado que ninguém lê é pior que chamado nenhum.** As duas tools de escrita
+  respondem "a equipe já está vendo"; sem fila do outro lado a frase é falsa e o
+  cliente descobre pelo silêncio. Por isso `apps/atendimento` nasceu com tela, e
+  não só com modelo.
+- **Texto de titular em tabela mutável não usa crypto-shredding.** A trilha é
+  append-only e por isso cifra; `Solicitacao` é mutável, então a eliminação
+  apaga o texto de fato. O que não podia era o direito de eliminação passar a
+  valer só em parte porque o dado nasceu numa tabela nova.
 
 ---
 
-### Sprint 2b — Grimório como aplicação própria (07–18/set)
+### Sprint 2b — Grimório como aplicação própria (07–18/set) — ✅ **fechado em 09/ago**
 
 Executa a DEC-12. **Não é retrabalho de UI**: é a superfície onde o contador
 trabalha, e as três telas que os sprints seguintes exigem (revisão de OCR, DLQ,
 consumo) nascem dentro dela em vez de virarem mais páginas penduradas no admin.
 
-- [ ] **Casca da aplicação**: URLs próprias em `apps/painel`, layout próprio,
-      Tailwind com build próprio (CLI standalone, sem Node no servidor),
-      HTMX para atualização parcial. Marca do tenant já vem de
-      `painel/branding.py`.
-- [ ] **Mixin de escopo de tenant para views**, fora do admin — e **teste
-      dedicado no primeiro dia**: sair do admin é sair de `EscopoEscritorioMixin`,
-      e é aí que o isolamento se perde sem ninguém notar.
-- [ ] **Hoje** (home): o que exige o contador agora — nota rejeitada, certificado
-      vencendo, MEI perto do teto, cliente sem responder. Ação no lugar onde o
-      problema aparece.
-- [ ] **Carteira**: uma linha por empresa, com drill-down.
-- [ ] **Ficha da empresa**: linha do tempo única — conversas, notas, documentos,
-      guias, obrigações, integrações.
-- [ ] **Operação**: consumo e custo por tenant (a tela que o S2 alimenta), o que
-      o agente não entendeu.
-- [ ] Admin permanece como **backoffice** da equipe Magic BI, escopado como hoje.
+Saiu adiantado em `de7d8a0`; a tela Operação fechou junto com o S2, que é quem
+a alimenta.
+
+- [x] **Casca da aplicação**: URLs próprias em `apps/painel` (`/grimorio/`),
+      layout e CSS próprios. Marca do tenant vem de `painel/branding.py` — e um
+      teste varre os templates atrás de nome de cliente escrito no código.
+      **Sem Tailwind e sem HTMX**: o CSS escrito à mão cobriu o que as telas
+      pedem, e nenhuma delas precisou de atualização parcial. Entram quando
+      houver tela que os exija, não antes.
+- [x] **Mixin de escopo de tenant para views**, fora do admin — três camadas
+      independentes (`EscopoGrimorioMixin`, `metricas._escopar`, RLS), com um
+      teste que escreve uma view errada de propósito para provar que a terceira
+      segura sozinha.
+- [x] **Hoje** (home): o que exige o contador agora — e, desde o S2, também os
+      chamados abertos pelos clientes no WhatsApp.
+- [x] **Carteira**: uma linha por empresa, com drill-down e filtro por situação.
+- [x] **Ficha da empresa**: linha do tempo, integrações e quem fala pela empresa.
+- [x] **Operação**: consumo, custo por empresa contra o critério de aceite, p95
+      e taxa de T0. *"O que o agente não entendeu" fica para o S3*, junto com o
+      resto da rotina contábil — hoje a trilha registra, a tela ainda não lista.
+- [x] Admin permanece como **backoffice** da equipe Magic BI, escopado como hoje.
 
 ✅ **Reusado sem reescrita:** `painel/metricas.py` (317 linhas testadas — séries
 mensais, carteira, integrações, documentos, radar de teto), `painel/apresentacao.py`,
 `painel/branding.py`.
 
 **Gate S2b**
-- O contador cumpre um dia de trabalho **sem abrir o `/admin/`**;
-- teste prova que uma view nova sem o mixin não devolve dado de outro tenant;
-- as telas renderizam certo em screenshot real, não só em teste (as cinco
-  armadilhas de 27/jul não quebraram nenhum teste — só apareceram na imagem).
+- [ ] O contador cumpre um dia de trabalho **sem abrir o `/admin/`** — falta o
+      que só o uso diz. Sabe-se de uma lacuna: resolver um chamado ainda leva
+      para o admin, porque o Grimório é somente leitura por decisão.
+- [x] teste prova que uma view nova sem o mixin não devolve dado de outro tenant
+      (`tests/test_grimorio.py`);
+- [x] as telas renderizam certo em screenshot real, não só em teste (as cinco
+      armadilhas de 27/jul não quebraram nenhum teste — só apareceram na imagem).
 
 ---
 
@@ -322,13 +394,13 @@ Roda depois do S6, sem feature nova, medindo os critérios de aceite (§5).
 | Critério | Hoje | Fecha em |
 |---|---|---|
 | 200 tentativas cross-tenant por prompt injection, 0 vazamentos | Isolamento entre escritórios testado (14 casos); falta o adversarial e o 3º nível | **S1** |
-| Nenhum schema de tool com identificador de escopo | Verdade por construção, **não verificada** | **S1** |
+| Nenhum schema de tool com identificador de escopo | ✅ verificado no import (S1) — e, desde o S2, também na **assinatura** das ferramentas | **S1** |
 | Escopo de tenant vale fora do admin | Não existe superfície fora do admin ainda | **S2b** |
 | Contador trabalha um dia sem abrir o `/admin/` | Não | **S2b** |
 | Nenhuma nota sem confirmação registrada em `confirmacoes` | Confirmação existe e é auditada; tabela consultável, não | **S3** |
-| Custo de LLM por cliente/mês < R$ 0,60 | **Não medido** | S2 mede · S6 comprova |
+| Custo de LLM por cliente/mês < R$ 0,60 | **Instrumentado, sem tráfego** — `ConsumoLLM` + tela Operação | S2 mede · S6 comprova |
 | Resolução sem humano ≥ 60% | Não medido | T-Piloto |
-| p95 < 8s fora de pico, < 15s em pico | Não medido | S2 (fora de pico) · T-Piloto (pico) |
+| p95 < 8s fora de pico, < 15s em pico | **Instrumentado, sem tráfego** — `latencia_ms` em toda mensagem | S2 (fora de pico) · T-Piloto (pico) |
 
 ---
 

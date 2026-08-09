@@ -68,6 +68,23 @@ class Escritorio(models.Model):
         help_text="Token permanente da Cloud API do escritório, cifrado em repouso.",
     )
 
+    # --- Teto de gasto com IA (DEC-08 item 3) ------------------------------
+    # Vazio = sem teto, e esse é o padrão de propósito: ligar um limite por
+    # omissão faria escritórios que já operam pararem de responder no dia do
+    # deploy. A decisão de limitar é de quem paga a conta.
+    limite_gasto_mensal_brl = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=(
+            "Teto mensal de gasto com IA deste escritório, em reais. Acima de 80% "
+            "o assistente passa a usar o modelo barato na extração de campos; "
+            "acima de 100% ele responde só pelo determinístico. Em nenhum dos "
+            "casos o atendimento para. Vazio = sem teto."
+        ),
+    )
+
     atualizado_em = models.DateTimeField(auto_now=True)
 
     class Meta:

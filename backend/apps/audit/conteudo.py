@@ -29,7 +29,22 @@ from django.utils import timezone
 # cifradas — o resto (nome do evento, id da intenção, código de erro) precisa
 # continuar legível para a trilha servir de auditoria.
 CAMPOS_PESSOAIS = frozenset(
-    {"texto", "mensagem", "resposta", "telefone", "tomador", "descricao_servico"}
+    {
+        "texto",
+        "mensagem",
+        "resposta",
+        "telefone",
+        "tomador",
+        "descricao_servico",
+        # Número de celular sob outros nomes. `telefone` já estava aqui; estes
+        # três entraram no Sprint 2, quando o contexto passou a levar o número de
+        # quem escreveu para dentro da trilha (`SessionContext.para_trilha`). O
+        # dado é o mesmo — cifrar um e deixar os outros em claro protegeria o
+        # nome do campo, não a pessoa.
+        "wa_id",
+        "wa_id_sessao",
+        "wa_id_atual",
+    }
 )
 
 MARCA_CIFRADO = "__cifrado__"
@@ -135,14 +150,37 @@ def revelar(dados: dict, cliente) -> dict:
     return {**dados, **revelados}
 
 
+def _apagar_conteudo_mutavel(cliente) -> None:
+    """Apaga o texto do titular nas tabelas que NÃO são append-only.
+
+    O crypto-shredding existe porque a trilha é imutável — mudar `dados` mudaria
+    o hash. Onde essa restrição não vale, cifrar e jogar a chave fora seria
+    complicação sem ganho: apagar o texto é mais simples, mais verificável e não
+    deixa criptograma nenhum para trás.
+
+    Hoje é uma tabela só (`atendimento.Solicitacao`). Toda tabela nova que
+    guardar texto escrito pelo titular precisa entrar aqui — a alternativa
+    silenciosa é o direito de eliminação passar a valer só em parte, sem que
+    nada acuse.
+    """
+    from apps.atendimento.models import Solicitacao
+
+    Solicitacao.objects.filter(cliente=cliente).update(
+        descricao="", assunto=CONTEUDO_ELIMINADO
+    )
+
+
 def eliminar_conteudo_do_titular(cliente) -> int:
     """Destrói a chave do titular. Devolve quantas linhas ficam ilegíveis.
 
-    Não apaga nada: as linhas continuam lá, a cadeia continua verificando, e o
-    conteúdo pessoal deixa de ser recuperável. É a eliminação possível num
-    sistema cuja trilha é imutável por exigência fiscal.
+    Na trilha não apaga nada: as linhas continuam lá, a cadeia continua
+    verificando, e o conteúdo pessoal deixa de ser recuperável. É a eliminação
+    possível num sistema cuja trilha é imutável por exigência fiscal. Nas tabelas
+    mutáveis o texto é apagado de fato — ver `_apagar_conteudo_mutavel`.
     """
     from apps.audit.models import Auditoria
+
+    _apagar_conteudo_mutavel(cliente)
 
     registro = ChaveConteudo.objects.filter(cliente=cliente).first()
     if registro is None or registro.destruida:

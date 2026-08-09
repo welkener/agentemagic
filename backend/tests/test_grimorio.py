@@ -28,6 +28,7 @@ HOJE = "/grimorio/"
 CARTEIRA = "/grimorio/carteira/"
 DOCUMENTOS = "/grimorio/documentos/"
 INTEGRACOES = "/grimorio/integracoes/"
+OPERACAO = "/grimorio/operacao/"
 
 
 @pytest.fixture
@@ -142,6 +143,62 @@ def test_cada_tela_mostra_o_proprio_e_esconde_o_vizinho(client, duas_carteiras, 
     corpo = resposta.content.decode()
     assert cliente_a.nome in corpo, f"{url}: sumiu o dado do próprio escritório"
     assert cliente_b.nome not in corpo, f"{url}: VAZOU dado do escritório vizinho"
+
+
+@pytest.mark.django_db
+def test_operacao_nao_soma_o_consumo_do_vizinho(client, duas_carteiras):
+    """A tela de Operação é a única que mostra dinheiro do escritório.
+
+    Um agregado é justamente onde o vazamento passa despercebido: uma listagem
+    errada mostra o nome do cliente do concorrente e alguém nota; um total
+    errado só mostra um número maior.
+    """
+    from decimal import Decimal
+
+    from apps.observabilidade.models import ConsumoLLM
+
+    a, b, cliente_a, cliente_b = duas_carteiras
+    with rls.escopo_irrestrito():
+        for escritorio, cliente, custo in ((a, cliente_a, "0.10"), (b, cliente_b, "7.77")):
+            ConsumoLLM.objects.create(
+                escritorio=escritorio,
+                cliente=cliente,
+                etapa=ConsumoLLM.Etapa.ROTEADOR,
+                modelo="groq:llama-3.1-8b-instant",
+                custo_brl=Decimal(custo),
+            )
+    client.force_login(_contador(a, "contador.alfa"))
+
+    corpo = client.get(OPERACAO).content.decode()
+    assert cliente_a.nome in corpo
+    assert cliente_b.nome not in corpo
+    assert "7,77" not in corpo, "o total incluiu o consumo do escritório vizinho"
+
+
+@pytest.mark.django_db
+def test_operacao_avisa_quando_o_teto_de_gasto_foi_atingido(client, duas_carteiras):
+    """O corte é invisível para a empresa cliente e visível para o contador —
+    é aqui que alguém pode agir sobre ele."""
+    from decimal import Decimal
+
+    from apps.observabilidade.models import ConsumoLLM
+
+    a, _, cliente_a, _ = duas_carteiras
+    with rls.escopo_irrestrito():
+        a.limite_gasto_mensal_brl = Decimal("1.00")
+        a.save()
+        ConsumoLLM.objects.create(
+            escritorio=a,
+            cliente=cliente_a,
+            etapa=ConsumoLLM.Etapa.ROTEADOR,
+            modelo="groq:llama-3.1-8b-instant",
+            custo_brl=Decimal("2.00"),
+        )
+    client.force_login(_contador(a, "contador.alfa"))
+
+    corpo = client.get(OPERACAO).content.decode()
+    assert "teto do mês foi atingido" in corpo
+    assert "continua funcionando" in corpo
 
 
 @pytest.mark.django_db

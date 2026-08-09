@@ -69,6 +69,20 @@ def moeda(valor) -> str:
     return "R$ " + inteiro.replace(",", "@").replace(".", ",").replace("@", ".")
 
 
+def moeda_fina(valor, casas: int = 4) -> str:
+    """Valor em reais com casas suficientes para não virar zero.
+
+    O custo de IA por cliente/mês é da ordem de centavos, às vezes de frações
+    deles. Formatado com duas casas, "R$ 0,00" seria a resposta para quase toda
+    linha da tela de Operação — e um zero na coluna de custo lê como "de graça",
+    que é a conclusão errada bem no número que sustenta o preço do produto.
+    """
+    if valor is None:
+        return "—"
+    inteiro = f"{float(valor):,.{casas}f}"
+    return "R$ " + inteiro.replace(",", "@").replace(".", ",").replace("@", ".")
+
+
 def sparkline(valores, largura: int = 560, altura: int = 150, margem: int = 12) -> dict:
     """Caminhos SVG de uma série — sem biblioteca de gráfico.
 

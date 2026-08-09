@@ -34,6 +34,11 @@ def processar_mensagem_evolution(
         transcrever_fn=lambda mid: _transcrever_audio(mid, escritorio),
         media_id=media_id,
         escritorio=escritorio,
+        # O canal fica no contexto e, daí, no chamado que o cliente abrir. A
+        # Evolution é canal de TESTE (ver apps/channel_evolution/apps.py) —
+        # confundi-la com produção na trilha faria um chamado de ensaio parecer
+        # um pedido real de cliente na fila do contador.
+        canal="evolution",
     )
 
 

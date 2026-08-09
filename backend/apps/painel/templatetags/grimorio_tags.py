@@ -18,6 +18,13 @@ def moeda(valor):
 
 
 @register.filter
+def moeda_fina(valor):
+    """Como `moeda`, com quatro casas — para custo de IA, que vive em frações
+    de centavo e apareceria como "R$ 0,00" na formatação normal."""
+    return apresentacao.moeda_fina(valor)
+
+
+@register.filter
 def cnpj(valor):
     """`44555666000154` → `44.555.666/0001-54`.
 

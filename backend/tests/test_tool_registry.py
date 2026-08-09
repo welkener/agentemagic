@@ -80,7 +80,9 @@ def test_extracao_da_nota_nao_pede_cnpj_nem_cnae_ao_modelo():
     escolher em nome de quem a nota sai — e é o tipo de mudança que parece
     conveniente na hora de escrever.
     """
-    propriedades = orchestrator.DadosNotaExtraidos.model_json_schema()["properties"]
+    from apps.agents.agente_nf.conversa import DadosNotaExtraidos
+
+    propriedades = DadosNotaExtraidos.model_json_schema()["properties"]
     assert set(propriedades) == {"tomador", "valor", "descricao_servico"}
 
 

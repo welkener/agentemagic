@@ -28,10 +28,19 @@ CATALOGO_TIERS: dict[str, int] = {
     "consultar_contas_pagar": 0,
     "consultar_fluxo_caixa": 0,
     "consultar_nota": 0,
+    # Leitura do próprio faturamento contra o teto do MEI. Tier 0 porque não
+    # muda nada e o dado é do próprio cliente — e porque avisar cedo sobre
+    # estouro de teto é justamente o que evita o desenquadramento retroativo.
+    "consultar_faturamento_acumulado": 0,
     # Tier 1 — rascunho e emissão
     "criar_rascunho": 1,
     "criar_rascunho_pedido": 1,
     "emitir_nota": 1,
+    # Escrevem, mas sem efeito fiscal nem financeiro, e o contador desfaz num
+    # clique. Tier 1 e não 0 porque criam registro que alguém precisa tratar:
+    # quem não pode nem abrir chamado é quem ainda está sendo configurado.
+    "abrir_chamado": 1,
+    "agendar_atendimento": 1,
     # Tier 2 — alterações
     "alterar_pedido": 2,
     "alterar_cadastro": 2,

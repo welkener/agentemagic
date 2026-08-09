@@ -21,18 +21,28 @@ ser indistinguíveis.
 """
 import pytest
 
+from apps.agents import prompt as prompt_tenant
+from apps.agents.agente_nf.conversa import DadosNotaExtraidos
 from apps.agents.agente_nf.models import Intencao
-from apps.core.orchestrator import (
-    _PROMPT_ROTEADOR,
-    DadosNotaExtraidos,
-    IntencaoClassificada,
-    Orquestrador,
-)
+from apps.core.orchestrator import Orquestrador
 
 
 class _Saida:
     def __init__(self, output):
         self.output = output
+
+    def usage(self):
+        """O medidor de consumo lê isto — sem ele, toda chamada dublada
+        gravaria zero token e o teste de custo passaria por engano."""
+        from pydantic_ai.usage import RunUsage
+
+        return RunUsage(input_tokens=120, output_tokens=8, requests=1)
+
+
+def _contexto_de(cliente):
+    from apps.agents.contexto import SessionContext
+
+    return SessionContext.da_conversa(cliente=cliente)
 
 
 # O orquestrador usa DOIS agentes Groq (roteador e extrator de campos), e o
@@ -52,7 +62,15 @@ class _AgenteDublado:
     chamadas_ao_roteador: int = 0
 
     def __init__(self, modelo, output_type=None, system_prompt=None, **kwargs):
-        if output_type is IntencaoClassificada:
+        # A partir do Sprint 2 o schema do roteador é **gerado por tenant**
+        # (`agents/prompt.py`), então não há mais uma classe fixa para comparar.
+        # O que continua fixo é o schema da extração — e "não é a extração" é
+        # justamente a definição de roteador aqui.
+        self._e_extracao = output_type is DadosNotaExtraidos
+        self._output_type = output_type
+        if self._e_extracao:
+            self._resposta = _RESPOSTA_COMBINADA["extracao"]
+        else:
             type(self).chamadas_ao_roteador += 1
             type(self).ultima_construcao = {
                 "modelo": modelo,
@@ -60,16 +78,13 @@ class _AgenteDublado:
                 "system_prompt": system_prompt,
             }
             self._resposta = _RESPOSTA_COMBINADA["intencao"]
-        else:
-            self._resposta = _RESPOSTA_COMBINADA["extracao"]
-        self._output_type = output_type
 
     def run_sync(self, mensagem):
         if isinstance(self._resposta, Exception):
             raise self._resposta
-        if self._output_type is IntencaoClassificada:
-            return _Saida(IntencaoClassificada(intencao=self._resposta))
-        return _Saida(self._resposta)
+        if self._e_extracao:
+            return _Saida(self._resposta)
+        return _Saida(self._output_type(intencao=self._resposta))
 
 
 @pytest.fixture
@@ -81,6 +96,10 @@ def groq_dublado(monkeypatch, settings):
 
     monkeypatch.setattr(pydantic_ai, "Agent", _AgenteDublado)
     _AgenteDublado.chamadas_ao_roteador = 0
+    # Zerado junto: `ultima_construcao` é atributo de classe, e um teste que
+    # NÃO chega ao roteador estaria lendo a construção do teste anterior —
+    # passando por herança em vez de por comportamento.
+    _AgenteDublado.ultima_construcao = {}
 
     def responder(intencao, extracao=None):
         _RESPOSTA_COMBINADA["intencao"] = intencao
@@ -180,10 +199,14 @@ def test_prompt_do_roteador_descreve_todas_as_intencoes_do_schema(cliente, groq_
     groq_dublado("desconhecida")
     Orquestrador().processar("qualquer coisa", cliente)
 
-    prompt = _AgenteDublado.ultima_construcao["system_prompt"]
-    assert prompt == _PROMPT_ROTEADOR
+    construcao = _AgenteDublado.ultima_construcao
+    prompt = construcao["system_prompt"]
 
-    do_schema = set(IntencaoClassificada.model_fields["intencao"].annotation.__args__)
+    # O schema é gerado do catálogo e o prompt também — este teste é o que
+    # garante que os dois foram gerados da MESMA lista. Ferramenta que entrasse
+    # só num dos dois viraria intenção que o modelo pode devolver e não sabe
+    # quando usar, ou o contrário.
+    do_schema = set(construcao["output_type"].model_fields["intencao"].annotation.__args__)
     faltando = sorted(i for i in do_schema if i not in prompt)
     assert not faltando, f"intenções sem descrição no prompt do roteador: {faltando}"
 
@@ -191,18 +214,23 @@ def test_prompt_do_roteador_descreve_todas_as_intencoes_do_schema(cliente, groq_
 def test_prompt_desempata_o_par_que_mais_confunde():
     """As três intenções de nota usam quase as mesmas palavras — o prompt tem
     que dizer explicitamente o que as separa."""
-    assert "VERBO" in _PROMPT_ROTEADOR
-    assert "quero emitir minha nota" in _PROMPT_ROTEADOR  # o exemplo ambíguo
-    assert "escolha a CONSULTA" in _PROMPT_ROTEADOR  # viés seguro
+    regras = prompt_tenant._REGRAS
+    assert "VERBO" in regras
+    assert "quero emitir minha nota" in regras  # o exemplo ambíguo
+    assert "escolha a CONSULTA" in regras  # viés seguro
 
 
 @pytest.mark.django_db
 def test_roteador_usa_o_schema_tipado_e_o_modelo_barato(cliente, groq_dublado):
     groq_dublado("desconhecida")
-    Orquestrador().processar("oi", cliente)
+    # Mensagem ambígua de propósito: "oi" é resolvido pelo T0 e nunca chega ao
+    # roteador, então o teste passaria lendo a construção de outro teste.
+    Orquestrador().processar("e aí, como é que faz?", cliente)
 
     construcao = _AgenteDublado.ultima_construcao
-    assert construcao["output_type"] is IntencaoClassificada
+    assert construcao["output_type"] is prompt_tenant.schema_para(
+        _contexto_de(cliente)
+    )
     assert "llama-3.1-8b-instant" in construcao["modelo"]
 
 

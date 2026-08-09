@@ -91,7 +91,12 @@ TABELAS: dict[str, str] = {
     "security_codigo2fa": _POR_CLIENTE,
     "fiscal_seriedps": _POR_CLIENTE,
     "agente_nf_intencao": _POR_CLIENTE,
+    "atendimento_solicitacao": _POR_CLIENTE,
     "audit_chaveconteudo": _POR_CLIENTE,
+    # Consumo de IA pendura no escritório, não no cliente: `cliente_id` é nulo
+    # quando o roteador roda antes de a empresa estar resolvida, e quem paga a
+    # conta é o tenant de qualquer forma.
+    "observabilidade_consumollm": _POR_ESCRITORIO,
     # Auditoria aceita evento sem dono (`cliente_id` nulo) — número desconhecido
     # que escreveu para o canal, por exemplo. Esses são eventos de PLATAFORMA e
     # não podem carregar dado de tenant nenhum; quem chama `audit.registrar` sem

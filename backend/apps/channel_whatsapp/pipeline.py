@@ -15,6 +15,7 @@ from typing import Callable
 
 import structlog
 
+from apps.agents.contexto import SessionContext
 from apps.audit.services import registrar
 from apps.clients.models import Usuario
 from apps.core import desambiguacao
@@ -31,6 +32,7 @@ def processar(
     transcrever_fn: Callable[[str], str | None] | None = None,
     media_id: str | None = None,
     escritorio=None,
+    canal: str = "whatsapp",
 ) -> str:
     # O tenant vem do número/instância que RECEBEU a mensagem (resolvido na
     # view), não do remetente — então o telefone só é procurado dentro da
@@ -75,10 +77,26 @@ def processar(
 
     if resolucao.resposta is not None:
         resposta = resolucao.resposta
+    elif cliente is None:
+        # Número que não bate com usuário nenhum da carteira deste escritório.
+        # Não há contexto a montar — e é aqui, e não dentro do orquestrador, que
+        # isso fica visível: sem cliente não existe escopo, e sem escopo nenhuma
+        # ferramenta pode rodar.
+        resposta = Orquestrador().processar(texto, None)
     else:
-        resposta = Orquestrador().processar(
-            texto, cliente, message_id=message_id, wa_id=telefone
+        # O contexto é montado AQUI, no canal, e é o único caminho pelo qual
+        # escopo entra nas ferramentas (DEC-05). O escritório vem do número que
+        # RECEBEU; a pessoa, do número que escreveu; a empresa, da desambiguação.
+        # Nenhum dos três sai do texto da mensagem.
+        ctx = SessionContext.da_conversa(
+            cliente=cliente,
+            usuario=usuario,
+            escritorio=escritorio or cliente.escritorio,
+            canal=canal,
+            wa_id=telefone,
+            message_id=message_id,
         )
+        resposta = Orquestrador().processar(texto, ctx=ctx)
 
     enviado = enviar_fn(telefone, resposta)
     registrar(
