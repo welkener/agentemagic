@@ -272,6 +272,22 @@ a alimenta.
 mensais, carteira, integrações, documentos, radar de teto), `painel/apresentacao.py`,
 `painel/branding.py`.
 
+**O que faltou ao S2b e só apareceu depois** (10/ago/2026):
+
+- **Celular.** As cinco telas nunca tinham sido abertas numa tela estreita, e o
+  contador abre no telefone entre um cliente e outro. O que havia era um
+  `@media` que só deitava a barra lateral e a deixava rolando na horizontal —
+  "Integrações" e "Operação" ficavam escondidos atrás de um gesto que ninguém
+  adivinha, e a tabela cortava justo faturamento e teto. Agora o menu quebra em
+  linhas (nada escondido) e cada linha de tabela vira cartão com o rótulo da
+  coluna ao lado do valor. `tests/test_grimorio_celular.py` trava o contrato:
+  coluna nova sem `data-rotulo` quebra o teste, não o telefone.
+- **Uma armadilha de ferramenta que vale registrar**: o Edge headless no Windows
+  não respeita `--window-size` abaixo de ~500 px — pedi 390 e o viewport foi
+  496. Três rodadas de screenshot foram lidas como defeito de layout antes de
+  alguém medir. Para viewport real de celular, moldura com `<iframe width=390>`
+  e medição por script, não julgamento por imagem.
+
 **Gate S2b**
 - [ ] O contador cumpre um dia de trabalho **sem abrir o `/admin/`** — falta o
       que só o uso diz. Sabe-se de uma lacuna: resolver um chamado ainda leva

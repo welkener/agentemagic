@@ -89,9 +89,9 @@
             {% for n in ficha.notas %}
             <tr>
               <td class="secundario">{{ n.atualizado_em|date:"d/m/Y" }}</td>
-              <td>{{ n.payload.tomador|default:"—" }}</td>
-              <td class="num">{{ n.valor|moeda }}</td>
-              <td>
+              <td data-rotulo="Tomador">{{ n.payload.tomador|default:"—" }}</td>
+              <td class="num" data-rotulo="Valor">{{ n.valor|moeda }}</td>
+              <td data-rotulo="Estado">
                 {% if n.estado == "CONCLUIDO" and not n.cancelada %}
                   <span class="etiqueta etiqueta--success">emitida</span>
                 {% elif n.cancelada %}
@@ -104,7 +104,7 @@
                   <span class="etiqueta">{{ n.get_estado_display }}</span>
                 {% endif %}
               </td>
-              <td class="secundario">
+              <td class="secundario" data-rotulo="Protocolo">
                 {{ n.protocolo|default:"—" }}
                 {% if n.danfse_url and not n.cancelada %}<br><a href="{{ n.danfse_url }}">DANFSE</a>{% endif %}
               </td>

@@ -120,8 +120,8 @@ de aceite da plataforma (custo por cliente/mês e p95) aparecem como veredicto
         {% for modelo, custo, quantas in consumo.por_modelo %}
         <tr>
           <td>{{ modelo }}</td>
-          <td>{{ quantas }}</td>
-          <td>{{ custo|moeda_fina }}</td>
+          <td data-rotulo="Chamadas">{{ quantas }}</td>
+          <td data-rotulo="Custo no mês">{{ custo|moeda_fina }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -153,7 +153,7 @@ entendi" é candidato a virar capacidade.
       <thead><tr><th>Capacidade</th><th>Vezes</th></tr></thead>
       <tbody>
         {% for nome, vezes in ferramentas %}
-        <tr><td>{{ nome }}</td><td>{{ vezes }}</td></tr>
+        <tr><td>{{ nome }}</td><td data-rotulo="Vezes">{{ vezes }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -180,7 +180,7 @@ entendi" é candidato a virar capacidade.
         {% for nome, custo in consumo.por_cliente %}
         <tr>
           <td>{{ nome }}</td>
-          <td>
+          <td data-rotulo="Custo no mês">
             {{ custo|moeda_fina }}
             {% if custo > custo_maximo %}<span class="etiqueta etiqueta--warning">acima do teto</span>{% endif %}
           </td>

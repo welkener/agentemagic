@@ -36,22 +36,22 @@ operando não precisa de atenção.
         <tr>
           <td>
             <a class="principal" href="{% url 'grimorio:empresa' l.cliente.pk %}">{{ l.cliente.nome }}</a>
-            <div class="secundario">{{ l.cliente.cnpj|cnpj }}</div>
+            <div class="secundario nao-quebra">{{ l.cliente.cnpj|cnpj }}</div>
           </td>
-          <td>
+          <td data-rotulo="Certificado">
             {% if not l.certificado %}<span class="etiqueta etiqueta--warning">falta</span>
             {% elif l.certificado_vencido %}<span class="etiqueta etiqueta--danger">vencido</span>
             {% else %}<span class="etiqueta etiqueta--success">ok</span>{% endif %}
           </td>
-          <td>
+          <td data-rotulo="ERP">
             {% if l.credenciais_erp %}<span class="etiqueta etiqueta--success">{{ l.credenciais_erp|length }} conectado(s)</span>
             {% else %}<span class="etiqueta etiqueta--warning">falta</span>{% endif %}
           </td>
-          <td>
+          <td data-rotulo="WhatsApp">
             {% if l.sessao and l.sessao.status == "ATIVA" %}<span class="etiqueta etiqueta--success">ok</span>
             {% else %}<span class="etiqueta etiqueta--warning">falta</span>{% endif %}
           </td>
-          <td class="secundario">{{ l.pendencias|join:" · " }}</td>
+          <td class="secundario" data-rotulo="Pendências">{{ l.pendencias|join:" · " }}</td>
         </tr>
         {% empty %}
         <tr><td colspan="5">
@@ -77,12 +77,12 @@ operando não precisa de atenção.
         <tr>
           <td>
             <a class="principal" href="{% url 'grimorio:empresa' l.cliente.pk %}">{{ l.cliente.nome }}</a>
-            <div class="secundario">{{ l.cliente.cnpj|cnpj }}</div>
+            <div class="secundario nao-quebra">{{ l.cliente.cnpj|cnpj }}</div>
           </td>
-          <td class="secundario">
+          <td class="secundario" data-rotulo="Certificado vence em">
             {% if l.dias_para_vencer is not None %}{{ l.dias_para_vencer }} dia(s){% else %}—{% endif %}
           </td>
-          <td class="secundario">
+          <td class="secundario" data-rotulo="ERP">
             {% for c in l.credenciais_erp %}{{ c.integracao }}{% if not forloop.last %}, {% endif %}{% endfor %}
           </td>
         </tr>

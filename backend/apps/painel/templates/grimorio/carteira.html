@@ -52,11 +52,11 @@
             desalinhamento antes de ler o conteúdo.
             {% endcomment %}
             <div class="secundario">
-              {{ l.cliente.cnpj|cnpj }}
+              <span class="nao-quebra">{{ l.cliente.cnpj|cnpj }}</span>
               {% if l.cliente.demonstracao %} · demonstração{% endif %}
             </div>
           </td>
-          <td>
+          <td data-rotulo="Situação">
             {% comment %}
             Cada estado traz texto escrito, nunca só cor — mesma regra de
             apresentacao.py: parte da população não distingue verde de vermelho.
@@ -69,16 +69,16 @@
               <span class="etiqueta etiqueta--success">operando</span>
             {% endif %}
           </td>
-          <td class="num">{{ l.notas_ano }}</td>
-          <td class="num">{{ l.faturamento_ano|moeda }}</td>
-          <td>
+          <td class="num" data-rotulo="Notas no ano">{{ l.notas_ano }}</td>
+          <td class="num" data-rotulo="Faturamento">{{ l.faturamento_ano|moeda }}</td>
+          <td data-rotulo="Teto do MEI">
             {% if l.uso_teto.aplicavel %}
               {% include "grimorio/_teto.html" with uso=l.uso_teto visual=l.visual_teto %}
             {% else %}
               <span class="secundario">não é MEI</span>
             {% endif %}
           </td>
-          <td class="secundario">{{ l.ultima_nota|date:"d/m/Y"|default:"—" }}</td>
+          <td class="secundario" data-rotulo="Última nota">{{ l.ultima_nota|date:"d/m/Y"|default:"—" }}</td>
         </tr>
         {% empty %}
         <tr><td colspan="6">

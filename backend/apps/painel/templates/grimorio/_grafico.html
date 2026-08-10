@@ -18,7 +18,14 @@ Os caminhos vêm prontos de `apresentacao.sparkline` — template não faz conta
     </circle>
   {% endfor %}
 </svg>
-<div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--texto-fraco);margin-top:6px">
+{% comment %}
+A régua de meses saiu do `style=` inline para uma classe: com doze rótulos lado
+a lado num `flex` sem quebra, ela era o que fazia a página inteira ficar mais
+larga que um celular — 437 px de conteúdo numa tela de 375. O CSS ralea os
+rótulos no aparelho estreito, mantendo sempre o primeiro e o último, que são os
+que dizem o período coberto.
+{% endcomment %}
+<div class="grafico__rotulos">
   {% for rotulo in rotulos %}<span>{{ rotulo }}</span>{% endfor %}
 </div>
 {% endif %}

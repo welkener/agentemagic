@@ -31,15 +31,15 @@ baixa nada. O pipeline de documento (OCR de entrada) é o Sprint 4.
       <tbody>
         {% for n in notas %}
         <tr>
-          <td class="secundario">{{ n.atualizado_em|date:"d/m" }}</td>
-          <td><a href="{% url 'grimorio:empresa' n.cliente.pk %}">{{ n.cliente.nome }}</a></td>
-          <td>{{ n.payload.tomador|default:"—" }}</td>
-          <td class="num">{{ n.valor|moeda }}</td>
-          <td class="secundario">
+          <td class="secundario" data-rotulo="Data">{{ n.atualizado_em|date:"d/m" }}</td>
+          <td class="titulo-cartao"><a href="{% url 'grimorio:empresa' n.cliente.pk %}">{{ n.cliente.nome }}</a></td>
+          <td data-rotulo="Tomador">{{ n.payload.tomador|default:"—" }}</td>
+          <td class="num" data-rotulo="Valor">{{ n.valor|moeda }}</td>
+          <td class="secundario" data-rotulo="Protocolo">
             {{ n.protocolo|default:"—" }}
             {% if n.chave_nfse %}<br>{{ n.chave_nfse }}{% endif %}
           </td>
-          <td>
+          <td data-rotulo="DANFSE">
             {% if n.cancelada %}<span class="etiqueta etiqueta--danger">cancelada</span>
             {% elif n.danfse_url %}<a href="{{ n.danfse_url }}">abrir</a>
             {% else %}<span class="secundario">—</span>{% endif %}

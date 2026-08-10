@@ -235,12 +235,139 @@ table.tabela tbody tr:hover { background: #fafbfe; }
 .grafico__linha { fill: none; stroke: var(--marca-acento); stroke-width: 2; }
 .grafico__ponto { fill: var(--marca-acento); }
 .grafico__eixo { font-size: 10px; fill: var(--texto-fraco); }
+.grafico__rotulos {
+  display: flex; justify-content: space-between; min-width: 0;
+  font-size: 11.5px; color: var(--texto-fraco); margin-top: 6px;
+}
 
+/* ------------------------------------------------------------------ celular
+ *
+ * O contador abre isto no telefone no dia 8, entre um cliente e outro. A versão
+ * anterior tinha um `@media` que só virava a barra lateral de pé para deitada,
+ * com `overflow-x: auto` — e o resultado, visto num aparelho de 390 px, era:
+ * "Integrações" e "Operação" ESCONDIDOS atrás de uma rolagem horizontal que
+ * ninguém adivinha, e a tabela cortada exatamente nas colunas que importam
+ * (faturamento e teto do MEI). Rolagem lateral em tabela de dados não é
+ * adaptação, é esconder a informação e chamar de responsivo.
+ *
+ * Duas correções, nesta ordem de importância:
+ *
+ * 1. **O menu quebra em linhas em vez de rolar.** Seis itens cabem em duas
+ *    linhas, todos visíveis, nada atrás de gesto nenhum.
+ * 2. **A tabela vira cartão.** Cada linha empilha, e cada célula ganha o rótulo
+ *    da coluna ao lado (o `data-rotulo` do `<td>`, que o `::before` desenha).
+ *    É o padrão que dispensa JavaScript e o único que mantém as seis colunas
+ *    legíveis num aparelho estreito.
+ */
 @media (max-width: 820px) {
   .app { flex-direction: column; }
-  .lateral { width: 100%; flex: none; flex-direction: row; align-items: center;
-    gap: 14px; padding: 12px 16px; overflow-x: auto; }
+  .lateral {
+    width: 100%; flex: none;
+    flex-direction: row; align-items: center; flex-wrap: wrap;
+    gap: 10px 14px; padding: 12px 16px;
+    /* `min-width: 0` é o que realmente conserta a barra, e custou uma
+     * investigação: item de flex nasce com `min-width: auto`, que vale
+     * "não encolha abaixo do seu conteúdo" — e esse piso **ganha do
+     * `width: 100%`**. A barra ficava ~470 px numa tela de 390, empurrando a
+     * página inteira para fora e escondendo "Integrações" e "Operação" atrás de
+     * uma rolagem lateral que ninguém adivinha. Diagnosticado desenhando as
+     * caixas com `outline`: html e .app paravam em 390, .lateral não. */
+    min-width: 0;
+  }
+  .menu { min-width: 0; }
+  /* `overflow-x` some de propósito — ver o comentário acima. */
   .lateral__rodape, .menu__grupo { display: none; }
-  .menu { flex-direction: row; gap: 4px; }
-  .conteudo { padding: 18px 16px 40px; }
+  .marca { min-width: 0; }
+  .marca__plataforma { display: none; }
+  /* Nome de escritório longo não pode alargar a barra: ele quebra. */
+  .marca__nome { font-size: 13px; overflow-wrap: anywhere; }
+  .menu { flex-direction: row; flex-wrap: wrap; gap: 6px; width: 100%; }
+  .menu a { padding: 7px 11px; font-size: 13.5px; gap: 6px; }
+
+  .conteudo { padding: 18px 14px 40px; }
+  .topo h1 { font-size: 20px; }
+
+  /* Indicadores em duas colunas: um por linha desperdiça a tela e obriga a
+   * rolar para comparar dois números que existem para ser comparados. */
+  .indicadores { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .indicador { padding: 12px; }
+  .indicador__valor { font-size: 21px; }
+
+  /* Pendência: o botão desce para baixo do texto e ocupa a largura toda —
+   * alvo de toque de 44 px, que é o mínimo para acertar com o polegar. */
+  .pendencia { flex-direction: column; align-items: stretch; gap: 10px; }
+  .pendencia .botao { text-align: center; padding: 11px 14px; }
+
+  .filtros { gap: 6px; }
+  .busca { flex: 1 1 100%; min-width: 0; }
+
+  /* --- tabela vira cartão ------------------------------------------- */
+  .tabela-rolagem { overflow-x: visible; }
+  table.tabela, table.tabela tbody, table.tabela tr, table.tabela td {
+    display: block; width: 100%;
+  }
+  table.tabela thead { display: none; }
+  table.tabela tr {
+    border: 1px solid var(--borda); border-radius: var(--raio);
+    padding: 12px 14px; margin-bottom: 10px; background: var(--superficie);
+  }
+  table.tabela tr:hover { background: var(--superficie); }
+  table.tabela td {
+    border-bottom: 0; padding: 4px 0; min-width: 0;
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 4px 14px;
+    /* `wrap` é o que impede a linha de empurrar a página para fora da tela:
+     * rótulo e valor que não cabem lado a lado passam a ocupar duas linhas em
+     * vez de alargar o cartão. Sem isto, um valor longo (a barra do teto, uma
+     * etiqueta) vazava para a direita e levava o menu junto — a página inteira
+     * ficava mais larga que o aparelho. */
+    flex-wrap: wrap;
+  }
+  table.tabela td > * { min-width: 0; max-width: 100%; }
+  /* O rótulo da coluna vem do atributo do próprio `<td>`. Sem ele a célula
+   * apareceria como um valor solto — "R$ 74.925,00" sem dizer de quê. */
+  table.tabela td[data-rotulo]::before {
+    content: attr(data-rotulo);
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: .6px;
+    color: var(--texto-fraco); font-weight: 620;
+    /* Encolhe se precisar, e nunca passa de metade da linha — rótulo comprido
+     * ("Faturamento no ano") não pode espremer o número, que é o dado. */
+    flex: 0 1 auto; max-width: 50%;
+  }
+  /* A célula-título ocupa a linha inteira e dispensa rótulo. Marcada por classe
+   * explícita — nem sempre é a primeira coluna (em Notas e documentos a primeira
+   * é a data), e "a que não tem atributo" seria uma regra por omissão: bastaria
+   * alguém esquecer o `data-rotulo` de uma coluna nova para ela virar título por
+   * acidente. `tests/test_grimorio_celular.py` exige uma das duas marcas. */
+  table.tabela td.titulo-cartao,
+  table.tabela td:first-child:not([data-rotulo]) { display: block; margin-bottom: 6px; }
+  table.tabela td.num { text-align: right; }
+  /* A barra do teto é um bloco alto no meio de linhas de texto. Com
+   * `align-items: baseline` ela subia para a linha de cima e encostava no
+   * faturamento; alinhada ao centro, fica na própria linha. `flex-basis: 100%`
+   * a joga para uma linha inteira quando o rótulo já ocupou a primeira. */
+  .teto { min-width: 0; flex: 1 1 100%; }
+
+}
+
+/* CNPJ não quebra no meio, em largura nenhuma: o contador reconhece o número
+ * pelo formato, e "90.000.018/0001-" numa linha com "28" na outra deixa de ser
+ * um CNPJ e vira dois números. Fora de `@media` de propósito — a regra vale
+ * também na tabela estreita do desktop. */
+.nao-quebra { white-space: nowrap; }
+
+  /* Doze meses lado a lado não cabem — e não seriam legíveis se coubessem.
+   * Fica um a cada três, com o primeiro e o último sempre presentes: são eles
+   * que dizem qual período o gráfico cobre. Os do meio ficam aproximados, o que
+   * é aceitável num gráfico de tendência e não num de leitura precisa. */
+  .grafico__rotulos { font-size: 10.5px; }
+  .grafico__rotulos span:nth-child(3n+2),
+  .grafico__rotulos span:nth-child(3n+3) { display: none; }
+  .grafico__rotulos span:first-child,
+  .grafico__rotulos span:last-child { display: inline; }
+}
+
+@media (max-width: 460px) {
+  /* Aparelho estreito: um indicador por linha, senão o valor quebra no meio. */
+  .indicadores { grid-template-columns: 1fr; }
 }
