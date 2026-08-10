@@ -19,6 +19,19 @@ urlpatterns = [
     path("documentos/", grimorio.DocumentosView.as_view(), name="documentos"),
     path("integracoes/", grimorio.IntegracoesView.as_view(), name="integracoes"),
     path("rotina/", grimorio.RotinaView.as_view(), name="rotina"),
+    path(
+        "revisao/", grimorio.RevisaoDocumentosView.as_view(), name="revisao_documentos"
+    ),
+    path(
+        "revisao/<int:pk>/classificar/",
+        grimorio.ClassificarDocumentoView.as_view(),
+        name="classificar_documento",
+    ),
+    path(
+        "revisao/<int:pk>/arquivo/",
+        grimorio.ArquivoDocumentoView.as_view(),
+        name="arquivo_documento",
+    ),
     path("operacao/", grimorio.OperacaoView.as_view(), name="operacao"),
     # Primeira rota de ESCRITA do Grimório. Só POST — ver a docstring da view.
     path(

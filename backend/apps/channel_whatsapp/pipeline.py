@@ -33,6 +33,7 @@ def processar(
     media_id: str | None = None,
     escritorio=None,
     canal: str = "whatsapp",
+    documento_fn: "Callable[[str], tuple[bytes, str, str] | None] | None" = None,
 ) -> str:
     # O tenant vem do número/instância que RECEBEU a mensagem (resolvido na
     # view), não do remetente — então o telefone só é procurado dentro da
@@ -43,6 +44,19 @@ def processar(
     usuario = Usuario.objects.por_telefone(telefone, escritorio=escritorio)
 
     origem = "texto"
+
+    # Documento (foto, PDF) vem ANTES do áudio de propósito: os dois chegam como
+    # mídia, e quem decide qual é o caso é o canal, que sabe o `type` da
+    # mensagem. Tentar transcrever um PDF devolveria vazio e o cliente ouviria
+    # "não entendi o áudio" depois de mandar a nota fiscal.
+    if documento_fn is not None and media_id:
+        origem = "documento"
+        resposta = _receber_documento(
+            documento_fn, media_id, message_id, telefone, usuario, escritorio, canal
+        )
+        enviar_fn(telefone, resposta)
+        return resposta
+
     if media_id:
         origem = "audio"
         texto = transcrever_fn(media_id) if transcrever_fn is not None else None
@@ -105,3 +119,61 @@ def processar(
         cliente=cliente,
     )
     return resposta
+
+
+def _receber_documento(
+    documento_fn, media_id, message_id, telefone, usuario, escritorio, canal
+) -> str:
+    """Guarda o arquivo que o cliente mandou e devolve o recibo.
+
+    **Não passa pelo orquestrador**, e é deliberado: não há nada a rotear. O
+    cliente mandou um arquivo, o sistema guarda e diz que guardou. Fazer a
+    mensagem atravessar a escada de modelo gastaria um LLM para concluir o
+    óbvio — e, pior, deixaria o desfecho depender de uma classificação que pode
+    errar.
+
+    Empresa não resolvida (número desconhecido, ou pessoa com carteira múltipla
+    sem foco) devolve orientação em vez de guardar: sem saber de quem é o
+    documento, guardá-lo seria pôr nota fiscal na pasta de alguém no chute.
+    """
+    from apps.core import desambiguacao
+    from apps.documentos import services as documentos
+
+    cliente = desambiguacao.empresa_em_foco(usuario)
+    if cliente is None:
+        registrar(
+            "documento_sem_empresa_em_foco",
+            {"message_id": message_id, "telefone": telefone},
+            cliente=None,
+        )
+        return (
+            "Recebi seu arquivo, mas ainda não sei de qual empresa ele é. 📎\n\n"
+            "Me diga o nome da empresa e mande de novo, por favor."
+        )
+
+    baixado = documento_fn(media_id)
+    if baixado is None:
+        return "Não consegui baixar esse arquivo 😕 Pode mandar de novo?"
+
+    conteudo, nome_arquivo, tipo_mime = baixado
+    ctx = SessionContext.da_conversa(
+        cliente=cliente,
+        usuario=usuario,
+        escritorio=escritorio or cliente.escritorio,
+        canal=canal,
+        wa_id=telefone,
+        message_id=message_id,
+    )
+    try:
+        documento, novo = documentos.receber(
+            ctx=ctx, conteudo=conteudo, nome_arquivo=nome_arquivo, tipo_mime=tipo_mime
+        )
+    except documentos.ErroDeRecebimento as erro:
+        return str(erro)
+
+    registrar(
+        "whatsapp_resposta_enviada",
+        {"message_id": message_id, "telefone": telefone, "resposta": "recibo de documento"},
+        cliente=cliente,
+    )
+    return documentos.recibo(documento, novo)

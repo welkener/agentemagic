@@ -158,16 +158,28 @@ def _apagar_conteudo_mutavel(cliente) -> None:
     complicação sem ganho: apagar o texto é mais simples, mais verificável e não
     deixa criptograma nenhum para trás.
 
-    Hoje é uma tabela só (`atendimento.Solicitacao`). Toda tabela nova que
-    guardar texto escrito pelo titular precisa entrar aqui — a alternativa
-    silenciosa é o direito de eliminação passar a valer só em parte, sem que
-    nada acuse.
+    Toda tabela nova que guardar conteúdo do titular precisa entrar aqui — a
+    alternativa silenciosa é o direito de eliminação passar a valer só em parte,
+    sem que nada acuse.
+
+    **Documento é o caso mais delicado**, porque o conteúdo não está no banco: o
+    arquivo mora no storage S3, e apagar só a linha deixaria a nota fiscal e o
+    extrato do titular intactos no bucket, apontados por ninguém. O objeto é
+    removido primeiro; a linha depois. Falha ao apagar o objeto é registrada e
+    não interrompe — mas a linha só some junto, para que o que sobrou continue
+    rastreável.
     """
     from apps.atendimento.models import Solicitacao
+    from apps.documentos import armazenamento
+    from apps.documentos.models import Documento
 
     Solicitacao.objects.filter(cliente=cliente).update(
         descricao="", assunto=CONTEUDO_ELIMINADO
     )
+
+    for documento in Documento.objects.filter(cliente=cliente):
+        armazenamento.apagar(documento.bucket, documento.chave)
+    Documento.objects.filter(cliente=cliente).delete()
 
 
 def eliminar_conteudo_do_titular(cliente) -> int:

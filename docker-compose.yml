@@ -39,6 +39,32 @@ services:
       timeout: 3s
       retries: 10
 
+
+  # Storage compatível com S3 para os documentos do cliente (Sprint 4).
+  #
+  # MinIO fala a MESMA API da AWS S3 — é isso que torna a migração para a
+  # Amazon uma troca de variável de ambiente, e não de código. Ver
+  # `apps/documentos/armazenamento.py` e o bloco S3_* em `config/settings.py`.
+  #
+  # As credenciais de desenvolvimento são fracas de propósito e só valem aqui;
+  # no servidor elas vêm do `.env` (ver docker-compose.deploy.yml).
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-magicbi}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-magicbi-dev-secret}
+    volumes:
+      - minio:/data
+    ports:
+      - "9000:9000"   # API S3
+      - "9001:9001"   # console web
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   web:
     build: ./backend
     command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
@@ -52,6 +78,10 @@ services:
       WHATSAPP_TOKEN: ${WHATSAPP_TOKEN:-}
       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
+      # O endpoint aponta para o serviço do compose; na AWS este valor some.
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-magicbi}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-magicbi-dev-secret}
     ports:
       - "8000:8000"
     depends_on:
@@ -90,3 +120,4 @@ services:
 
 volumes:
   pgdata:
+  minio:

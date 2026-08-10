@@ -18,6 +18,7 @@ pyjwt  # Magic Link do wa_id↔CNPJ (apps/security) — docs/magicbi-seguranca-s
 django-sesame  # Magic Link de login do painel/Grimório (contador) — caso diferente do de cima
 Pillow  # upload de logo do escritório no painel (apps/painel) — SaaS multi-tenant, nada de marca hardcoded
 django-unfold  # tema moderno do admin (Tailwind) — feedback "restilizar o admin", ver config/settings.py UNFOLD
+boto3  # cliente S3 — fala com MinIO (auto-hospedado) e com a AWS pela MESMA API; a troca é de variável de ambiente, não de código
 pytest
 pytest-django
 sentry-sdk  # captura de exceção — só ativa com SENTRY_DSN (ver apps/observabilidade/sentry.py)

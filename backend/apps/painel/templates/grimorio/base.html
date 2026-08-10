@@ -35,6 +35,7 @@ comentário de duas linhas vaza como texto na página (achado de 27/jul/2026).
       </a>
       <a href="{% url 'grimorio:carteira' %}" class="{% if secao == 'carteira' %}ativo{% endif %}">Carteira</a>
       <a href="{% url 'grimorio:documentos' %}" class="{% if secao == 'documentos' %}ativo{% endif %}">Notas e documentos</a>
+      <a href="{% url 'grimorio:revisao_documentos' %}" class="{% if secao == 'revisao' %}ativo{% endif %}">Revisão</a>
       <a href="{% url 'grimorio:rotina' %}" class="{% if secao == 'rotina' %}ativo{% endif %}">Guias e obrigações</a>
       <a href="{% url 'grimorio:integracoes' %}" class="{% if secao == 'integracoes' %}ativo{% endif %}">Integrações</a>
       <a href="{% url 'grimorio:operacao' %}" class="{% if secao == 'operacao' %}ativo{% endif %}">Operação</a>

@@ -21,6 +21,35 @@ services:
       timeout: 3s
       retries: 10
 
+
+  # Storage compatível com S3 dos documentos (Sprint 4).
+  #
+  # **Nenhuma porta publicada no host, e isso é decisão.** O Django alcança o
+  # MinIO pela rede do compose (`http://minio:9000`); publicar a API S3 no host
+  # abriria um endpoint de arquivos fiscais na internet e ainda disputaria porta
+  # num servidor que hospeda projetos de vários outros clientes — a 9000 já está
+  # ocupada pelo Portainer. Para abrir o console de administração, use túnel SSH:
+  #
+  #     ssh -L 9001:localhost:9001 root@servidor
+  #     docker compose -f docker-compose.deploy.yml exec minio true  # confere que subiu
+  #
+  # A migração para a AWS não mexe aqui: remove-se este serviço e troca-se o
+  # bloco S3_* do `.env`. A aplicação não sabe a diferença.
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    volumes:
+      - minio:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
   web:
     build: ./backend
     restart: unless-stopped
@@ -46,6 +75,11 @@ services:
       EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
       EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
       EMAIL_USE_TLS: ${EMAIL_USE_TLS:-True}
+      # Storage de documentos. Sem estes três, o recebimento de arquivo é
+      # recusado com aviso — nunca aceito e perdido.
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
     ports:
       - "8020:8000"
     volumes:
@@ -53,7 +87,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      minio:
+        condition: service_healthy
 
 volumes:
   pgdata:
   media:
+  minio:

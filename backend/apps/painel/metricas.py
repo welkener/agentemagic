@@ -433,6 +433,39 @@ def rotina_do_escritorio(usuario) -> dict:
     }
 
 
+def documentos_para_revisar(usuario, limite: int = 100) -> list:
+    """Documentos que esperam olho humano, mais antigo primeiro.
+
+    O item que o cronograma marca como incortável em qualquer cenário. Sem esta
+    fila, o cliente manda a nota, ouve "recebi" e o arquivo fica num bucket que
+    ninguém abre — a promessa mais fácil de quebrar do produto inteiro.
+    """
+    from apps.documentos.models import Documento
+
+    return list(
+        _escopar(
+            Documento.objects.filter(
+                situacao=Documento.Situacao.AGUARDANDO_REVISAO
+            ),
+            usuario,
+        )
+        .select_related("cliente", "usuario")
+        .order_by("criado_em")[:limite]
+    )
+
+
+def documento_no_escopo(usuario, pk: int):
+    """Um documento, se ele é da carteira deste contador. Senão, None."""
+    from apps.documentos.models import Documento
+
+    return (
+        _escopar(Documento.objects.all(), usuario)
+        .select_related("cliente")
+        .filter(pk=pk)
+        .first()
+    )
+
+
 def cliente_no_escopo(usuario, cliente_id: int):
     """A empresa, se ela pertence à carteira deste contador. Senão, None.
 

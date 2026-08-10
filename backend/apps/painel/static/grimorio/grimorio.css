@@ -198,7 +198,17 @@ a:hover { text-decoration: underline; }
   padding: 9px 11px; font: inherit; font-size: 14px;
   background: var(--superficie); color: var(--texto);
 }
-.campo input:focus-visible { outline: 2px solid var(--marca-acento); outline-offset: 1px; }
+.campo input:focus-visible,
+select:focus-visible { outline: 2px solid var(--marca-acento); outline-offset: 1px; }
+
+/* Seletor da fila de revisão. Herda a fonte porque `<select>` nativo não a
+ * herda — sem isto ele sai com a fonte do sistema ao lado de botões que usam a
+ * do documento. */
+select {
+  border: 1px solid var(--borda); border-radius: 7px;
+  padding: 7px 9px; font: inherit; font-size: 13px;
+  background: var(--superficie); color: var(--texto);
+}
 .campo__ajuda { font-size: 12.5px; color: var(--texto-fraco); margin-top: 5px; max-width: 420px; }
 
 /* Lista de pendências de cadastro: texto, não etiqueta. São frases inteiras

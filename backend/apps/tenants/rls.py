@@ -104,6 +104,7 @@ TABELAS: dict[str, str] = {
     "rotina_obrigacao": _POR_CLIENTE,
     "rotina_certidao": _POR_CLIENTE,
     "rotina_folha": _POR_CLIENTE,
+    "documentos_documento": _POR_CLIENTE,
     "audit_chaveconteudo": _POR_CLIENTE,
     # Consumo de IA pendura no escritório, não no cliente: `cliente_id` é nulo
     # quando o roteador roda antes de a empresa estar resolvida, e quem paga a

@@ -649,3 +649,101 @@ class RotinaView(EscopoGrimorioMixin, TemplateView):
         contexto.update(metricas.rotina_do_escritorio(self.request.user))
         contexto["dias_alerta_certidao"] = metricas.DIAS_ALERTA_CERTIDAO
         return contexto
+
+
+class RevisaoDocumentosView(EscopoGrimorioMixin, TemplateView):
+    """A fila de revisão de documentos — incortável em qualquer cenário.
+
+    Sem ela o cliente manda a nota, ouve "recebi" e o arquivo fica num bucket
+    que ninguém abre. É a promessa mais fácil de quebrar do produto inteiro, e
+    a mais cara: o cliente para de cobrar porque acha que está resolvido.
+
+    **Tudo passa por aqui, e é a ordem certa.** Não há OCR ainda, então 100% dos
+    documentos exigem humano. Quando o OCR entrar, ele reduz o volume desta fila
+    — o inverso, ligar o OCR primeiro e ir corrigindo, começaria por lançamento
+    automático de dado não conferido, que é o que o gate do sprint proíbe.
+    """
+
+    template_name = "grimorio/documentos_revisao.html"
+    secao = "revisao"
+
+    def get_context_data(self, **kwargs):
+        from apps.documentos.models import Documento
+
+        contexto = super().get_context_data(**kwargs)
+        contexto["documentos"] = metricas.documentos_para_revisar(self.request.user)
+        contexto["tipos"] = Documento.Tipo.choices
+        return contexto
+
+
+class ClassificarDocumentoView(EscopoGrimorioMixin, View):
+    """Classifica ou recusa um documento da fila.
+
+    Mesmas três regras das outras escritas do Grimório: só POST muda estado, o
+    objeto vem do escopo e não do id da URL, e o ato entra na trilha com quem
+    clicou.
+    """
+
+    def post(self, request, pk):
+        from apps.documentos.models import Documento
+
+        documento = metricas.documento_no_escopo(request.user, pk)
+        if documento is None:
+            raise Http404("Documento não encontrado nesta carteira.")
+
+        destino = reverse("grimorio:revisao_documentos")
+        if not documento.aguardando:
+            messages.info(
+                request, f"O documento {documento.protocolo} já foi revisado."
+            )
+            return HttpResponseRedirect(destino)
+
+        if request.POST.get("acao") == "recusar":
+            motivo = (request.POST.get("motivo") or "").strip()
+            documento.recusar(por=request.user, motivo=motivo)
+            evento, rotulo = "documento_recusado", "recusado"
+        else:
+            tipo = request.POST.get("tipo") or Documento.Tipo.OUTRO
+            if tipo not in dict(Documento.Tipo.choices):
+                messages.error(request, "Tipo de documento desconhecido.")
+                return HttpResponseRedirect(destino)
+            documento.classificar(tipo, por=request.user)
+            evento, rotulo = "documento_classificado", documento.get_tipo_display()
+
+        registrar(
+            evento,
+            {
+                "protocolo": documento.protocolo,
+                "tipo": documento.tipo,
+                "por": request.user.get_username(),
+                "origem": "grimorio",
+            },
+            cliente=documento.cliente,
+        )
+        messages.success(request, f"{documento.protocolo}: {rotulo}.")
+        return HttpResponseRedirect(destino)
+
+
+class ArquivoDocumentoView(EscopoGrimorioMixin, View):
+    """Redireciona para uma URL assinada de validade curta.
+
+    O arquivo não passa pelo Django: o storage entrega direto. O que passa por
+    aqui é a **checagem de escopo** — a assinatura não substitui a permissão,
+    ela só evita que megabytes de PDF atravessem a aplicação.
+
+    E a validade é curta de propósito: link permanente de extrato bancário vaza
+    no primeiro encaminhamento de WhatsApp, e nunca mais é possível recolher.
+    """
+
+    def get(self, request, pk):
+        from apps.documentos import armazenamento
+
+        documento = metricas.documento_no_escopo(request.user, pk)
+        if documento is None:
+            raise Http404("Documento não encontrado nesta carteira.")
+        try:
+            url = armazenamento.url_temporaria(documento.bucket, documento.chave)
+        except armazenamento.ErroDeArmazenamento as erro:
+            messages.error(request, f"Não consegui abrir o arquivo: {erro}")
+            return HttpResponseRedirect(reverse("grimorio:revisao_documentos"))
+        return HttpResponseRedirect(url)

@@ -104,6 +104,7 @@ INSTALLED_APPS = [
     "apps.fiscal",  # DPS: montagem/assinatura do XML + numeração sequencial
     "apps.atendimento",  # chamados e pedidos de atendimento abertos pela conversa
     "apps.rotina",  # guias, obrigações, certidões e folha — a rotina do escritório
+    "apps.documentos",  # recebimento e revisão de documento do cliente (storage S3)
     "apps.agents.agente_nf",
     "apps.agents.agente_erp",
 ]
@@ -277,6 +278,30 @@ RETENCAO_IRRF_PERCENTUAL = env("RETENCAO_IRRF_PERCENTUAL", default="1.5")
 RETENCAO_CSRF_PERCENTUAL = env("RETENCAO_CSRF_PERCENTUAL", default="4.65")
 RETENCAO_INSS_PERCENTUAL = env("RETENCAO_INSS_PERCENTUAL", default="11")
 RETENCAO_DISPENSA_ATE = env("RETENCAO_DISPENSA_ATE", default="10.00")
+
+# ---------------------------------------------------------------------------
+# Storage de documentos — compatível com S3 (apps/documentos/armazenamento.py).
+#
+# **A migração para a AWS é este bloco, e só ele.** Hoje o outro lado é um MinIO
+# em contêiner; para ir à Amazon, apaga-se `S3_ENDPOINT`, trocam-se as chaves e
+# põe-se a região. Nenhuma linha de código muda — é o motivo de a aplicação
+# falar S3 em vez da API de um storage específico.
+#
+# `S3_ESTILO_ENDERECO=path` porque o MinIO não resolve bucket por subdomínio
+# numa instalação simples. A AWS aceita os dois estilos, então o valor pode
+# ficar como está depois da migração.
+#
+# Sem `S3_ENDPOINT` e sem `S3_USAR_AWS`, o recebimento de documento é RECUSADO
+# com aviso — nunca aceito e perdido. Quem manda a nota e ouve "recebi" precisa
+# que isso seja verdade.
+# ---------------------------------------------------------------------------
+S3_ENDPOINT = env("S3_ENDPOINT", default="")
+S3_USAR_AWS = env.bool("S3_USAR_AWS", default=False)
+S3_ACCESS_KEY = env("S3_ACCESS_KEY", default="")
+S3_SECRET_KEY = env("S3_SECRET_KEY", default="")
+S3_REGIAO = env("S3_REGIAO", default="us-east-1")
+S3_ESTILO_ENDERECO = env("S3_ESTILO_ENDERECO", default="path")
+S3_PREFIXO_BUCKET = env("S3_PREFIXO_BUCKET", default="magicbi")
 
 # Fração do limite mensal em que a degradação começa — acima dela a extração de
 # campos cai para o modelo barato, e só no limite cheio o modelo é cortado

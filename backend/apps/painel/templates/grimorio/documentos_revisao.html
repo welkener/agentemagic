@@ -1,0 +1,91 @@
+{% extends "grimorio/base.html" %}
+{% load grimorio_tags %}
+{% block titulo %}Revisão{% endblock %}
+
+{% comment %}
+A fila que o cronograma marca como incortável. Sem ela o cliente manda a nota,
+ouve "recebi" e o arquivo fica num bucket que ninguém abre — a promessa mais
+fácil de quebrar do produto, e a mais cara, porque ele para de cobrar achando
+que está resolvido.
+
+Tudo passa por aqui enquanto não há OCR, e essa é a ordem certa: o OCR, quando
+entrar, REDUZ esta fila. O caminho inverso começaria por lançamento automático
+de dado não conferido.
+{% endcomment %}
+
+{% block conteudo %}
+<div class="topo">
+  <div>
+    <h1>Revisão de documentos</h1>
+    <p>
+      {% if documentos %}
+        {{ documentos|length }} aguardando você · do mais antigo para o mais novo
+      {% else %}
+        Nada aguardando revisão.
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+{% if documentos %}
+<div class="cartao">
+  <div class="cartao__cabeca">
+    <h2>Aguardando classificação</h2>
+    <span class="etiqueta">{{ documentos|length }}</span>
+  </div>
+  <div class="cartao__corpo">
+    <div class="fila">
+      {% for d in documentos %}
+      <div class="pendencia pendencia--atencao">
+        <div class="pendencia__texto">
+          <div class="pendencia__titulo">{{ d.nome_arquivo }}</div>
+          <div class="pendencia__empresa">
+            {{ d.cliente.nome }}
+            {% if d.usuario %}· {{ d.usuario.nome|default:d.usuario.telefone_whatsapp }}{% endif %}
+          </div>
+          <div class="pendencia__detalhe">
+            {{ d.protocolo }} · recebido em {{ d.criado_em|date:"d/m H:i" }} ·
+            {{ d.tamanho|filesizeformat }}
+            {% comment %}
+            A confiança aparece mesmo valendo zero: é ela que vai separar o que
+            o OCR resolve sozinho do que continua vindo para cá, e mostrar o
+            campo desde já evita que ele apareça um dia sem ninguém entender o
+            que significa.
+            {% endcomment %}
+            · confiança {{ d.confianca }}%
+          </div>
+        </div>
+        <div class="acoes">
+          {% comment %}
+          "Abrir arquivo" sai por URL assinada de validade curta — o arquivo não
+          atravessa o Django, mas a permissão é conferida antes de assinar.
+          {% endcomment %}
+          <a class="botao" href="{% url 'grimorio:arquivo_documento' d.pk %}" target="_blank" rel="noopener">Abrir</a>
+          <form method="post" action="{% url 'grimorio:classificar_documento' d.pk %}" class="acoes">
+            {% csrf_token %}
+            <select name="tipo" aria-label="Tipo do documento">
+              {% for valor, rotulo in tipos %}
+                {% if valor != "desconhecido" %}<option value="{{ valor }}">{{ rotulo }}</option>{% endif %}
+              {% endfor %}
+            </select>
+            <button class="botao botao--principal" type="submit" name="acao" value="classificar">Classificar</button>
+            <button class="botao" type="submit" name="acao" value="recusar">Recusar</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="cartao">
+  <div class="cartao__corpo">
+    <div class="vazio">
+      <div class="vazio__titulo">Nenhum documento aguardando</div>
+      Quando um cliente mandar uma foto ou um PDF pelo WhatsApp, ele aparece
+      aqui para você classificar.
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
