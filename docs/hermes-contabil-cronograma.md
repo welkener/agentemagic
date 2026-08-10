@@ -289,15 +289,22 @@ mensais, carteira, integrações, documentos, radar de teto), `painel/apresentac
   e medição por script, não julgamento por imagem.
 
 **Gate S2b**
-- [ ] O contador cumpre um dia de trabalho **sem abrir o `/admin/`** — em
-      andamento, por camadas. O Grimório deixou de ser somente leitura em
-      10/ago. Já saíram do admin: **resolver chamado** e **vincular/renovar
-      certificado** — juntas, a maior parte da fila do Hoje. Faltam
-      **aprovar/cancelar nota** e **completar cadastro fiscal**; as duas
-      primeiras continuarão passando pelos serviços auditados de
-      `agents/agente_nf`, e a de certificado já passa pelo cofre
-      (`credentials.services.vincular_certificado_pfx`, o mesmo que o admin
-      usa). O botão muda de lugar, o caminho não.
+- [ ] O contador cumpre um dia de trabalho **sem abrir o `/admin/`** — quase.
+      O Grimório deixou de ser somente leitura em 10/ago e, das cinco ações da
+      fila do Hoje, **quatro já acontecem nele**: resolver chamado, vincular e
+      renovar certificado, completar cadastro fiscal e ver a empresa. Sobra uma:
+      **aprovar/cancelar nota**, que depende de uma decisão de produto (aprovar
+      direto da fila ou abrir tela de conferência antes) e é a única que mexe em
+      documento fiscal.
+
+      A regra que atravessa as três telas de escrita: **o botão muda de lugar, o
+      caminho não.** O certificado passa por
+      `credentials.services.vincular_certificado_pfx` (o mesmo do admin), o
+      cadastro é validado por `fiscal.dps.conferir_cadastro` (a mesma função que
+      a emissão usa) e a nota, quando vier, passará pelos serviços de
+      `agents/agente_nf`. Nenhuma tela reimplementa regra que já existe —
+      duplicá-la é como a tela passa a dizer "pronto" com a operação ainda
+      falhando.
       Toda escrita nova obedece a três regras, cobradas em
       `tests/test_grimorio_acoes.py`: só POST muda estado; o objeto vem do
       escopo do contador, nunca do id da URL; e o ato entra na trilha com quem

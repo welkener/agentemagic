@@ -405,3 +405,98 @@ class VincularCertificadoView(EscopoGrimorioMixin, TemplateView):
         return HttpResponseRedirect(
             reverse("grimorio:empresa", args=[cliente.pk])
         )
+
+
+class CadastroFiscalView(EscopoGrimorioMixin, TemplateView):
+    """Completa o que falta para a empresa emitir — e só isso.
+
+    Terceira camada da costura. O formulário do admin tem trinta campos e não
+    diz quais três impedem a emissão; aqui a tela mostra exatamente os que
+    `fiscal.dps.conferir_cadastro` aponta, com a explicação de cada um. A
+    informação já existia — ficava a duas telas de distância de quem precisava
+    dela.
+
+    **A validação é a mesma da emissão, e de propósito.** Os valores são
+    atribuídos ao objeto em memória e submetidos a `conferir_cadastro` antes de
+    qualquer gravação: se ela reprovar, nada é salvo. Escrever uma segunda regra
+    de "cadastro completo" aqui criaria a chance de a tela dizer "pronto" e a
+    emissão continuar falhando — que é pior que não ter a tela.
+
+    O CNPJ não é editável nesta tela. Ele identifica a empresa e casa com o
+    certificado; trocá-lo é outra operação, com outras consequências, e continua
+    no admin.
+    """
+
+    template_name = "grimorio/cadastro.html"
+    secao = "carteira"
+
+    CAMPOS = (
+        (
+            "codigo_municipio_ibge",
+            "Código IBGE do município",
+            "7 dígitos. É o município onde o serviço é prestado (cLocEmi na DPS).",
+        ),
+        (
+            "codigo_tributacao_nacional",
+            "Código de tributação nacional",
+            "6 dígitos. NÃO é o CNAE — é o código da lista nacional de serviços "
+            "(cTribNac). Confundir os dois é o erro mais comum aqui.",
+        ),
+        (
+            "cnae_padrao",
+            "CNAE de serviço",
+            "Usado como padrão nas notas desta empresa. Nunca vem do modelo de "
+            "IA: sai daqui, do cadastro.",
+        ),
+    )
+
+    def _cliente(self):
+        cliente = metricas.cliente_no_escopo(self.request.user, self.kwargs["cliente_id"])
+        if cliente is None:
+            raise Http404("Empresa não encontrada nesta carteira.")
+        return cliente
+
+    def get_context_data(self, **kwargs):
+        from apps.fiscal.dps import conferir_cadastro
+
+        contexto = super().get_context_data(**kwargs)
+        cliente = self._cliente()
+        contexto["cliente"] = cliente
+        contexto["campos"] = [
+            (nome, rotulo, ajuda, getattr(cliente, nome, "") or "")
+            for nome, rotulo, ajuda in self.CAMPOS
+        ]
+        contexto["faltantes"] = conferir_cadastro(cliente)
+        return contexto
+
+    def post(self, request, cliente_id):
+        from apps.fiscal.dps import conferir_cadastro
+
+        cliente = self._cliente()
+        alterados = []
+        for nome, _rotulo, _ajuda in self.CAMPOS:
+            novo = (request.POST.get(nome) or "").strip()
+            if novo != (getattr(cliente, nome, "") or ""):
+                setattr(cliente, nome, novo)
+                alterados.append(nome)
+
+        # A mesma função que a emissão usa, sobre o objeto ainda não salvo.
+        # Regra própria aqui deixaria a tela dizer "pronto" com a emissão ainda
+        # falhando — pior que não ter a tela.
+        problemas = conferir_cadastro(cliente)
+        if problemas:
+            for problema in problemas:
+                messages.error(request, f"Ainda falta: {problema}.")
+            return HttpResponseRedirect(request.path)
+
+        if alterados:
+            cliente.save(update_fields=alterados)
+            registrar(
+                "cadastro_fiscal_atualizado",
+                {"campos": alterados, "por": request.user.get_username(), "origem": "grimorio"},
+                cliente=cliente,
+            )
+            messages.success(request, "Cadastro completo. A empresa já pode emitir.")
+        else:
+            messages.info(request, "Nada mudou — o cadastro já estava assim.")
+        return HttpResponseRedirect(reverse("grimorio:empresa", args=[cliente.pk]))

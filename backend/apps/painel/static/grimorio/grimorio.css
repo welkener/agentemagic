@@ -201,6 +201,12 @@ a:hover { text-decoration: underline; }
 .campo input:focus-visible { outline: 2px solid var(--marca-acento); outline-offset: 1px; }
 .campo__ajuda { font-size: 12.5px; color: var(--texto-fraco); margin-top: 5px; max-width: 420px; }
 
+/* Lista de pendências de cadastro: texto, não etiqueta. São frases inteiras
+ * ("código de tributação nacional deve ter 6 dígitos — não é o CNAE"), e
+ * espremê-las numa pílula cortaria justamente a parte que ensina. */
+.lista-simples { margin: 0; padding-left: 20px; font-size: 14px; }
+.lista-simples li { margin-bottom: 6px; }
+
 /* -------------------------------------------------------------- etiquetas */
 .etiqueta {
   display: inline-flex; align-items: center; gap: 5px;

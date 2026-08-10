@@ -30,4 +30,9 @@ urlpatterns = [
         grimorio.VincularCertificadoView.as_view(),
         name="vincular_certificado",
     ),
+    path(
+        "empresa/<int:cliente_id>/cadastro/",
+        grimorio.CadastroFiscalView.as_view(),
+        name="cadastro_fiscal",
+    ),
 ]

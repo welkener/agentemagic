@@ -1,0 +1,65 @@
+{% extends "grimorio/base.html" %}
+{% load grimorio_tags %}
+{% block titulo %}Cadastro fiscal — {{ cliente.nome }}{% endblock %}
+
+{% comment %}
+Só os campos que impedem a emissão. O formulário do admin tem trinta e não diz
+quais três são o bloqueio — a informação existia e ficava a duas telas de
+distância de quem precisava dela.
+{% endcomment %}
+
+{% block conteudo %}
+<div class="topo">
+  <div>
+    <h1>Cadastro fiscal</h1>
+    <p>{{ cliente.nome }} · CNPJ <span class="nao-quebra">{{ cliente.cnpj|cnpj }}</span></p>
+  </div>
+  <div class="filtros">
+    <a class="botao" href="{% url 'grimorio:empresa' cliente.pk %}">Voltar à empresa</a>
+  </div>
+</div>
+
+{% if faltantes %}
+<div class="cartao" style="margin-bottom:18px">
+  <div class="cartao__cabeca">
+    <h2>O que impede a emissão</h2>
+    <span class="etiqueta etiqueta--warning">{{ faltantes|length }}</span>
+  </div>
+  <div class="cartao__corpo">
+    <ul class="lista-simples">
+      {% for f in faltantes %}<li>{{ f }}</li>{% endfor %}
+    </ul>
+  </div>
+</div>
+{% else %}
+<div class="cartao" style="margin-bottom:18px">
+  <div class="cartao__corpo">
+    <div class="aviso aviso--success">
+      Cadastro completo — esta empresa pode emitir.
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="cartao">
+  <div class="cartao__cabeca"><h2>Dados da nota</h2></div>
+  <div class="cartao__corpo">
+    <form method="post">
+      {% csrf_token %}
+      {% for nome, rotulo, ajuda, valor in campos %}
+      <div class="campo">
+        <label for="{{ nome }}">{{ rotulo }}</label>
+        <input type="text" name="{{ nome }}" id="{{ nome }}" value="{{ valor }}"
+               inputmode="numeric" autocomplete="off">
+        <div class="campo__ajuda">{{ ajuda }}</div>
+      </div>
+      {% endfor %}
+      {% comment %}
+      O CNPJ não está aqui: ele identifica a empresa e casa com o certificado.
+      Trocá-lo é outra operação, com outras consequências, e continua no admin.
+      {% endcomment %}
+      <button class="botao botao--principal" type="submit">Salvar cadastro</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

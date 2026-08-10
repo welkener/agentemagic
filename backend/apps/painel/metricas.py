@@ -742,7 +742,11 @@ def pendencias(usuario) -> list[Pendencia]:
                     detalhe="Falta: " + ", ".join(linha.cadastro_faltante) + ".",
                     cliente=linha.cliente,
                     acao_rotulo="Completar",
-                    acao_url=f"/admin/clients/cliente/{linha.cliente.pk}/change/",
+                    # Vai para a tela do Grimório, que mostra SÓ os campos que
+                    # impedem a emissão. O formulário do admin tem trinta campos
+                    # e não diz quais três são o bloqueio — a informação existia,
+                    # mas ficava a duas telas de distância de quem precisava dela.
+                    acao_url=f"/grimorio/empresa/{linha.cliente.pk}/cadastro/",
                 )
             )
         if not linha.sessao_ativa:

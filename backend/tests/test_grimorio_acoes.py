@@ -348,3 +348,134 @@ class TestVincularCertificado:
 
         assert f"/grimorio/empresa/{cliente.pk}/certificado/" in corpo
         assert "/admin/credentials/credencial/add/" not in corpo
+
+
+# ---------------------------------------------------------------------------
+# Completar cadastro fiscal
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+class TestCadastroFiscal:
+    def rota(self, cliente):
+        return f"/grimorio/empresa/{cliente.pk}/cadastro/"
+
+    def test_salva_e_libera_a_emissao(self, client, dois_escritorios_com_chamado):
+        from apps.fiscal.dps import conferir_cadastro
+
+        escritorio, cliente, _ = dois_escritorios_com_chamado["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+        assert conferir_cadastro(cliente)  # começa incompleto
+
+        resposta = client.post(
+            self.rota(cliente),
+            {
+                "codigo_municipio_ibge": "3550308",
+                "codigo_tributacao_nacional": "010101",
+                "cnae_padrao": "6201-5/01",
+            },
+        )
+
+        assert resposta.status_code == 302
+        cliente.refresh_from_db()
+        assert conferir_cadastro(cliente) == []
+
+    def test_valor_invalido_nao_grava_nada(self, client, dois_escritorios_com_chamado):
+        """A validação é a MESMA da emissão (`conferir_cadastro`), rodada sobre o
+        objeto ainda não salvo. Regra própria aqui deixaria a tela dizer "pronto"
+        com a emissão ainda falhando — pior que não ter a tela."""
+        escritorio, cliente, _ = dois_escritorios_com_chamado["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+
+        client.post(
+            self.rota(cliente),
+            {
+                "codigo_municipio_ibge": "355",          # curto demais
+                "codigo_tributacao_nacional": "010101",
+                "cnae_padrao": "6201-5/01",
+            },
+        )
+
+        cliente.refresh_from_db()
+        assert cliente.codigo_municipio_ibge != "355"
+
+    def test_o_erro_explica_a_confusao_mais_comum(
+        self, client, dois_escritorios_com_chamado
+    ):
+        """Quem preenche o cTribNac com o CNAE é o caso mais frequente — a
+        mensagem precisa dizer isso, não só "inválido"."""
+        escritorio, cliente, _ = dois_escritorios_com_chamado["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+
+        client.post(
+            self.rota(cliente),
+            {
+                "codigo_municipio_ibge": "3550308",
+                "codigo_tributacao_nacional": "6201501",  # 7 dígitos: é CNAE
+                "cnae_padrao": "6201-5/01",
+            },
+        )
+        corpo = client.get(self.rota(cliente)).content.decode()
+        assert "não é o CNAE" in corpo or "nao e o CNAE" in corpo
+
+    def test_registra_quem_mexeu_no_cadastro(self, client, dois_escritorios_com_chamado):
+        escritorio, cliente, _ = dois_escritorios_com_chamado["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+
+        client.post(
+            self.rota(cliente),
+            {
+                "codigo_municipio_ibge": "3550308",
+                "codigo_tributacao_nacional": "010101",
+                "cnae_padrao": "6201-5/01",
+            },
+        )
+
+        with rls.escopo_irrestrito():
+            evento = Auditoria.objects.get(evento="cadastro_fiscal_atualizado")
+        assert evento.dados["por"] == "contador.alfa"
+        assert "codigo_municipio_ibge" in evento.dados["campos"]
+
+    def test_nao_edita_cadastro_de_outro_escritorio(
+        self, client, dois_escritorios_com_chamado
+    ):
+        escritorio_alfa, _, _ = dois_escritorios_com_chamado["alfa"]
+        _, cliente_beta, _ = dois_escritorios_com_chamado["beta"]
+        client.force_login(_contador(escritorio_alfa, "contador.alfa"))
+
+        resposta = client.post(
+            self.rota(cliente_beta), {"codigo_municipio_ibge": "3550308"}
+        )
+
+        assert resposta.status_code == 404
+        cliente_beta.refresh_from_db()
+        assert cliente_beta.codigo_municipio_ibge != "3550308"
+
+    def test_o_cnpj_nao_e_editavel_por_aqui(self, client, dois_escritorios_com_chamado):
+        """O CNPJ identifica a empresa e casa com o certificado — trocá-lo é
+        outra operação, com outras consequências."""
+        escritorio, cliente, _ = dois_escritorios_com_chamado["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+        original = cliente.cnpj
+
+        client.post(
+            self.rota(cliente),
+            {
+                "cnpj": "99999999000199",
+                "codigo_municipio_ibge": "3550308",
+                "codigo_tributacao_nacional": "010101",
+                "cnae_padrao": "6201-5/01",
+            },
+        )
+
+        cliente.refresh_from_db()
+        assert cliente.cnpj == original
+
+    def test_a_fila_do_hoje_aponta_para_o_grimorio(
+        self, client, dois_escritorios_com_chamado
+    ):
+        escritorio, cliente, _ = dois_escritorios_com_chamado["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+
+        corpo = client.get("/grimorio/").content.decode()
+
+        assert f"/grimorio/empresa/{cliente.pk}/cadastro/" in corpo
+        assert f"/admin/clients/cliente/{cliente.pk}/change/" not in corpo
