@@ -1,0 +1,93 @@
+{% extends "grimorio/base.html" %}
+{% load grimorio_tags %}
+{% block titulo %}Certificado — {{ cliente.nome }}{% endblock %}
+
+{% comment %}
+Segunda tela de escrita do Grimório, e a primeira que pede um segredo. O
+formulário não guarda nada: o POST entrega arquivo e senha ao mesmo serviço do
+cofre que o admin usa, e é ele quem valida, cifra e registra na trilha.
+
+A senha nunca volta preenchida — nem quando o envio falha. Reapresentar senha
+num campo é o tipo de conveniência que acaba num certificado digital exposto no
+histórico do navegador de um computador compartilhado.
+{% endcomment %}
+
+{% block conteudo %}
+<div class="topo">
+  <div>
+    <h1>Certificado digital</h1>
+    <p>
+      {{ cliente.nome }} · CNPJ <span class="nao-quebra">{{ cliente.cnpj|cnpj }}</span>
+    </p>
+  </div>
+  <div class="filtros">
+    <a class="botao" href="{% url 'grimorio:empresa' cliente.pk %}">Voltar à empresa</a>
+  </div>
+</div>
+
+<div class="grade-2">
+  <div>
+    <div class="cartao">
+      <div class="cartao__cabeca"><h2>Enviar arquivo .pfx</h2></div>
+      <div class="cartao__corpo">
+        <form method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+          <div class="campo">
+            <label for="pfx">Arquivo do certificado (.pfx ou .p12)</label>
+            <input type="file" name="pfx" id="pfx" accept=".pfx,.p12" required>
+          </div>
+          <div class="campo">
+            <label for="senha">Senha do certificado</label>
+            {% comment %}
+            `autocomplete="new-password"` para o navegador não oferecer a senha
+            do contador aqui — são coisas diferentes, e o gerenciador de senhas
+            não sabe disso sozinho.
+            {% endcomment %}
+            <input type="password" name="senha" id="senha" autocomplete="new-password" required>
+            <div class="campo__ajuda">
+              Guardada cifrada no cofre. Não fica em texto puro no banco, no log
+              nem na trilha de auditoria.
+            </div>
+          </div>
+          <button class="botao botao--principal" type="submit">Vincular certificado</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="cartao">
+      <div class="cartao__cabeca"><h2>Situação atual</h2></div>
+      <div class="cartao__corpo">
+        {% if credencial and credencial.certificado_validade %}
+          <div class="campo">
+            <div class="secundario">Válido até</div>
+            <div class="principal">{{ credencial.certificado_validade|date:"d/m/Y" }}</div>
+          </div>
+          <div class="campo">
+            <div class="secundario">CNPJ do certificado</div>
+            <div class="principal nao-quebra">{{ credencial.certificado_cnpj|cnpj }}</div>
+            {% comment %}
+            Aviso impossível de não ver: emitir com certificado de outro CNPJ
+            assina a nota em nome da outra empresa. Não bloqueia — a AC pode
+            fugir do padrão de CN e matriz/filial dividem raiz —, mas quem
+            decide precisa estar olhando para isto.
+            {% endcomment %}
+            {% if credencial.certificado_cnpj_diverge %}
+              <div class="aviso aviso--warning" style="margin-top:8px">
+                Diferente do CNPJ cadastrado. A nota sairia assinada em nome de
+                outra empresa — confira antes de emitir.
+              </div>
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="vazio">
+            <div class="vazio__titulo">Nenhum certificado vinculado</div>
+            Esta empresa não emite nota até enviar o arquivo.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

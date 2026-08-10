@@ -291,11 +291,13 @@ mensais, carteira, integrações, documentos, radar de teto), `painel/apresentac
 **Gate S2b**
 - [ ] O contador cumpre um dia de trabalho **sem abrir o `/admin/`** — em
       andamento, por camadas. O Grimório deixou de ser somente leitura em
-      10/ago: **resolver chamado** acontece na própria tela. Foi a primeira
-      escolhida por ser sem efeito fiscal, sem custo ao cliente e trivialmente
-      reversível. Faltam vincular certificado e aprovar/cancelar nota — e as
-      duas últimas continuarão passando pelos serviços auditados de
-      `agents/agente_nf`: o botão muda de lugar, o caminho não.
+      10/ago. Já saíram do admin: **resolver chamado** e **vincular/renovar
+      certificado** — juntas, a maior parte da fila do Hoje. Faltam
+      **aprovar/cancelar nota** e **completar cadastro fiscal**; as duas
+      primeiras continuarão passando pelos serviços auditados de
+      `agents/agente_nf`, e a de certificado já passa pelo cofre
+      (`credentials.services.vincular_certificado_pfx`, o mesmo que o admin
+      usa). O botão muda de lugar, o caminho não.
       Toda escrita nova obedece a três regras, cobradas em
       `tests/test_grimorio_acoes.py`: só POST muda estado; o objeto vem do
       escopo do contador, nunca do id da URL; e o ato entra na trilha com quem

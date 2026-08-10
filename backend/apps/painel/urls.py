@@ -25,4 +25,9 @@ urlpatterns = [
         grimorio.ResolverSolicitacaoView.as_view(),
         name="resolver_chamado",
     ),
+    path(
+        "empresa/<int:cliente_id>/certificado/",
+        grimorio.VincularCertificadoView.as_view(),
+        name="vincular_certificado",
+    ),
 ]

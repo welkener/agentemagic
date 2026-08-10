@@ -184,6 +184,23 @@ a:hover { text-decoration: underline; }
  * espremido pelo texto ao lado. */
 .acoes { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
 
+/* --------------------------------------------------------------- formulário */
+/* Só o necessário para as telas de escrita. Campo de formulário no Grimório é
+ * exceção, não regra — a área nasceu para ler, e cada campo novo aqui é uma
+ * decisão de trazer uma ação para dentro. */
+.campo { margin-bottom: 16px; }
+.campo label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
+.campo input[type="file"],
+.campo input[type="password"],
+.campo input[type="text"] {
+  width: 100%; max-width: 420px;
+  border: 1px solid var(--borda); border-radius: 7px;
+  padding: 9px 11px; font: inherit; font-size: 14px;
+  background: var(--superficie); color: var(--texto);
+}
+.campo input:focus-visible { outline: 2px solid var(--marca-acento); outline-offset: 1px; }
+.campo__ajuda { font-size: 12.5px; color: var(--texto-fraco); margin-top: 5px; max-width: 420px; }
+
 /* -------------------------------------------------------------- etiquetas */
 .etiqueta {
   display: inline-flex; align-items: center; gap: 5px;

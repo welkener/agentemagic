@@ -349,6 +349,21 @@ def ferramentas_mais_usadas(usuario, dias: int = 30) -> list[tuple[str, int]]:
     return sorted(contagem.items(), key=lambda par: (-par[1], par[0]))
 
 
+def cliente_no_escopo(usuario, cliente_id: int):
+    """A empresa, se ela pertence à carteira deste contador. Senão, None.
+
+    Versão enxuta de `ficha_da_empresa` para quem só precisa do objeto — uma
+    ação de escrita não deve montar a ficha inteira (notas, série, integrações)
+    para depois gravar um campo. Mesma regra de escopo, mesmo desfecho: fora da
+    carteira é `None`, e a view responde 404.
+    """
+    return (
+        _escopar(Cliente.objects.all(), usuario, campo="escritorio")
+        .filter(pk=cliente_id)
+        .first()
+    )
+
+
 def solicitacao_no_escopo(usuario, pk: int):
     """Uma solicitação, se ela pertence à carteira deste contador. Senão, None.
 
@@ -655,7 +670,13 @@ def pendencias(usuario) -> list[Pendencia]:
                     detalhe="Não emite nota até vincular um certificado.",
                     cliente=linha.cliente,
                     acao_rotulo="Vincular",
-                    acao_url="/admin/credentials/credencial/add/",
+                    # Aponta para o Grimório, não mais para o admin: era o
+                    # botão mais frequente desta fila (uma linha por empresa
+                    # sem certificado) e cada clique custava uma viagem ao
+                    # `/admin/credentials/credencial/add/`, onde o contador
+                    # ainda tinha que escolher o cliente na mão — e escolher
+                    # errado vincula o certificado de uma empresa a outra.
+                    acao_url=f"/grimorio/empresa/{linha.cliente.pk}/certificado/",
                 )
             )
         elif dias is not None and dias < 0:
@@ -667,7 +688,7 @@ def pendencias(usuario) -> list[Pendencia]:
                     detalhe=f"Venceu há {abs(dias)} dia(s). A emissão está parada.",
                     cliente=linha.cliente,
                     acao_rotulo="Renovar",
-                    acao_url=f"/admin/credentials/credencial/{linha.certificado.pk}/change/",
+                    acao_url=f"/grimorio/empresa/{linha.cliente.pk}/certificado/",
                 )
             )
         elif dias is not None and dias <= DIAS_ALERTA_CERTIFICADO:
@@ -679,7 +700,7 @@ def pendencias(usuario) -> list[Pendencia]:
                     detalhe=f"Faltam {dias} dia(s).",
                     cliente=linha.cliente,
                     acao_rotulo="Renovar",
-                    acao_url=f"/admin/credentials/credencial/{linha.certificado.pk}/change/",
+                    acao_url=f"/grimorio/empresa/{linha.cliente.pk}/certificado/",
                 )
             )
 

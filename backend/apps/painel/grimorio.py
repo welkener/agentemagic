@@ -314,3 +314,94 @@ class ResolverSolicitacaoView(EscopoGrimorioMixin, View):
         if not destino.startswith("/grimorio/"):
             destino = reverse("grimorio:hoje")
         return HttpResponseRedirect(destino)
+
+
+class VincularCertificadoView(EscopoGrimorioMixin, TemplateView):
+    """Sobe o certificado A1 da empresa sem sair do Grimório.
+
+    Segunda escrita desta área, e a primeira que lida com **segredo**. Por isso
+    ela não implementa nada: o POST chama
+    `credentials.services.vincular_certificado_pfx`, o mesmo serviço que o admin
+    usa há semanas — que valida o `.pfx`, extrai CNPJ e validade, cifra arquivo e
+    senha e registra na trilha. Duplicar esse caminho para ganhar uma tela seria
+    criar um segundo lugar onde a senha de um certificado digital pode ser
+    tratada errado, e o custo desse erro é alto demais para a economia que gera.
+
+    **A senha nunca sai daqui**: não vai para mensagem, não vai para log, não vai
+    para a trilha e não volta preenchida no formulário. O único destino dela é o
+    serviço do cofre.
+
+    **CNPJ divergente avisa, não bloqueia** — a mesma regra do admin. A AC pode
+    fugir do padrão de CN e matriz/filial dividem raiz; decidir por bloqueio aqui
+    seria mudar comportamento fiscal por conveniência de tela. O que muda é a
+    ênfase: na tela do contador o aviso é impossível de não ver, porque emitir
+    com certificado de outro CNPJ assina a nota como outra empresa.
+    """
+
+    template_name = "grimorio/certificado.html"
+    secao = "integracoes"
+
+    # Um .pfx real tem alguns KB. O limite existe para que um upload enorme não
+    # seja lido inteiro na memória do contêiner, que é compartilhado.
+    TAMANHO_MAXIMO = 1024 * 1024
+
+    def get_context_data(self, **kwargs):
+        contexto = super().get_context_data(**kwargs)
+        cliente = metricas.cliente_no_escopo(self.request.user, kwargs["cliente_id"])
+        if cliente is None:
+            raise Http404("Empresa não encontrada nesta carteira.")
+        contexto["cliente"] = cliente
+        contexto["credencial"] = (
+            cliente.credenciais.filter(tipo="certificado_pfx").order_by("-atualizado_em").first()
+        )
+        return contexto
+
+    def post(self, request, cliente_id):
+        from apps.credentials.certificados import ErroCertificadoInvalido
+        from apps.credentials.models import Credencial
+        from apps.credentials.services import vincular_certificado_pfx
+
+        cliente = metricas.cliente_no_escopo(request.user, cliente_id)
+        if cliente is None:
+            raise Http404("Empresa não encontrada nesta carteira.")
+
+        arquivo = request.FILES.get("pfx")
+        senha = request.POST.get("senha") or ""
+        if arquivo is None or not senha:
+            messages.error(request, "Envie o arquivo .pfx e a senha dele.")
+            return HttpResponseRedirect(request.path)
+        if arquivo.size > self.TAMANHO_MAXIMO:
+            messages.error(request, "Arquivo grande demais para ser um certificado .pfx.")
+            return HttpResponseRedirect(request.path)
+
+        credencial, _ = Credencial.objects.get_or_create(
+            cliente=cliente,
+            tipo=Credencial.Tipo.CERTIFICADO_PFX,
+            defaults={"integracao": "nfse_nacional", "referencia_cofre": f"pfx/{cliente.pk}"},
+        )
+        try:
+            metadados = vincular_certificado_pfx(credencial, arquivo.read(), senha)
+        except ErroCertificadoInvalido as erro:
+            # A mensagem do serviço distingue "senha errada" de "arquivo
+            # inválido", e essa diferença é o que o contador precisa para saber
+            # se pede a senha de novo ou o arquivo de novo.
+            messages.error(request, f"Certificado não aceito: {erro}")
+            return HttpResponseRedirect(request.path)
+
+        if credencial.certificado_cnpj_diverge:
+            messages.warning(
+                request,
+                f"Certificado vinculado, mas o CNPJ dele ({metadados.cnpj}) é "
+                f"diferente do cadastro ({cliente.cnpj}). Confira antes de emitir — "
+                f"nota assinada com certificado de outro CNPJ sai em nome da outra "
+                f"empresa.",
+            )
+        else:
+            messages.success(
+                request,
+                f"Certificado vinculado. Válido até "
+                f"{metadados.validade.strftime('%d/%m/%Y')}.",
+            )
+        return HttpResponseRedirect(
+            reverse("grimorio:empresa", args=[cliente.pk])
+        )

@@ -214,3 +214,137 @@ def test_a_fila_do_hoje_resolve_sem_mandar_ninguem_para_o_admin(
 
     assert f'action="/grimorio/chamados/{chamado.pk}/resolver/"' in corpo
     assert "csrfmiddlewaretoken" in corpo
+
+
+# ---------------------------------------------------------------------------
+# Vincular certificado — a primeira escrita do Grimório que lida com SEGREDO
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def pfx():
+    """Certificado autoassinado em memória, com o CNPJ da empresa 'alfa'."""
+    from tests.test_credencial_certificado import _gerar_pfx_teste
+
+    return _gerar_pfx_teste(cnpj="11111111000111", senha="senha-do-certificado")
+
+
+def enviar_certificado(client, cliente, conteudo, senha, nome="cert.pfx"):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    return client.post(
+        f"/grimorio/empresa/{cliente.pk}/certificado/",
+        {"pfx": SimpleUploadedFile(nome, conteudo), "senha": senha},
+    )
+
+
+@pytest.mark.django_db
+class TestVincularCertificado:
+    def test_vincula_e_grava_validade(self, client, dois_escritorios_com_chamado, pfx):
+        from apps.credentials.models import Credencial
+
+        escritorio, cliente, _ = dois_escritorios_com_chamado["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+
+        resposta = enviar_certificado(client, cliente, pfx, "senha-do-certificado")
+
+        assert resposta.status_code == 302
+        with rls.escopo_irrestrito():
+            credencial = Credencial.objects.get(cliente=cliente)
+        assert credencial.certificado_validade is not None
+        assert credencial.certificado_cnpj == cliente.cnpj
+
+    def test_a_senha_nunca_aparece_em_lugar_nenhum(
+        self, client, dois_escritorios_com_chamado, pfx
+    ):
+        """A regra que justifica esta tela chamar o serviço do cofre em vez de
+        implementar guarda própria: o segredo tem um destino só."""
+        escritorio, cliente, _ = dois_escritorios_com_chamado["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+
+        enviar_certificado(client, cliente, pfx, "senha-do-certificado")
+
+        with rls.escopo_irrestrito():
+            trilha = " ".join(
+                str(e.dados) for e in Auditoria.objects.all()
+            )
+        assert "senha-do-certificado" not in trilha
+
+        corpo = client.get(f"/grimorio/empresa/{cliente.pk}/certificado/").content.decode()
+        assert "senha-do-certificado" not in corpo
+
+    def test_senha_errada_nao_grava_nada(self, client, dois_escritorios_com_chamado, pfx):
+        """O `.pfx` é aberto ANTES de tocar o banco — senha errada não deixa
+        credencial pela metade."""
+        from apps.credentials.models import Credencial
+
+        escritorio, cliente, _ = dois_escritorios_com_chamado["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+
+        resposta = enviar_certificado(client, cliente, pfx, "senha-errada")
+
+        assert resposta.status_code == 302
+        with rls.escopo_irrestrito():
+            credencial = Credencial.objects.get(cliente=cliente)
+        assert credencial.certificado_validade is None
+        assert not credencial.pfx_arquivo_cifrado
+
+    def test_arquivo_grande_demais_e_recusado(
+        self, client, dois_escritorios_com_chamado
+    ):
+        """Um `.pfx` tem alguns KB. O limite impede que um upload enorme seja
+        lido inteiro na memória de um contêiner compartilhado."""
+        from apps.credentials.models import Credencial
+
+        escritorio, cliente, _ = dois_escritorios_com_chamado["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+
+        enviar_certificado(client, cliente, b"x" * (2 * 1024 * 1024), "qualquer")
+
+        with rls.escopo_irrestrito():
+            assert not Credencial.objects.filter(cliente=cliente).exists()
+
+    def test_cnpj_divergente_avisa_e_nao_bloqueia(
+        self, client, dois_escritorios_com_chamado
+    ):
+        """Mesma regra do admin — a AC pode fugir do padrão de CN e matriz/filial
+        dividem raiz. O que muda é a ênfase: emitir com certificado de outro CNPJ
+        assina a nota em nome da outra empresa, e o contador tem que ver isso."""
+        from tests.test_credencial_certificado import _gerar_pfx_teste
+
+        escritorio, cliente, _ = dois_escritorios_com_chamado["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+        outro = _gerar_pfx_teste(cnpj="99999999000199", senha="senha-do-certificado")
+
+        resposta = enviar_certificado(client, cliente, outro, "senha-do-certificado")
+        corpo = client.get(resposta["Location"]).content.decode()
+
+        assert "diferente do cadastro" in corpo.lower() or "99.999.999" in corpo
+
+    def test_nao_vincula_em_empresa_de_outro_escritorio(
+        self, client, dois_escritorios_com_chamado, pfx
+    ):
+        escritorio_alfa, _, _ = dois_escritorios_com_chamado["alfa"]
+        _, cliente_beta, _ = dois_escritorios_com_chamado["beta"]
+        client.force_login(_contador(escritorio_alfa, "contador.alfa"))
+
+        resposta = enviar_certificado(client, cliente_beta, pfx, "senha-do-certificado")
+
+        assert resposta.status_code == 404
+        from apps.credentials.models import Credencial
+
+        with rls.escopo_irrestrito():
+            assert not Credencial.objects.filter(cliente=cliente_beta).exists()
+
+    def test_a_fila_do_hoje_aponta_para_o_grimorio_e_nao_para_o_admin(
+        self, client, dois_escritorios_com_chamado
+    ):
+        """Era o botão mais frequente da fila — uma linha por empresa sem
+        certificado — e cada clique custava uma viagem ao admin, onde ainda era
+        preciso escolher o cliente na mão. Escolher errado vincula o certificado
+        de uma empresa a outra."""
+        escritorio, cliente, _ = dois_escritorios_com_chamado["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+
+        corpo = client.get("/grimorio/").content.decode()
+
+        assert f"/grimorio/empresa/{cliente.pk}/certificado/" in corpo
+        assert "/admin/credentials/credencial/add/" not in corpo
