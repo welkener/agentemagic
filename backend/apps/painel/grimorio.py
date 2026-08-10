@@ -8,9 +8,23 @@ escapado por tenant, mas como backoffice — cadastro, exceção, equipe Magic B
 
 A divisão de responsabilidade segue a que já existia: as contas ficam em
 `metricas.py` (sem request, sem template, testáveis sozinhas) e aqui só há
-montagem de contexto. Tudo é somente leitura — nenhuma destas telas cria fonte
-de verdade nova. Ação de escrita (aprovar nota, renovar certificado) leva para
-o admin, que é onde a máquina de estados e a auditoria já estão ligadas.
+montagem de contexto.
+
+**Deixou de ser somente leitura em 10/ago/2026, e por camadas.** Até então toda
+ação levava para o `/admin/` — outra cara, outra navegação, vocabulário de
+programador — e o gate do Sprint 2b ("o contador cumpre um dia sem abrir o
+/admin/") não tinha como fechar. A primeira escrita foi **resolver chamado**,
+escolhida por ser sem efeito fiscal, sem custo para o cliente e trivialmente
+reversível.
+
+O que **não** muda: aprovar e cancelar nota continuam passando pelos serviços
+auditados de `agents/agente_nf` quando chegarem aqui. A máquina de estados
+fiscal não ganha atalho por conveniência de tela — o que muda é onde fica o
+botão, nunca o caminho que ele percorre.
+
+Toda escrita desta área obedece a três regras, e `tests/test_grimorio_acoes.py`
+as cobra: só POST muda estado; o objeto vem do escopo do contador e nunca do id
+da URL; e o ato entra na trilha com quem clicou.
 
 **O ponto sensível é o escopo.** Sair do admin significa sair de
 `EscopoEscritorioMixin`, que era quem filtrava `get_queryset`. Aqui o escopo
@@ -23,11 +37,15 @@ vem de três camadas independentes, e é de propósito que sejam três:
 `tests/test_grimorio.py` verifica as três — inclusive uma view escrita errado
 de propósito, sem o mixin, para provar que a terceira camada segura sozinha.
 """
+from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
-from django.http import Http404
+from django.http import Http404, HttpResponseRedirect
+from django.urls import reverse
+from django.views import View
 from django.views.generic import TemplateView
 
+from apps.audit.services import registrar
 from apps.observabilidade import orcamento
 from apps.painel import apresentacao, branding, metricas
 from apps.tenants.escopo import escopo_do_usuario
@@ -235,3 +253,64 @@ class IntegracoesView(EscopoGrimorioMixin, TemplateView):
         contexto["completas"] = [l for l in linhas if not l.pendencias]
         contexto["incompletas"] = [l for l in linhas if l.pendencias]
         return contexto
+
+
+class ResolverSolicitacaoView(EscopoGrimorioMixin, View):
+    """Fecha um chamado sem sair do Grimório — a primeira escrita desta área.
+
+    **Por que ela existe.** Até aqui o Grimório era somente leitura e toda ação
+    levava para o `/admin/`: outra cara, outra navegação, vocabulário de
+    programador. No meio de uma tarefa isso é a costura que o concorrente não
+    tem, e o gate do Sprint 2b ("o contador cumpre um dia sem abrir o /admin/")
+    depende de fechá-la.
+
+    **Por onde ela começa, e por quê.** Por chamado, que é a ação sem efeito
+    fiscal, sem custo para o cliente e trivialmente reversível — reabrir é
+    mudar um campo. Aprovar e cancelar nota ficam para depois e continuarão
+    passando pelos mesmos serviços auditados: a máquina de estados fiscal não
+    ganha atalho por causa de conveniência de tela.
+
+    **O que esta view garante, e que qualquer escrita futura aqui precisa
+    repetir:** só POST muda estado (link não altera dado — um `GET` que resolve
+    chamado é resolvido pelo pré-carregador do navegador); o objeto vem do
+    escopo do contador, nunca do id da URL; e o ato entra na trilha com quem
+    clicou.
+    """
+
+    def post(self, request, pk):
+        solicitacao = metricas.solicitacao_no_escopo(request.user, pk)
+        if solicitacao is None:
+            # 404 e não 403: ver `metricas.solicitacao_no_escopo`.
+            raise Http404("Chamado não encontrado nesta carteira.")
+
+        if solicitacao.aberta:
+            solicitacao.resolver(por=request.user)
+            registrar(
+                "solicitacao_resolvida",
+                {
+                    "protocolo": solicitacao.protocolo,
+                    "tipo": solicitacao.tipo,
+                    "por": request.user.get_username(),
+                    "origem": "grimorio",
+                },
+                cliente=solicitacao.cliente,
+            )
+            messages.success(
+                request,
+                f"Chamado {solicitacao.protocolo} marcado como resolvido.",
+            )
+        else:
+            # Dois cliques no mesmo botão, ou dois contadores ao mesmo tempo.
+            # Não é erro: o desfecho pretendido já é o atual.
+            messages.info(
+                request, f"O chamado {solicitacao.protocolo} já estava resolvido."
+            )
+
+        # Volta para onde o contador estava. `next` é conferido contra as rotas
+        # do próprio Grimório — aceitar qualquer URL aqui seria um redirecionador
+        # aberto, e este formulário fica atrás de login mas dentro de um domínio
+        # que o cliente final também acessa.
+        destino = request.POST.get("next") or ""
+        if not destino.startswith("/grimorio/"):
+            destino = reverse("grimorio:hoje")
+        return HttpResponseRedirect(destino)

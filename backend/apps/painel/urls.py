@@ -19,4 +19,10 @@ urlpatterns = [
     path("documentos/", grimorio.DocumentosView.as_view(), name="documentos"),
     path("integracoes/", grimorio.IntegracoesView.as_view(), name="integracoes"),
     path("operacao/", grimorio.OperacaoView.as_view(), name="operacao"),
+    # Primeira rota de ESCRITA do Grimório. Só POST — ver a docstring da view.
+    path(
+        "chamados/<int:pk>/resolver/",
+        grimorio.ResolverSolicitacaoView.as_view(),
+        name="resolver_chamado",
+    ),
 ]

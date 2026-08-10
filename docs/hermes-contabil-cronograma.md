@@ -289,9 +289,17 @@ mensais, carteira, integrações, documentos, radar de teto), `painel/apresentac
   e medição por script, não julgamento por imagem.
 
 **Gate S2b**
-- [ ] O contador cumpre um dia de trabalho **sem abrir o `/admin/`** — falta o
-      que só o uso diz. Sabe-se de uma lacuna: resolver um chamado ainda leva
-      para o admin, porque o Grimório é somente leitura por decisão.
+- [ ] O contador cumpre um dia de trabalho **sem abrir o `/admin/`** — em
+      andamento, por camadas. O Grimório deixou de ser somente leitura em
+      10/ago: **resolver chamado** acontece na própria tela. Foi a primeira
+      escolhida por ser sem efeito fiscal, sem custo ao cliente e trivialmente
+      reversível. Faltam vincular certificado e aprovar/cancelar nota — e as
+      duas últimas continuarão passando pelos serviços auditados de
+      `agents/agente_nf`: o botão muda de lugar, o caminho não.
+      Toda escrita nova obedece a três regras, cobradas em
+      `tests/test_grimorio_acoes.py`: só POST muda estado; o objeto vem do
+      escopo do contador, nunca do id da URL; e o ato entra na trilha com quem
+      clicou.
 - [x] teste prova que uma view nova sem o mixin não devolve dado de outro tenant
       (`tests/test_grimorio.py`);
 - [x] as telas renderizam certo em screenshot real, não só em teste (as cinco

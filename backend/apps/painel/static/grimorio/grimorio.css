@@ -155,12 +155,34 @@ a:hover { text-decoration: underline; }
   border: 1px solid var(--borda); border-radius: 7px;
   padding: 7px 13px; font-size: 13px; font-weight: 560;
   color: var(--texto); background: var(--superficie); cursor: pointer;
+  /* `font-family: inherit` porque a classe agora veste `<a>` E `<button>`, e o
+   * botão nativo não herda a fonte do documento — sem isto, o "Resolver" sai
+   * numa fonte diferente do "Ver detalhe" ao lado. */
+  font-family: inherit; line-height: inherit;
 }
 .botao:hover { background: var(--fundo); text-decoration: none; }
 .botao--principal {
   background: var(--marca-acento); border-color: var(--marca-acento); color: #fff;
 }
 .botao--principal:hover { filter: brightness(.94); }
+
+/* ----------------------------------------------------------------- avisos */
+/* Confirmação de ação. Estático no fluxo da página, não flutuante: aviso que
+ * some sozinho é aviso que não foi lido — e aqui ele responde "o chamado
+ * fechou mesmo?". */
+.avisos { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.aviso {
+  padding: 11px 15px; border-radius: var(--raio);
+  font-size: 13.5px; border: 1px solid transparent;
+}
+.aviso--success { background: var(--ok-fundo); color: var(--ok); }
+.aviso--info    { background: var(--superficie); color: var(--texto-suave); border-color: var(--borda); }
+.aviso--warning { background: var(--atencao-fundo); color: var(--atencao); }
+.aviso--error   { background: var(--critico-fundo); color: var(--critico); }
+
+/* Grupo de botões de uma pendência. `flex-shrink: 0` para o par não ser
+ * espremido pelo texto ao lado. */
+.acoes { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
 
 /* -------------------------------------------------------------- etiquetas */
 .etiqueta {
@@ -297,6 +319,10 @@ table.tabela tbody tr:hover { background: #fafbfe; }
    * alvo de toque de 44 px, que é o mínimo para acertar com o polegar. */
   .pendencia { flex-direction: column; align-items: stretch; gap: 10px; }
   .pendencia .botao { text-align: center; padding: 11px 14px; }
+  /* No celular os dois botões dividem a linha, cada um com metade e altura de
+   * toque — empilhá-los faria a fila de chamados ficar comprida demais. */
+  .acoes { width: 100%; }
+  .acoes > * { flex: 1; text-align: center; padding: 11px 14px; }
 
   .filtros { gap: 6px; }
   .busca { flex: 1 1 100%; min-width: 0; }

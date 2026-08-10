@@ -90,7 +90,22 @@ não aparece transforma essa frase em mentira que ele descobre pelo silêncio.
             {% if s.preferencia_data %}· prefere {{ s.preferencia_data|date:"d/m" }}{% endif %}
           </div>
         </div>
-        <a class="botao" href="/admin/atendimento/solicitacao/{{ s.pk }}/change/">Abrir</a>
+        {% comment %}
+        Duas ações, e a hierarquia entre elas é a decisão: "Resolver" é o que o
+        contador faz na maioria das vezes e agora acontece aqui mesmo — antes
+        levava ao admin, e a viagem de ida e volta era o motivo de a fila
+        envelhecer. "Ver detalhe" continua indo ao admin, porque ler o texto
+        inteiro do cliente é caso menos frequente e não justifica tela nova.
+
+        `next` devolve o contador para esta página; a view só aceita destino
+        dentro do próprio Grimório.
+        {% endcomment %}
+        <form method="post" action="{% url 'grimorio:resolver_chamado' s.pk %}" class="acoes">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <a class="botao" href="/admin/atendimento/solicitacao/{{ s.pk }}/change/">Ver detalhe</a>
+          <button class="botao botao--principal" type="submit">Resolver</button>
+        </form>
       </div>
       {% endfor %}
     </div>

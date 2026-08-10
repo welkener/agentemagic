@@ -24,6 +24,7 @@ mutável, então a eliminação a pedido do titular simplesmente apaga o texto e
 mantém o registro de que houve um chamado (ver
 `apps/audit/conteudo.eliminar_conteudo_do_titular`).
 """
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -79,6 +80,17 @@ class Solicitacao(models.Model):
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True)
     resolvido_em = models.DateTimeField(null=True, blank=True)
+    # Quem fechou. Num escritório com quatro contadores, é a primeira pergunta
+    # quando o cliente diz que ninguém respondeu — e sem o campo a resposta só
+    # existiria na trilha de auditoria, que não é onde se olha no dia a dia.
+    # SET_NULL: desligar um funcionário não pode apagar o histórico do chamado.
+    resolvido_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="solicitacoes_resolvidas",
+    )
 
     class Meta:
         verbose_name = "solicitação"
@@ -95,7 +107,16 @@ class Solicitacao(models.Model):
     def aberta(self) -> bool:
         return self.estado != self.Estado.RESOLVIDA
 
-    def resolver(self) -> None:
+    def resolver(self, por=None) -> None:
+        """Fecha o chamado. `por` é quem clicou — o contador logado.
+
+        Continua aceitando `None` porque a ação em massa do admin e os testes
+        fecham sem pessoa identificada; o que não pode é a tela do Grimório
+        deixar de informar, e é isso que `tests/test_grimorio_acoes.py` cobra.
+        """
         self.estado = self.Estado.RESOLVIDA
         self.resolvido_em = timezone.now()
-        self.save(update_fields=["estado", "resolvido_em", "atualizado_em"])
+        self.resolvido_por = por
+        self.save(
+            update_fields=["estado", "resolvido_em", "resolvido_por", "atualizado_em"]
+        )

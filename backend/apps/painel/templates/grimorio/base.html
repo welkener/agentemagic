@@ -49,6 +49,19 @@ comentário de duas linhas vaza como texto na página (achado de 27/jul/2026).
   </nav>
 
   <main class="conteudo">
+    {% comment %}
+    Confirmação das ações do Grimório. Fica no topo do conteúdo e não flutuando
+    sobre a tela: aviso que some sozinho é aviso que o contador não leu, e aqui
+    ele confirma que um chamado foi de fato fechado — se a mensagem passar
+    despercebida, ele fecha o mesmo chamado de novo.
+    {% endcomment %}
+    {% if messages %}
+    <div class="avisos">
+      {% for m in messages %}
+      <div class="aviso aviso--{{ m.level_tag }}">{{ m }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
     {% block conteudo %}{% endblock %}
   </main>
 

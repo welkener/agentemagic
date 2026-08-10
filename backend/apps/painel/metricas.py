@@ -349,6 +349,25 @@ def ferramentas_mais_usadas(usuario, dias: int = 30) -> list[tuple[str, int]]:
     return sorted(contagem.items(), key=lambda par: (-par[1], par[0]))
 
 
+def solicitacao_no_escopo(usuario, pk: int):
+    """Uma solicitação, se ela pertence à carteira deste contador. Senão, None.
+
+    Existe separada de `solicitacoes_abertas` porque é a porta de uma **escrita**,
+    e escrita não pode confiar no id que veio da URL. Devolver None (e o chamador
+    responder 404) em vez de 403 segue a regra da ficha da empresa: distinguir
+    "não existe" de "existe e não é sua" contaria ao contador que aquele chamado
+    existe em outra carteira.
+    """
+    from apps.atendimento.models import Solicitacao
+
+    return (
+        _escopar(Solicitacao.objects.all(), usuario)
+        .select_related("cliente", "usuario")
+        .filter(pk=pk)
+        .first()
+    )
+
+
 def solicitacoes_abertas(usuario, limite: int = 50) -> list:
     """Chamados e pedidos de atendimento ainda não resolvidos.
 
