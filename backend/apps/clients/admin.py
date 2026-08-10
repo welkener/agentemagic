@@ -69,9 +69,13 @@ class ClienteAdmin(EscopoEscritorioMixin, ModelAdmin):
         "telefone_whatsapp",
         "pronto_para_emitir",
         "ativo",
+        "demonstracao",
         "criado_em",
     )
-    list_filter = ("ativo",)
+    # `demonstracao` no filtro porque empresa fictícia e real dividem o mesmo
+    # escritório — e a primeira coisa que alguém faz ao desconfiar de um número
+    # é querer ver a lista sem as fictícias.
+    list_filter = ("ativo", "demonstracao")
     # `telefone_whatsapp` saiu da busca porque deixou de ser coluna do banco
     # (DEC-03): quem procura por número usa a tela de usuários do WhatsApp, que
     # é onde o número passou a morar.

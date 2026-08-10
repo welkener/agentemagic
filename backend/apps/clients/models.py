@@ -216,6 +216,17 @@ class Cliente(models.Model):
         help_text="Série da DPS (`serie`). Numeração sequencial é por prestador+série.",
     )
     ativo = models.BooleanField(default=True)
+    # Empresa criada por `popular_carteira_demo` para demonstração.
+    #
+    # Existe porque dado de demonstração e dado real vivem no MESMO escritório —
+    # e precisam viver, já que o contador só enxerga a carteira dele e um
+    # segundo tenant ativo quebraria o roteamento do webhook por número. Sem uma
+    # marca, "é de verdade?" viraria pergunta sem resposta no dia da reunião, e
+    # a remoção teria que adivinhar quais linhas apagar.
+    demonstracao = models.BooleanField(
+        default=False,
+        help_text="Empresa fictícia, criada para demonstração. Aparece marcada na carteira.",
+    )
     criado_em = models.DateTimeField(auto_now_add=True)
 
     objects = ClienteManager()

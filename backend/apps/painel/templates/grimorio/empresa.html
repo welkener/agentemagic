@@ -10,6 +10,13 @@
       CNPJ {{ ficha.cliente.cnpj|cnpj }} ·
       {{ ficha.cliente.get_opcao_simples_nacional_display }}
       {% if ficha.cliente.telefone_whatsapp %}· WhatsApp {{ ficha.cliente.telefone_whatsapp }}{% endif %}
+      {% comment %}
+      A ficha é onde se para para conferir uma empresa — é aqui e na carteira
+      que a marca de demonstração precisa estar, porque são as duas telas em que
+      alguém pergunta "essa empresa é de verdade?". Nas filas do Hoje ela seria
+      ruído repetido em cada linha.
+      {% endcomment %}
+      {% if ficha.cliente.demonstracao %}· <strong>empresa de demonstração</strong>{% endif %}
     </p>
   </div>
   <div class="filtros">

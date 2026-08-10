@@ -40,7 +40,21 @@
         <tr>
           <td>
             <a class="principal" href="{% url 'grimorio:empresa' l.cliente.pk %}">{{ l.cliente.nome }}</a>
-            <div class="secundario">{{ l.cliente.cnpj|cnpj }}</div>
+            {% comment %}
+            Empresa de demonstração vive no MESMO escritório das reais — não há
+            como separá-las em tenants sem quebrar o roteamento do WhatsApp por
+            número. Então a distinção tem que estar na tela: sem ela, "isso é de
+            verdade?" vira pergunta sem resposta no meio da reunião.
+
+            Fica na segunda linha, junto do CNPJ, e não ao lado do nome: colada
+            no nome ela quebrava a linha nas razões sociais longas e deixava a
+            tabela com alturas de linha desiguais — o olho lê isso como
+            desalinhamento antes de ler o conteúdo.
+            {% endcomment %}
+            <div class="secundario">
+              {{ l.cliente.cnpj|cnpj }}
+              {% if l.cliente.demonstracao %} · demonstração{% endif %}
+            </div>
           </td>
           <td>
             {% comment %}
