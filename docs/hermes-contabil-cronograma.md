@@ -125,7 +125,23 @@ depende de tráfego.
 testes de isolamento, auditoria encadeada, tiers, idempotência.
 
 **Gate S1** — nenhuma tool nova antes de tudo isto verde:
-- [ ] 200 tentativas de cross-tenant por prompt injection, **0 vazamentos**;
+- [x] **200 tentativas de cross-tenant por prompt injection, 0 vazamentos**
+      (`tests/test_isolamento_adversarial.py`, 10/ago). Sete famílias: pedido
+      direto, sobrescrita de instrução, persona, escopo escrito no texto,
+      ofuscação, engenharia social e confusão de entidade.
+
+      **O modelo é assumido comprometido**, não testado quanto à obediência: o
+      dublê escolhe sempre a ferramenta de maior alcance que o schema aceita e
+      preenche os campos como quiser. Medir a resistência do LLM mediria algo
+      que muda quando o provedor troca de versão; o que se garante é estrutural
+      — escopo pelo `SessionContext`, `Literal` gerado do catálogo do cliente,
+      CNPJ/CNAE do cadastro e RLS embaixo.
+
+      **A definição de vazamento custou uma rodada vermelha e vale registrar**:
+      a primeira versão acusou sete casos em que o atacante escrevia o nome da
+      empresa vizinha e recebia a confirmação de volta. Não era vazamento —
+      nenhuma linha foi lida, o texto voltou porque ele o digitou. Vazamento é
+      dado do vizinho que aparece **sem ter sido fornecido**.
 - [x] RLS bloqueia mesmo com um `.objects.filter()` de tenant omitido de
       propósito (`test_filtro_esquecido_nao_vaza`);
 - [ ] T0 resolve ≥ 40% de uma amostra de 100 mensagens reais — **instrumentado,
@@ -426,7 +442,7 @@ Roda depois do S6, sem feature nova, medindo os critérios de aceite (§5).
 
 | Critério | Hoje | Fecha em |
 |---|---|---|
-| 200 tentativas cross-tenant por prompt injection, 0 vazamentos | Isolamento entre escritórios testado (14 casos); falta o adversarial e o 3º nível | **S1** |
+| 200 tentativas cross-tenant por prompt injection, 0 vazamentos | ✅ **fechado em 10/ago** — 200 mensagens, sete famílias, modelo assumido comprometido | **S1** |
 | Nenhum schema de tool com identificador de escopo | ✅ verificado no import (S1) — e, desde o S2, também na **assinatura** das ferramentas | **S1** |
 | Escopo de tenant vale fora do admin | Não existe superfície fora do admin ainda | **S2b** |
 | Contador trabalha um dia sem abrir o `/admin/` | Não | **S2b** |
