@@ -192,3 +192,64 @@ class Intencao(models.Model):
 
     def __str__(self):
         return f"Intenção {self.id} ({self.tipo_acao}) — {self.estado}"
+
+
+class Confirmacao(models.Model):
+    """Quem autorizou uma emissão ou um cancelamento, e por qual ato.
+
+    **Por que uma tabela, se a trilha já registrava.** Até aqui a confirmação em
+    duas etapas vivia dentro do `motivo` da transição para EMITINDO — um texto
+    livre, correto e verdadeiro, mas que só responde à pergunta se alguém abrir a
+    trilha e ler linha por linha. O critério de aceite da plataforma é outro:
+    *"nenhuma nota sem confirmação registrada"*, e afirmação assim precisa ser
+    **consultável**, não reconstituível. A diferença aparece no dia em que
+    alguém contesta uma nota e a resposta tem que sair de um `filter`, não de
+    uma leitura.
+
+    A trilha continua sendo a fonte imutável e encadeada; esta tabela é o índice
+    do ato de autorizar. As duas são gravadas na mesma operação — se um dia
+    divergirem, `tests/test_confirmacoes.py` acusa.
+
+    **O que ela deliberadamente não guarda:** o texto da mensagem do cliente. Ele
+    já está na trilha, cifrado por titular, e uma segunda cópia aqui ficaria fora
+    do alcance da eliminação por LGPD. O que fica é a referência — o
+    `message_id` —, que aponta para lá sem duplicar conteúdo.
+    """
+
+    class Origem(models.TextChoices):
+        CLIENTE_WHATSAPP = "cliente_whatsapp", "Cliente, pelo WhatsApp"
+        CONTADOR_PAINEL = "contador_painel", "Contador, no Grimório"
+        EQUIPE_ADMIN = "equipe_admin", "Equipe, pelo admin"
+
+    intencao = models.ForeignKey(
+        Intencao, on_delete=models.CASCADE, related_name="confirmacoes"
+    )
+    origem = models.CharField(max_length=20, choices=Origem.choices)
+    # Quem autorizou, na forma que aquele canal identifica: o número de quem
+    # escreveu (DEC-03 — a empresa tem vários autorizados) ou o login de quem
+    # clicou. Um dos dois, nunca os dois.
+    wa_id = models.CharField(max_length=20, blank=True, default="")
+    usuario = models.CharField(max_length=150, blank=True, default="")
+    # A mensagem exata que autorizou. Sem ela, "o cliente confirmou" não aponta
+    # para nada verificável.
+    referencia = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="`message_id` do WhatsApp, ou vazio quando a origem é o painel.",
+    )
+    exigiu_2fa = models.BooleanField(default=False)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "confirmação"
+        verbose_name_plural = "confirmações"
+        ordering = ["-criado_em"]
+        indexes = [models.Index(fields=["intencao", "criado_em"], name="confirmacao_intencao")]
+
+    def __str__(self):
+        return f"{self.get_origem_display()} — intenção {self.intencao_id}"
+
+    @property
+    def autor(self) -> str:
+        return self.usuario or self.wa_id or "não identificado"

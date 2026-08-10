@@ -386,6 +386,53 @@ def historico_da_intencao(usuario, intencao) -> list:
     ]
 
 
+# ---------------------------------------------------------------------------
+# Rotina contábil (Sprint 3)
+# ---------------------------------------------------------------------------
+DIAS_ALERTA_CERTIDAO = 30
+
+
+def rotina_do_escritorio(usuario) -> dict:
+    """Guias e obrigações que exigem atenção, da mais urgente para a menos.
+
+    Só o que está em aberto: a tela existe para ser esvaziada, e listar o que já
+    foi pago ou entregue afogaria o que falta. O histórico completo fica na
+    ficha de cada empresa.
+    """
+    from apps.rotina.models import Certidao, Guia, Obrigacao
+
+    hoje = timezone.localdate()
+    guias = list(
+        _escopar(Guia.objects.filter(situacao=Guia.Situacao.ABERTA), usuario)
+        .select_related("cliente")
+        .order_by("vencimento")[:100]
+    )
+    obrigacoes = list(
+        _escopar(
+            Obrigacao.objects.filter(situacao=Obrigacao.Situacao.PENDENTE), usuario
+        )
+        .select_related("cliente")
+        .order_by("prazo")[:100]
+    )
+    certidoes = list(
+        _escopar(
+            Certidao.objects.filter(
+                valida_ate__lte=hoje + timedelta(days=DIAS_ALERTA_CERTIDAO)
+            ),
+            usuario,
+        )
+        .select_related("cliente")
+        .order_by("valida_ate")[:100]
+    )
+    return {
+        "guias": guias,
+        "obrigacoes": obrigacoes,
+        "certidoes": certidoes,
+        "guias_vencidas": [g for g in guias if g.vencida],
+        "obrigacoes_atrasadas": [o for o in obrigacoes if o.atrasada],
+    }
+
+
 def cliente_no_escopo(usuario, cliente_id: int):
     """A empresa, se ela pertence à carteira deste contador. Senão, None.
 

@@ -1,0 +1,179 @@
+{% extends "grimorio/base.html" %}
+{% load grimorio_tags %}
+{% block titulo %}Guias e obrigações{% endblock %}
+
+{% comment %}
+Sobre o nome desta seção, ver a docstring da view que a monta (`apps/painel/
+grimorio.py`) — a explicação mora lá de propósito, porque o guarda de marca
+varre os templates inteiros, comentário incluído, e ele não distingue a palavra
+citada da palavra usada.
+
+A contraparte das ferramentas do Sprint 3. Elas leem daqui, e sem alguém
+lançando o dado responderiam "ainda não tenho" para sempre — a mesma lição dos
+chamados: capacidade que promete e não tem quem alimente do outro lado vira
+promessa vazia.
+
+Só o que está aberto. A tela existe para ser esvaziada; listar o que já foi pago
+ou entregue afogaria o que falta.
+{% endcomment %}
+
+{% block conteudo %}
+<div class="topo">
+  <div>
+    <h1>Guias e obrigações</h1>
+    <p>
+      {{ guias|length }} guia{{ guias|length|pluralize }} em aberto ·
+      {{ obrigacoes|length }} obriga{{ obrigacoes|length|pluralize:"ção,ções" }} pendente{{ obrigacoes|length|pluralize }}
+      {% if certidoes %}· {{ certidoes|length }} certidão(ões) vencendo{% endif %}
+    </p>
+  </div>
+  <div class="filtros">
+    <a class="botao" href="/admin/rotina/guia/add/">Lançar guia</a>
+    <a class="botao" href="/admin/rotina/obrigacao/add/">Lançar obrigação</a>
+  </div>
+</div>
+
+<div class="indicadores">
+  <div class="indicador">
+    <div class="indicador__rotulo">Guias vencidas</div>
+    <div class="indicador__valor">{{ guias_vencidas|length }}</div>
+    <div class="indicador__nota">o cliente já está em atraso</div>
+  </div>
+  <div class="indicador">
+    <div class="indicador__rotulo">Obrigações atrasadas</div>
+    <div class="indicador__valor">{{ obrigacoes_atrasadas|length }}</div>
+    <div class="indicador__nota">prazo já passou</div>
+  </div>
+  <div class="indicador">
+    <div class="indicador__rotulo">Certidões vencendo</div>
+    <div class="indicador__valor">{{ certidoes|length }}</div>
+    <div class="indicador__nota">nos próximos {{ dias_alerta_certidao }} dias</div>
+  </div>
+</div>
+
+<div class="cartao" style="margin-bottom:18px">
+  <div class="cartao__cabeca">
+    <h2>Guias em aberto</h2>
+    <span class="etiqueta">{{ guias|length }}</span>
+  </div>
+  <div class="cartao__corpo">
+    {% if guias %}
+    <div class="tabela-rolagem">
+    <table class="tabela">
+      <thead>
+        <tr><th>Empresa</th><th>Guia</th><th>Competência</th><th class="num">Valor</th><th>Vencimento</th></tr>
+      </thead>
+      <tbody>
+        {% for g in guias %}
+        <tr>
+          <td class="titulo-cartao">
+            <a class="principal" href="{% url 'grimorio:empresa' g.cliente.pk %}">{{ g.cliente.nome }}</a>
+          </td>
+          <td data-rotulo="Guia">{{ g.get_tipo_display }}</td>
+          <td data-rotulo="Competência" class="secundario">{{ g.competencia }}</td>
+          <td data-rotulo="Valor" class="num">{{ g.valor|moeda }}</td>
+          <td data-rotulo="Vencimento">
+            {{ g.vencimento|date:"d/m/Y" }}
+            {% comment %}
+            Vencida traz texto, nunca só cor — mesma regra do resto do painel:
+            parte da população não distingue verde de vermelho, e aqui ler
+            errado custa multa ao cliente.
+            {% endcomment %}
+            {% if g.vencida %}<span class="etiqueta etiqueta--danger">vencida</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div class="vazio">
+      <div class="vazio__titulo">Nenhuma guia em aberto</div>
+      Quando você lançar as guias do mês, elas aparecem aqui — e o cliente passa
+      a poder pedi-las pelo WhatsApp.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="cartao" style="margin-bottom:18px">
+  <div class="cartao__cabeca">
+    <h2>Obrigações pendentes</h2>
+    <span class="etiqueta">{{ obrigacoes|length }}</span>
+  </div>
+  <div class="cartao__corpo">
+    {% if obrigacoes %}
+    <div class="tabela-rolagem">
+    <table class="tabela">
+      <thead>
+        <tr><th>Empresa</th><th>Declaração</th><th>Competência</th><th>Prazo</th><th>Depende de</th></tr>
+      </thead>
+      <tbody>
+        {% for o in obrigacoes %}
+        <tr>
+          <td class="titulo-cartao">
+            <a class="principal" href="{% url 'grimorio:empresa' o.cliente.pk %}">{{ o.cliente.nome }}</a>
+          </td>
+          <td data-rotulo="Declaração">{{ o.get_tipo_display }}</td>
+          <td data-rotulo="Competência" class="secundario">{{ o.competencia }}</td>
+          <td data-rotulo="Prazo">
+            {{ o.prazo|date:"d/m/Y" }}
+            {% if o.atrasada %}<span class="etiqueta etiqueta--danger">atrasada</span>{% endif %}
+          </td>
+          <td data-rotulo="Depende de">
+            {% if o.pendente_com_o_cliente %}
+              <span class="etiqueta etiqueta--warning">do cliente</span>
+              {% if o.observacao %}<div class="secundario">{{ o.observacao }}</div>{% endif %}
+            {% else %}
+              <span class="secundario">do escritório</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div class="vazio">
+      <div class="vazio__titulo">Nenhuma obrigação pendente</div>
+      Tudo que estava no calendário deste mês já foi entregue ou dispensado.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if certidoes %}
+<div class="cartao">
+  <div class="cartao__cabeca">
+    <h2>Certidões vencendo ou vencidas</h2>
+    <span class="etiqueta etiqueta--warning">{{ certidoes|length }}</span>
+  </div>
+  <div class="cartao__corpo">
+    <div class="tabela-rolagem">
+    <table class="tabela">
+      <thead><tr><th>Empresa</th><th>Certidão</th><th>Situação</th><th>Válida até</th></tr></thead>
+      <tbody>
+        {% for c in certidoes %}
+        <tr>
+          <td class="titulo-cartao">
+            <a class="principal" href="{% url 'grimorio:empresa' c.cliente.pk %}">{{ c.cliente.nome }}</a>
+          </td>
+          <td data-rotulo="Certidão">{{ c.get_tipo_display }}</td>
+          <td data-rotulo="Situação">{{ c.get_situacao_display }}</td>
+          <td data-rotulo="Válida até">
+            {{ c.valida_ate|date:"d/m/Y" }}
+            {% if c.vencida %}<span class="etiqueta etiqueta--danger">vencida</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="secundario" style="margin:12px 0 0">
+      Certidão vencida trava licitação, financiamento e renovação de contrato — e
+      o cliente costuma descobrir no dia em que precisa dela.
+    </p>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

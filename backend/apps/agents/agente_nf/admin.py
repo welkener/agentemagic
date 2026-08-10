@@ -91,13 +91,20 @@ class IntencaoAdmin(EscopoEscritorioMixin, ModelAdmin):
             motivo = f"aprovado via admin por {request.user}"
 
             if intencao.tipo_acao == "cancelar_nfse":
-                resultado = confirmar_cancelamento(intencao, motivo=motivo)
+                resultado = confirmar_cancelamento(
+                    intencao, motivo=motivo, usuario=str(request.user)
+                )
                 nota = intencao.intencao_original
                 if resultado.ok:
                     return f"Nota {nota.protocolo} CANCELADA — protocolo {resultado.protocolo}."
                 return f"Cancelamento da nota {nota.protocolo} rejeitado pela Sefin: {resultado.erro}."
 
-            resultado = confirmar_emissao(intencao, motivo=motivo)
+            resultado = confirmar_emissao(
+                intencao,
+                motivo=motivo,
+                origem="equipe_admin",
+                usuario=str(request.user),
+            )
             if resultado.ok:
                 return f"Intenção {intencao.id} emitida — protocolo {resultado.protocolo}."
             return f"Intenção {intencao.id} rejeitada pela Sefin: {resultado.erro}."

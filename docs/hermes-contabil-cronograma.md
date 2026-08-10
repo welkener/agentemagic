@@ -33,10 +33,10 @@ aqui —, o mesmo escopo cabe em sprints de 3 semanas:
 | S1 | Isolamento de 3 níveis | 10–21/ago | 10–28/ago | ✅ 09/ago |
 | S2 | Tool registry + medição | 24/ago–04/set | 31/ago–18/set | ✅ 09/ago |
 | **S2b** | **Grimório como aplicação** | **07–18/set** | **21/set–09/out** | ✅ 09/ago |
-| S3 | Rotina contábil (guias, obrigações) | 21/set–02/out | 12–30/out |
-| S4 | Pipeline de documento | 05–16/out | 02–20/nov |
-| S5 | ERPAdapter + reconciliação | 19–30/out | 23/nov–11/dez |
-| S6 | Contas a pagar, proativo, billing | 02–13/nov | 04–22/jan/2027 |
+| S3 | Rotina contábil (guias, obrigações) | 21/set–02/out | 12–30/out | ✅ 10/ago |
+| S4 | Pipeline de documento | 05–16/out | 02–20/nov | — |
+| S5 | ERPAdapter + reconciliação | 19–30/out | 23/nov–11/dez | — |
+| S6 | Contas a pagar, proativo, billing | 02–13/nov | 04–22/jan/2027 | — |
 
 **A coluna "Real" precisa de uma ressalva, senão engana.** Os três primeiros
 sprints fecharam muito à frente das duas estimativas, e a causa não é
@@ -69,7 +69,7 @@ Ago              Set              Out              Nov            Jan/27
 S1  ██✅          Isolamento de 3 níveis: usuario + RLS + tool registry + T0
 S2   ██✅         Tool registry + SessionContext + medição por tenant
 S2b  ██✅         Grimório: aplicação própria (Hoje, Carteira, Ficha, Operação)
-S3           ████ Rotina contábil: guias, obrigações, retenções
+S3    ██✅        Rotina contábil: guias, obrigações, retenções
 S4              ████ Pipeline de documento (OCR → revisão humana)
 S5                 ████ ERPAdapter: ArquivoAdapter + reconciliação + DLQ
 S6                    ████ Contas a pagar + proativo + billing + onboarding
@@ -332,18 +332,39 @@ mensais, carteira, integrações, documentos, radar de teto), `painel/apresentac
 
 ---
 
-### Sprint 3 — Rotina contábil: o que o escritório de fato pede (21/set–02/out)
+### Sprint 3 — Rotina contábil: o que o escritório de fato pede (21/set–02/out) — ✅ **fechado em 10/ago**
 
-- [ ] `consultar_das(competencia)`, `segunda_via_guia(tipo, competencia)` —
-      DAS, DARF, GPS, FGTS, ISS.
-- [ ] `status_obrigacoes()` — DCTFWeb, EFD, eSocial, SPED.
-- [ ] `consultar_folha(competencia)`, `listar_certidoes()`.
-- [ ] **`fiscal/` ganha retenções**: ISS, IRRF, INSS, PIS/COFINS/CSLL.
-- [ ] **Teste de que `fiscal/` não importa `agent/`** — hoje `teto_mei.py`
-      importa `clients.models`; a dependência é invertida no mesmo commit.
-- [ ] Tabela **`confirmacoes`**: a confirmação em duas etapas hoje vive na
-      transição da `Intencao`; vira registro explícito, porque o critério de
-      aceite exige que seja consultável, não inferido da trilha.
+- [x] `consultar_das`, `segunda_via_guia` — DAS, DARF, GPS, FGTS, ISS.
+- [x] `status_obrigacoes` — DCTFWeb, EFD, eSocial, SPED, DEFIS.
+- [x] `consultar_folha`, `listar_certidoes`.
+- [x] **`fiscal/` ganhou retenções** (`fiscal/retencoes.py`): ISS, IRRF, INSS e
+      CSRF, com alíquotas conferidas em fonte pública em 10/ago e fundamento
+      legal ao lado de cada valor.
+- [x] **`fiscal/` não importa `agent/`** — e ficou **sem importar app nenhum**:
+      o `teto_mei` deixou de depender de `clients.models`. Dois testes cobrem.
+- [x] Tabela **`confirmacoes`** (`agente_nf.Confirmacao`), com a invariante do
+      critério de aceite como teste: nenhuma nota concluída sem confirmação.
+- [x] **Tela Rotina no Grimório** — não estava na lista e é obrigatória: sem
+      alguém lançando guia e obrigação, as cinco ferramentas responderiam
+      "ainda não tenho" para sempre. Mesma lição dos chamados do S2.
+
+**As três decisões que definiram o sprint:**
+
+1. **De onde vem o dado.** Não há API pública utilizável para buscar DAS, DARF
+   ou o status da DCTFWeb — é o que motivou a DEC-09 a pôr o `ArquivoAdapter`
+   antes de qualquer integração. Então as tabelas são preenchidas **pelo
+   escritório**: hoje à mão, no S5 por arquivo, um dia por API onde existir.
+2. **Sem registro, "ainda não tenho".** Nunca valor calculado, estimado ou
+   repetido do mês anterior. Um DAS inventado é pior que nenhum: o cliente paga
+   errado, e paga confiando. Vale igual para prazo e validade de certidão.
+3. **As retenções não adivinham hipótese.** Se o serviço é do art. 714, se há
+   cessão de mão de obra, se o ISS é retido no tomador — tudo isso é julgamento
+   jurídico, declarado por quem sabe. E a regra que quase inverte o senso comum:
+   **optante do Simples (o MEI incluído) não sofre IRRF nem CSRF**, então o
+   desfecho correto para quase toda esta carteira é "não há retenção federal".
+   O módulo também **se recusa** a calcular INSS de MEI: ali não há retenção de
+   11% do prestador, e sim contribuição de 3% do contratante (art. 18-B da
+   LC 123/2006) — devolver 11% seria erro com cara de resposta.
 
 ✅ **Já pronto:** motor fiscal com DPS via `nfelib` contra o XSD oficial,
 assinatura XMLDSig, numeração/série, cancelamento, radar de teto do MEI,
@@ -446,7 +467,7 @@ Roda depois do S6, sem feature nova, medindo os critérios de aceite (§5).
 | Nenhum schema de tool com identificador de escopo | ✅ verificado no import (S1) — e, desde o S2, também na **assinatura** das ferramentas | **S1** |
 | Escopo de tenant vale fora do admin | Não existe superfície fora do admin ainda | **S2b** |
 | Contador trabalha um dia sem abrir o `/admin/` | Não | **S2b** |
-| Nenhuma nota sem confirmação registrada em `confirmacoes` | Confirmação existe e é auditada; tabela consultável, não | **S3** |
+| Nenhuma nota sem confirmação registrada em `confirmacoes` | ✅ **fechado em 10/ago** — tabela `agente_nf.Confirmacao`, com a invariante como teste | **S3** |
 | Custo de LLM por cliente/mês < R$ 0,60 | **Instrumentado, sem tráfego** — `ConsumoLLM` + tela Operação | S2 mede · S6 comprova |
 | Resolução sem humano ≥ 60% | Não medido | T-Piloto |
 | p95 < 8s fora de pico, < 15s em pico | **Instrumentado, sem tráfego** — `latencia_ms` em toda mensagem | S2 (fora de pico) · T-Piloto (pico) |

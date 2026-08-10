@@ -25,9 +25,34 @@ class ResultadoConfirmacao:
     erro: str | None = None
 
 
-def confirmar_emissao(intencao: Intencao, motivo: str) -> ResultadoConfirmacao:
+def confirmar_emissao(
+    intencao: Intencao,
+    motivo: str,
+    *,
+    origem: str = "",
+    wa_id: str = "",
+    usuario: str = "",
+    referencia: str = "",
+    exigiu_2fa: bool = False,
+) -> ResultadoConfirmacao:
     """Levanta `TransicaoInvalida` (via `transicionar`) se a intenção não
-    estiver em AGUARDANDO_APROVACAO — nenhum chamador pula a máquina de estados."""
+    estiver em AGUARDANDO_APROVACAO — nenhum chamador pula a máquina de estados.
+
+    Os parâmetros de autoria são opcionais e têm padrão porque a assinatura
+    antiga tem vários chamadores; o que não é opcional é o **registro**: a
+    `Confirmacao` é gravada de qualquer jeito, com a origem deduzida quando não
+    vier explícita. Deixar de gravar quando o chamador esquece o argumento
+    devolveria o problema que a tabela veio resolver — nota sem confirmação
+    consultável.
+    """
+    _registrar_confirmacao(
+        intencao,
+        origem=origem,
+        wa_id=wa_id,
+        usuario=usuario,
+        referencia=referencia,
+        exigiu_2fa=exigiu_2fa,
+    )
     intencao.transicionar(Intencao.Estado.EMITINDO, motivo=motivo)
     nfse = resolver_adapter_nfse(intencao.cliente)
     resultado = nfse.emitir("nfse", intencao.payload, {"cliente": intencao.cliente})
@@ -48,6 +73,34 @@ def confirmar_emissao(intencao: Intencao, motivo: str) -> ResultadoConfirmacao:
         detalhe=str((resultado.dados or {}).get("mensagem_sefin", "")),
     )
     return ResultadoConfirmacao(ok=False, erro=resultado.erro_padronizado)
+
+
+def _registrar_confirmacao(
+    intencao: Intencao, *, origem: str, wa_id: str, usuario: str, referencia: str,
+    exigiu_2fa: bool,
+) -> None:
+    """Grava o ato de autorizar. Sempre — mesmo sem argumento nenhum.
+
+    Sem `origem` explícita, deduz pelo que veio: login preenchido é painel,
+    número é WhatsApp. O palpite é conservador e fica registrado como tal em vez
+    de a linha simplesmente não existir.
+    """
+    from apps.agents.agente_nf.models import Confirmacao
+
+    if not origem:
+        origem = (
+            Confirmacao.Origem.CONTADOR_PAINEL
+            if usuario
+            else Confirmacao.Origem.CLIENTE_WHATSAPP
+        )
+    Confirmacao.objects.create(
+        intencao=intencao,
+        origem=origem,
+        wa_id=wa_id or "",
+        usuario=usuario or "",
+        referencia=referencia or "",
+        exigiu_2fa=exigiu_2fa,
+    )
 
 
 def cancelar_emissao(intencao: Intencao, motivo: str) -> None:
@@ -105,12 +158,27 @@ def solicitar_cancelamento(nota: Intencao, motivo: str, origem: str) -> Intencao
     return pedido
 
 
-def confirmar_cancelamento(pedido: Intencao, motivo: str) -> ResultadoConfirmacao:
-    """Executa o cancelamento na Sefin. Só o contador chega aqui (admin)."""
+def confirmar_cancelamento(
+    pedido: Intencao, motivo: str, *, usuario: str = ""
+) -> ResultadoConfirmacao:
+    """Executa o cancelamento na Sefin. Só o contador chega aqui.
+
+    Registra a confirmação pelo mesmo motivo da emissão: cancelar é ato
+    irreversível de documento fiscal, e "quem autorizou" precisa sair de uma
+    consulta, não de leitura da trilha.
+    """
     if pedido.tipo_acao != "cancelar_nfse" or pedido.intencao_original is None:
         raise ErroCancelamento("Esta intenção não é um pedido de cancelamento.")
 
     nota = pedido.intencao_original
+    _registrar_confirmacao(
+        pedido,
+        origem="contador_painel" if usuario else "equipe_admin",
+        wa_id="",
+        usuario=usuario,
+        referencia="",
+        exigiu_2fa=False,
+    )
     pedido.transicionar(Intencao.Estado.EMITINDO, motivo=motivo)
 
     nfse = resolver_adapter_nfse(nota.cliente)

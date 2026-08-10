@@ -590,10 +590,16 @@ class DecidirNotaView(EscopoGrimorioMixin, View):
             return HttpResponseRedirect(destino)
 
         try:
+            autor = request.user.get_username()
             if intencao.tipo_acao == "cancelar_nfse":
-                resultado = confirmar_cancelamento(intencao, motivo=motivo)
+                resultado = confirmar_cancelamento(intencao, motivo=motivo, usuario=autor)
             else:
-                resultado = confirmar_emissao(intencao, motivo=motivo)
+                resultado = confirmar_emissao(
+                    intencao,
+                    motivo=motivo,
+                    origem="contador_painel",
+                    usuario=autor,
+                )
         except ErroCancelamento as erro:
             messages.error(request, str(erro))
             return HttpResponseRedirect(destino)
@@ -610,3 +616,36 @@ class DecidirNotaView(EscopoGrimorioMixin, View):
             # para o contador saber se corrige o cadastro ou o pedido.
             messages.error(request, f"A prefeitura recusou: {resultado.erro}")
         return HttpResponseRedirect(destino)
+
+
+class RotinaView(EscopoGrimorioMixin, TemplateView):
+    """Guias, obrigações e certidões que exigem o contador.
+
+    **A seção se chama "Guias e obrigações" na tela, e não pode se chamar
+    "Rotina".** O nome do primeiro escritório cliente é Rotina Contábil, e a
+    palavra como rótulo de menu apareceria como marca dele no painel de todos os
+    outros tenants. O guarda de `tests/test_grimorio.py` pegou isso — e pegou
+    também o comentário que eu tinha escrito no template para explicar a regra,
+    porque ele varre o arquivo inteiro. Daí a explicação estar aqui.
+
+    A palavra é substantivo comum e marca ao mesmo tempo; num SaaS multi-tenant
+    a segunda leitura vence. O nome interno (`secao`, rota, app) continua
+    `rotina`, minúsculo e nunca renderizado como texto.
+
+    A contraparte obrigatória das ferramentas do Sprint 3: elas leem daqui, e
+    sem alguém lançando o dado elas responderiam "ainda não tenho" para sempre.
+    É a mesma lição dos chamados — capacidade que promete e não tem quem
+    alimente do outro lado vira promessa vazia.
+
+    Mostra só o que está aberto. A tela existe para ser esvaziada, e listar o que
+    já foi pago ou entregue afogaria o que falta.
+    """
+
+    template_name = "grimorio/rotina.html"
+    secao = "rotina"
+
+    def get_context_data(self, **kwargs):
+        contexto = super().get_context_data(**kwargs)
+        contexto.update(metricas.rotina_do_escritorio(self.request.user))
+        contexto["dias_alerta_certidao"] = metricas.DIAS_ALERTA_CERTIDAO
+        return contexto

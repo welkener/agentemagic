@@ -23,6 +23,7 @@ from apps.agents.ferramentas.base import (  # noqa: F401
 # ordem alfabética — as três de nota ficam juntas, e é entre elas que ele erra.
 from apps.agents.ferramentas import fiscais  # noqa: F401,E402
 from apps.agents.ferramentas import erp  # noqa: F401,E402
+from apps.agents.ferramentas import rotina  # noqa: F401,E402
 from apps.agents.ferramentas import atendimento  # noqa: F401,E402
 
 __all__ = [

@@ -103,6 +103,7 @@ INSTALLED_APPS = [
     "apps.observabilidade",  # alertas de negócio + captura de erro (Sentry)
     "apps.fiscal",  # DPS: montagem/assinatura do XML + numeração sequencial
     "apps.atendimento",  # chamados e pedidos de atendimento abertos pela conversa
+    "apps.rotina",  # guias, obrigações, certidões e folha — a rotina do escritório
     "apps.agents.agente_nf",
     "apps.agents.agente_erp",
 ]
@@ -260,6 +261,22 @@ PRECOS_LLM = {
 # Arredondado para cima sobre os ~5,08 do dia: entre superestimar e subestimar o
 # custo, o erro que dói é o que deixa a fatura passar do previsto.
 COTACAO_USD_BRL = env("COTACAO_USD_BRL", default="5.10")
+
+# ---------------------------------------------------------------------------
+# Retenções na fonte sobre serviços (apps/fiscal/retencoes.py).
+#
+# Conferidas em 10/ago/2026 em fonte pública, não de memória: IRRF 1,5%
+# (art. 714 do RIR/2018), CSRF 4,65% (art. 30 da Lei 10.833/2003) e INSS 11%
+# (art. 31 da Lei 8.212/1991). A dispensa vale quando o valor A RETER não passa
+# de R$ 10 — regra das federais, não do ISS.
+#
+# Em `settings` pelo mesmo motivo do teto do MEI: mudança de lei não deveria
+# exigir release.
+# ---------------------------------------------------------------------------
+RETENCAO_IRRF_PERCENTUAL = env("RETENCAO_IRRF_PERCENTUAL", default="1.5")
+RETENCAO_CSRF_PERCENTUAL = env("RETENCAO_CSRF_PERCENTUAL", default="4.65")
+RETENCAO_INSS_PERCENTUAL = env("RETENCAO_INSS_PERCENTUAL", default="11")
+RETENCAO_DISPENSA_ATE = env("RETENCAO_DISPENSA_ATE", default="10.00")
 
 # Fração do limite mensal em que a degradação começa — acima dela a extração de
 # campos cai para o modelo barato, e só no limite cheio o modelo é cortado

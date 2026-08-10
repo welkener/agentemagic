@@ -32,6 +32,13 @@ CATALOGO_TIERS: dict[str, int] = {
     # muda nada e o dado é do próprio cliente — e porque avisar cedo sobre
     # estouro de teto é justamente o que evita o desenquadramento retroativo.
     "consultar_faturamento_acumulado": 0,
+    # Rotina contábil (Sprint 3) — leitura pura do que o escritório já lançou.
+    # Nenhuma delas calcula guia: sem registro, a resposta é "ainda não tenho".
+    "consultar_das": 0,
+    "segunda_via_guia": 0,
+    "status_obrigacoes": 0,
+    "listar_certidoes": 0,
+    "consultar_folha": 0,
     # Tier 1 — rascunho e emissão
     "criar_rascunho": 1,
     "criar_rascunho_pedido": 1,

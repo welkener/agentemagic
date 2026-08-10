@@ -91,7 +91,19 @@ TABELAS: dict[str, str] = {
     "security_codigo2fa": _POR_CLIENTE,
     "fiscal_seriedps": _POR_CLIENTE,
     "agente_nf_intencao": _POR_CLIENTE,
+    # A confirmação pendura na intenção, que pendura no cliente — dois saltos.
+    # Vale o custo: é o registro de quem autorizou documento fiscal, e ele não
+    # pode ser legível fora do escritório dono da nota.
+    "agente_nf_confirmacao": (
+        "intencao_id IN (SELECT i.id FROM agente_nf_intencao i "
+        "JOIN clients_cliente c ON c.id = i.cliente_id WHERE c.escritorio_id = {tenant})"
+    ),
     "atendimento_solicitacao": _POR_CLIENTE,
+    # Rotina contábil: tudo pendura no cliente, como o resto da carteira.
+    "rotina_guia": _POR_CLIENTE,
+    "rotina_obrigacao": _POR_CLIENTE,
+    "rotina_certidao": _POR_CLIENTE,
+    "rotina_folha": _POR_CLIENTE,
     "audit_chaveconteudo": _POR_CLIENTE,
     # Consumo de IA pendura no escritório, não no cliente: `cliente_id` é nulo
     # quando o roteador roda antes de a empresa estar resolvida, e quem paga a

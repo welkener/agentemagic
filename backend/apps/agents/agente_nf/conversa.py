@@ -344,7 +344,14 @@ def emitir(ctx, intencao: Intencao) -> str:
     # "cliente confirmou" sozinho não diz QUAL mensagem autorizou nem de
     # qual número. Amarrar aos dois torna a evidência verificável — e é
     # barato, porque os dois valores já estão em mãos aqui.
-    resultado = confirmar_emissao(intencao, motivo=motivo_autorizacao(ctx))
+    resultado = confirmar_emissao(
+        intencao,
+        motivo=motivo_autorizacao(ctx),
+        origem="cliente_whatsapp",
+        wa_id=ctx.telefone_de_quem_escreve,
+        referencia=ctx.message_id or "",
+        exigiu_2fa=intencao.codigos_2fa.filter(usado_em__isnull=False).exists(),
+    )
 
     if resultado.ok:
         return (

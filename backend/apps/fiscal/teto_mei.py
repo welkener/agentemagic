@@ -33,9 +33,18 @@ from decimal import Decimal
 
 from django.conf import settings
 
-from apps.clients.models import Cliente
-
 MESES_NO_ANO = 12
+
+# Código do MEI em `clients.Cliente.OpcaoSimplesNacional`, repetido aqui de
+# propósito. **A dependência foi invertida** (gate do Sprint 3): o motor fiscal
+# não importa mais o model da carteira — ele declara o que precisa e recebe
+# qualquer objeto que atenda. Sem isso, `fiscal/` não roda sem o CRM em volta e
+# a regra tributária fica presa ao cadastro.
+#
+# Repetir uma constante é dívida conhecida, e por isso ela tem trava:
+# `tests/test_retencoes.py` compara os dois valores e falha se um andar sem o
+# outro. É mais barato que um import que acorrenta as duas camadas.
+OPCAO_MEI = 2
 
 
 @dataclass(frozen=True)
@@ -86,7 +95,7 @@ def teto_anual() -> Decimal:
     return Decimal(str(getattr(settings, "TETO_MEI_ANUAL", "81000.00")))
 
 
-def teto_do_cliente(cliente: Cliente, ano: int) -> tuple[Decimal, bool]:
+def teto_do_cliente(cliente, ano: int) -> tuple[Decimal, bool]:
     """Teto do cliente no ano, já proporcionalizado se ele abriu durante ele.
 
     Devolve `(teto, proporcional)`. Sem `data_inicio_atividade` cadastrada,
@@ -104,14 +113,18 @@ def teto_do_cliente(cliente: Cliente, ano: int) -> tuple[Decimal, bool]:
     return (mensal * meses_ativos).quantize(Decimal("0.01")), True
 
 
-def avaliar(cliente: Cliente, faturamento: Decimal, ano: int | None = None) -> UsoDoTeto:
+def avaliar(cliente, faturamento: Decimal, ano: int | None = None) -> UsoDoTeto:
     """Monta o `UsoDoTeto` a partir do faturamento já apurado no ano.
 
     O faturamento vem de fora (a query agregada vive em `apps/painel/metricas.py`)
     para que esta função continue pura e testável com números na mão.
+
+    `cliente` é qualquer objeto com `opcao_simples_nacional` e
+    `data_inicio_atividade` — não há import do model, de propósito (ver
+    `OPCAO_MEI`).
     """
     ano = ano or date.today().year
-    e_mei = cliente.opcao_simples_nacional == Cliente.OpcaoSimplesNacional.MEI
+    e_mei = cliente.opcao_simples_nacional == OPCAO_MEI
     teto, proporcional = teto_do_cliente(cliente, ano)
     return UsoDoTeto(
         aplicavel=e_mei,
