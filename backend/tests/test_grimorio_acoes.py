@@ -479,3 +479,179 @@ class TestCadastroFiscal:
 
         assert f"/grimorio/empresa/{cliente.pk}/cadastro/" in corpo
         assert f"/admin/clients/cliente/{cliente.pk}/change/" not in corpo
+
+
+# ---------------------------------------------------------------------------
+# Decidir nota — a única escrita que toca documento fiscal
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def nota_pendente(dois_escritorios_com_chamado):
+    """Uma nota aguardando decisão em cada escritório."""
+    from apps.agents.agente_nf.models import Intencao
+
+    pendentes = {}
+    with rls.escopo_irrestrito():
+        for slug, (_, cliente, _) in dois_escritorios_com_chamado.items():
+            pendentes[slug] = Intencao.objects.create(
+                cliente=cliente,
+                chave_idempotencia=f"decidir-{slug}",
+                tipo_acao="emitir_nfse",
+                payload={
+                    "cnpj_prestador": cliente.cnpj,
+                    "cnae": "6201-5/01",
+                    "valor": 500.0,
+                    "descricao_servico": "Consultoria",
+                    "tomador": "Tomador Ltda",
+                },
+                valor=500,
+                estado=Intencao.Estado.AGUARDANDO_APROVACAO,
+            )
+    return pendentes
+
+
+@pytest.mark.django_db
+class TestDecidirNota:
+    def test_a_fila_leva_a_tela_de_conferencia_e_nao_ao_admin(
+        self, client, dois_escritorios_com_chamado, nota_pendente
+    ):
+        escritorio, _, _ = dois_escritorios_com_chamado["alfa"]
+        nota = nota_pendente["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+
+        corpo = client.get("/grimorio/").content.decode()
+
+        assert f"/grimorio/notas/{nota.pk}/" in corpo
+        assert f"/admin/agente_nf/intencao/{nota.pk}/change/" not in corpo
+
+    def test_a_tela_mostra_o_que_sera_emitido(
+        self, client, dois_escritorios_com_chamado, nota_pendente
+    ):
+        """Conferência de verdade: tomador, valor, serviço e o CNAE do cadastro —
+        que é o campo que o modelo de IA nunca decide."""
+        escritorio, _, _ = dois_escritorios_com_chamado["alfa"]
+        nota = nota_pendente["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+
+        corpo = client.get(f"/grimorio/notas/{nota.pk}/").content.decode()
+
+        assert "Tomador Ltda" in corpo
+        assert "Consultoria" in corpo
+        assert "6201-5/01" in corpo
+
+    def test_aprovar_emite_pelo_servico_auditado(
+        self, client, dois_escritorios_com_chamado, nota_pendente
+    ):
+        from apps.agents.agente_nf.models import Intencao
+
+        escritorio, _, _ = dois_escritorios_com_chamado["alfa"]
+        nota = nota_pendente["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+
+        client.post(f"/grimorio/notas/{nota.pk}/decidir/", {"acao": "aprovar"})
+
+        nota.refresh_from_db()
+        assert nota.estado in (Intencao.Estado.CONCLUIDO, Intencao.Estado.REJEITADO)
+        # A máquina de estados continua sendo a mesma: a transição foi registrada
+        # na trilha encadeada, com quem decidiu.
+        with rls.escopo_irrestrito():
+            motivos = [
+                (e.dados or {}).get("motivo", "")
+                for e in Auditoria.objects.filter(evento="intencao_fiscal_transicao")
+            ]
+        assert any("contador.alfa" in m for m in motivos)
+
+    def test_recusar_nao_manda_nada_para_a_prefeitura(
+        self, client, dois_escritorios_com_chamado, nota_pendente
+    ):
+        from apps.agents.agente_nf.models import Intencao
+
+        escritorio, _, _ = dois_escritorios_com_chamado["alfa"]
+        nota = nota_pendente["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+
+        client.post(f"/grimorio/notas/{nota.pk}/decidir/", {"acao": "recusar"})
+
+        nota.refresh_from_db()
+        assert nota.estado == Intencao.Estado.CANCELADO
+        assert not nota.protocolo
+
+    def test_get_nao_decide(self, client, dois_escritorios_com_chamado, nota_pendente):
+        from apps.agents.agente_nf.models import Intencao
+
+        escritorio, _, _ = dois_escritorios_com_chamado["alfa"]
+        nota = nota_pendente["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+
+        resposta = client.get(f"/grimorio/notas/{nota.pk}/decidir/")
+
+        assert resposta.status_code == 405
+        nota.refresh_from_db()
+        assert nota.estado == Intencao.Estado.AGUARDANDO_APROVACAO
+
+    def test_nao_decide_nota_de_outro_escritorio(
+        self, client, dois_escritorios_com_chamado, nota_pendente
+    ):
+        """Aqui não é ler demais: é emitir documento fiscal em nome de terceiro."""
+        from apps.agents.agente_nf.models import Intencao
+
+        escritorio_alfa, _, _ = dois_escritorios_com_chamado["alfa"]
+        nota_beta = nota_pendente["beta"]
+        client.force_login(_contador(escritorio_alfa, "contador.alfa"))
+
+        assert client.get(f"/grimorio/notas/{nota_beta.pk}/").status_code == 404
+        assert (
+            client.post(
+                f"/grimorio/notas/{nota_beta.pk}/decidir/", {"acao": "aprovar"}
+            ).status_code
+            == 404
+        )
+        nota_beta.refresh_from_db()
+        assert nota_beta.estado == Intencao.Estado.AGUARDANDO_APROVACAO
+
+    def test_decidir_duas_vezes_avisa_em_vez_de_repetir(
+        self, client, dois_escritorios_com_chamado, nota_pendente
+    ):
+        """Dois contadores na mesma fila, ou o cliente confirmando pelo WhatsApp
+        com esta tela aberta. É corrida, não erro — e emitir duas vezes seria o
+        estrago que a checagem de estado evita."""
+        escritorio, _, _ = dois_escritorios_com_chamado["alfa"]
+        nota = nota_pendente["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+
+        client.post(f"/grimorio/notas/{nota.pk}/decidir/", {"acao": "recusar"})
+        resposta = client.post(f"/grimorio/notas/{nota.pk}/decidir/", {"acao": "aprovar"})
+
+        assert resposta.status_code == 302
+        nota.refresh_from_db()
+        from apps.agents.agente_nf.models import Intencao
+
+        assert nota.estado == Intencao.Estado.CANCELADO
+
+    def test_nota_ja_decidida_nao_mostra_os_botoes(
+        self, client, dois_escritorios_com_chamado, nota_pendente
+    ):
+        escritorio, _, _ = dois_escritorios_com_chamado["alfa"]
+        nota = nota_pendente["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+        client.post(f"/grimorio/notas/{nota.pk}/decidir/", {"acao": "recusar"})
+
+        corpo = client.get(f"/grimorio/notas/{nota.pk}/").content.decode()
+
+        assert "Sua decisão" not in corpo
+
+    def test_avisa_antes_do_clique_quando_o_cadastro_impede_emitir(
+        self, client, dois_escritorios_com_chamado, nota_pendente
+    ):
+        """Sem isto o contador descobria a falha DEPOIS de aprovar — com o susto
+        de achar que tinha emitido. A checagem é a mesma da emissão."""
+        escritorio, cliente, _ = dois_escritorios_com_chamado["alfa"]
+        with rls.escopo_irrestrito():
+            cliente.codigo_municipio_ibge = ""
+            cliente.save(update_fields=["codigo_municipio_ibge"])
+        nota = nota_pendente["alfa"]
+        client.force_login(_contador(escritorio, "contador.alfa"))
+
+        corpo = client.get(f"/grimorio/notas/{nota.pk}/").content.decode()
+
+        assert "Aprovar vai falhar" in corpo
+        assert f"/grimorio/empresa/{cliente.pk}/cadastro/" in corpo

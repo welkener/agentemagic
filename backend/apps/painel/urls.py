@@ -35,4 +35,6 @@ urlpatterns = [
         grimorio.CadastroFiscalView.as_view(),
         name="cadastro_fiscal",
     ),
+    path("notas/<int:pk>/", grimorio.NotaView.as_view(), name="nota"),
+    path("notas/<int:pk>/decidir/", grimorio.DecidirNotaView.as_view(), name="decidir_nota"),
 ]

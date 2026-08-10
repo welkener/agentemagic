@@ -500,3 +500,113 @@ class CadastroFiscalView(EscopoGrimorioMixin, TemplateView):
         else:
             messages.info(request, "Nada mudou — o cadastro já estava assim.")
         return HttpResponseRedirect(reverse("grimorio:empresa", args=[cliente.pk]))
+
+
+class NotaView(EscopoGrimorioMixin, TemplateView):
+    """A nota inteira numa tela, e a decisão sobre ela.
+
+    Última camada da costura, e a única que toca documento fiscal. Duas escolhas
+    de desenho, ambas deliberadas:
+
+    **Tela de conferência em vez de aprovar direto da fila.** Um clique na lista
+    é mais rápido e é o que o contador vai querer no dia 8 — e é exatamente por
+    isso que não é o padrão: com doze notas na fila e valores parecidos,
+    aprovar a linha errada é fácil, silencioso e irreversível (a nota vai para a
+    prefeitura). O agente pede "confirma?" ao cliente antes de emitir pelo mesmo
+    motivo; seria estranho o contador ter menos conferência que ele. Se depois
+    ficar claro que a tela atrapalha, dá para somar um atalho na fila — o
+    caminho inverso, tirar a conferência de quem já se acostumou a clicar, é bem
+    mais caro.
+
+    **Uma decisão, não duas.** "Aprovar" despacha por `tipo_acao`: emissão vira
+    `confirmar_emissao`, pedido de cancelamento vira `confirmar_cancelamento`.
+    É a mesma escolha que o admin já fazia — o contador decide "aprovo isto", e
+    o sistema sabe o que "isto" é. Obrigá-lo a saber de antemão que tipo de item
+    está olhando só criaria a chance de escolher a ação errada.
+
+    Nada de fiscal é reimplementado aqui: os dois serviços são os mesmos que o
+    admin chama, com a máquina de estados e a trilha encadeada intactas.
+    """
+
+    template_name = "grimorio/nota.html"
+    secao = "documentos"
+
+    def get_context_data(self, **kwargs):
+        contexto = super().get_context_data(**kwargs)
+        intencao = metricas.intencao_no_escopo(self.request.user, kwargs["pk"])
+        if intencao is None:
+            raise Http404("Nota não encontrada nesta carteira.")
+        contexto["intencao"] = intencao
+        contexto["cancelamento"] = intencao.tipo_acao == "cancelar_nfse"
+        contexto["decidivel"] = intencao.estado == "AGUARDANDO_APROVACAO"
+        contexto["historico"] = metricas.historico_da_intencao(self.request.user, intencao)
+        # Aprovar com cadastro incompleto falha na montagem da DPS, e o contador
+        # só descobria depois de clicar. Mesma função que a emissão usa — a tela
+        # não decide o que é "completo", ela pergunta a quem já sabia.
+        from apps.fiscal.dps import conferir_cadastro
+
+        contexto["bloqueios"] = (
+            conferir_cadastro(intencao.cliente) if not contexto["cancelamento"] else []
+        )
+        return contexto
+
+
+class DecidirNotaView(EscopoGrimorioMixin, View):
+    """Aprova ou recusa o que está aguardando decisão do contador.
+
+    O `motivo` que vai para a transição nomeia a pessoa e a origem: meses
+    depois, "quem autorizou esta nota" tem que ter resposta, e "aprovado" sozinho
+    não é resposta.
+    """
+
+    def post(self, request, pk):
+        from apps.agents.agente_nf.services import (
+            ErroCancelamento,
+            cancelar_emissao,
+            confirmar_cancelamento,
+            confirmar_emissao,
+        )
+
+        intencao = metricas.intencao_no_escopo(request.user, pk)
+        if intencao is None:
+            raise Http404("Nota não encontrada nesta carteira.")
+
+        destino = reverse("grimorio:nota", args=[intencao.pk])
+        if intencao.estado != "AGUARDANDO_APROVACAO":
+            # Dois contadores na mesma fila, ou o cliente confirmando pelo
+            # WhatsApp enquanto esta tela estava aberta. Não é erro — é corrida.
+            messages.info(
+                request,
+                "Esta nota já foi decidida — o estado atual é "
+                f"{intencao.get_estado_display()}.",
+            )
+            return HttpResponseRedirect(destino)
+
+        motivo = f"decidido no Grimório por {request.user.get_username()}"
+
+        if request.POST.get("acao") == "recusar":
+            cancelar_emissao(intencao, motivo=motivo)
+            messages.success(request, "Recusado. Nada foi enviado à prefeitura.")
+            return HttpResponseRedirect(destino)
+
+        try:
+            if intencao.tipo_acao == "cancelar_nfse":
+                resultado = confirmar_cancelamento(intencao, motivo=motivo)
+            else:
+                resultado = confirmar_emissao(intencao, motivo=motivo)
+        except ErroCancelamento as erro:
+            messages.error(request, str(erro))
+            return HttpResponseRedirect(destino)
+
+        if resultado.ok:
+            messages.success(
+                request,
+                f"Aprovado. Protocolo {resultado.protocolo}."
+                if resultado.protocolo
+                else "Aprovado.",
+            )
+        else:
+            # A recusa vem da prefeitura, não do sistema — e a diferença importa
+            # para o contador saber se corrige o cadastro ou o pedido.
+            messages.error(request, f"A prefeitura recusou: {resultado.erro}")
+        return HttpResponseRedirect(destino)

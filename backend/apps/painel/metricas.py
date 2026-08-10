@@ -349,6 +349,43 @@ def ferramentas_mais_usadas(usuario, dias: int = 30) -> list[tuple[str, int]]:
     return sorted(contagem.items(), key=lambda par: (-par[1], par[0]))
 
 
+def intencao_no_escopo(usuario, pk: int):
+    """Uma intenção fiscal, se ela é da carteira deste contador. Senão, None.
+
+    Mesma regra das outras: fora do escopo é `None`, e a view responde 404. Vale
+    especialmente aqui — decidir sobre a nota de outro escritório não é ler
+    demais, é emitir ou cancelar documento fiscal em nome de terceiro.
+    """
+    return (
+        _escopar(Intencao.objects.all(), usuario)
+        .select_related("cliente", "intencao_original")
+        .filter(pk=pk)
+        .first()
+    )
+
+
+def historico_da_intencao(usuario, intencao) -> list:
+    """Transições da nota, da mais antiga para a mais nova.
+
+    Vem da trilha encadeada, não de uma coluna: é ela que responde "quem
+    autorizou isto e a partir de quê", e o `motivo` de cada transição carrega a
+    mensagem e o número de quem confirmou (ver `agente_nf/conversa`).
+    """
+    eventos = _escopar(
+        Auditoria.objects.filter(evento="intencao_fiscal_transicao"), usuario
+    ).order_by("criado_em")
+    return [
+        {
+            "quando": e.criado_em,
+            "de": (e.dados or {}).get("de"),
+            "para": (e.dados or {}).get("para"),
+            "motivo": (e.dados or {}).get("motivo") or "",
+        }
+        for e in eventos
+        if (e.dados or {}).get("intencao_id") == intencao.pk
+    ]
+
+
 def cliente_no_escopo(usuario, cliente_id: int):
     """A empresa, se ela pertence à carteira deste contador. Senão, None.
 
@@ -635,7 +672,7 @@ def pendencias(usuario) -> list[Pendencia]:
                 detalhe=apresentacao.resumo_da_intencao(intencao),
                 cliente=intencao.cliente,
                 acao_rotulo="Analisar",
-                acao_url=f"/admin/agente_nf/intencao/{intencao.pk}/change/",
+                acao_url=f"/grimorio/notas/{intencao.pk}/",
             )
         )
 
@@ -654,7 +691,7 @@ def pendencias(usuario) -> list[Pendencia]:
                 detalhe=apresentacao.resumo_da_intencao(intencao),
                 cliente=intencao.cliente,
                 acao_rotulo="Ver motivo",
-                acao_url=f"/admin/agente_nf/intencao/{intencao.pk}/change/",
+                acao_url=f"/grimorio/notas/{intencao.pk}/",
             )
         )
 

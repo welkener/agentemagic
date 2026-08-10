@@ -1,0 +1,143 @@
+{% extends "grimorio/base.html" %}
+{% load grimorio_tags %}
+{% block titulo %}Nota {{ intencao.protocolo|default:intencao.pk }}{% endblock %}
+
+{% comment %}
+A tela de conferência. Existe porque aprovar da lista, com doze notas de valores
+parecidos, é fácil, silencioso e irreversível — a nota vai para a prefeitura. O
+agente pede "confirma?" ao cliente antes de emitir; seria estranho o contador ter
+menos conferência que ele.
+{% endcomment %}
+
+{% block conteudo %}
+<div class="topo">
+  <div>
+    <h1>{% if cancelamento %}Pedido de cancelamento{% else %}Nota fiscal{% endif %}</h1>
+    <p>
+      <a href="{% url 'grimorio:empresa' intencao.cliente.pk %}">{{ intencao.cliente.nome }}</a>
+      · CNPJ <span class="nao-quebra">{{ intencao.cliente.cnpj|cnpj }}</span>
+    </p>
+  </div>
+  <div class="filtros">
+    <a class="botao" href="{% url 'grimorio:hoje' %}">Voltar à fila</a>
+  </div>
+</div>
+
+<div class="grade-2">
+  <div>
+    <div class="cartao" style="margin-bottom:18px">
+      <div class="cartao__cabeca">
+        <h2>O que será {% if cancelamento %}cancelado{% else %}emitido{% endif %}</h2>
+        <span class="etiqueta">{{ intencao.get_estado_display }}</span>
+      </div>
+      <div class="cartao__corpo">
+        {% if cancelamento and intencao.intencao_original %}
+          <div class="campo">
+            <div class="secundario">Nota original</div>
+            <div class="principal">
+              <a href="{% url 'grimorio:nota' intencao.intencao_original.pk %}">
+                {{ intencao.intencao_original.protocolo|default:"sem protocolo" }}
+              </a>
+            </div>
+          </div>
+        {% endif %}
+        <div class="campo">
+          <div class="secundario">Tomador</div>
+          <div class="principal">{{ intencao.payload.tomador|default:"—" }}</div>
+        </div>
+        <div class="campo">
+          <div class="secundario">Valor</div>
+          <div class="principal">{{ intencao.valor|default:intencao.payload.valor|moeda }}</div>
+        </div>
+        <div class="campo">
+          <div class="secundario">Serviço</div>
+          <div class="principal">{{ intencao.payload.descricao_servico|default:"—" }}</div>
+        </div>
+        {% comment %}
+        CNAE e CNPJ do prestador vêm do cadastro, nunca do modelo de IA — e
+        aparecem aqui porque é sobre eles que a nota é assinada. Ver a regra em
+        `agente_nf/conversa.iniciar_emissao`.
+        {% endcomment %}
+        <div class="campo">
+          <div class="secundario">CNAE do cadastro</div>
+          <div class="principal">{{ intencao.payload.cnae|default:"—" }}</div>
+        </div>
+        {% if intencao.protocolo %}
+        <div class="campo">
+          <div class="secundario">Protocolo</div>
+          <div class="principal">{{ intencao.protocolo }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if decidivel %}
+    <div class="cartao">
+      <div class="cartao__cabeca"><h2>Sua decisão</h2></div>
+      <div class="cartao__corpo">
+        {% comment %}
+        Aviso ANTES do clique: com o cadastro incompleto a montagem da DPS falha,
+        e sem isto o contador descobriria isso depois de aprovar — com o susto
+        de achar que emitiu.
+        {% endcomment %}
+        {% if bloqueios %}
+        <div class="aviso aviso--warning" style="margin-bottom:12px">
+          Aprovar vai falhar: o cadastro desta empresa ainda não permite emitir.
+          <ul class="lista-simples" style="margin-top:6px">
+            {% for b in bloqueios %}<li>{{ b }}</li>{% endfor %}
+          </ul>
+          <a class="botao" style="margin-top:8px"
+             href="{% url 'grimorio:cadastro_fiscal' intencao.cliente.pk %}">Completar cadastro</a>
+        </div>
+        {% endif %}
+        <p class="secundario" style="margin-top:0">
+          {% if cancelamento %}
+            Aprovar envia o cancelamento à prefeitura. Não tem volta.
+          {% else %}
+            Aprovar emite a nota na prefeitura. Não tem volta — desfazer depois é
+            um pedido de cancelamento, com prazo legal próprio.
+          {% endif %}
+        </p>
+        <form method="post" action="{% url 'grimorio:decidir_nota' intencao.pk %}" class="acoes">
+          {% csrf_token %}
+          <button class="botao" type="submit" name="acao" value="recusar">Recusar</button>
+          <button class="botao botao--principal" type="submit" name="acao" value="aprovar">
+            {% if cancelamento %}Aprovar cancelamento{% else %}Aprovar e emitir{% endif %}
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="cartao">
+      <div class="cartao__cabeca"><h2>Como chegou até aqui</h2></div>
+      <div class="cartao__corpo">
+        {% comment %}
+        A trilha encadeada, não uma coluna de status. O `motivo` de cada
+        transição carrega a mensagem e o número de quem confirmou — é o que
+        responde, meses depois, "quem autorizou esta nota e a partir de quê".
+        {% endcomment %}
+        {% if historico %}
+        <div class="fila">
+          {% for h in historico %}
+          <div class="evento">
+            <div class="evento__quando">{{ h.quando|date:"d/m/Y H:i" }}</div>
+            <div class="evento__o-que">
+              <strong>{{ h.para }}</strong>
+              {% if h.motivo %}<div class="secundario">{{ h.motivo }}</div>{% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="vazio">
+          Sem transições registradas — esta nota ainda não saiu do estado inicial.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
