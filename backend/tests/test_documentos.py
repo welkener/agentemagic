@@ -49,6 +49,10 @@ def storage(monkeypatch):
     monkeypatch.setattr(
         armazenamento, "url_temporaria", lambda b, c, segundos=300: f"https://storage.test/{b}/{c}"
     )
+    monkeypatch.setattr(armazenamento, "baixar", lambda b, c: guardado[f"{b}/{c}"])
+    # Padrão: storage com endereço público (AWS, ou MinIO publicado). O caso
+    # contrário — o do servidor de hoje — tem teste próprio, que o inverte.
+    monkeypatch.setattr(armazenamento, "alcancavel_pelo_navegador", lambda: True)
     return guardado
 
 
@@ -77,6 +81,60 @@ class TestEndereco:
         agora = timezone.now()
         assert chave.startswith(f"{cliente.pk}/{agora:%Y}/{agora:%m}/")
         assert chave.endswith(".pdf")
+
+
+# ---------------------------------------------------------------------------
+# Endereço público — os dois lados do host
+# ---------------------------------------------------------------------------
+class TestEnderecoPublico:
+    """Este bloco existe por causa de um defeito que só a produção mostrou.
+
+    A primeira prova no servidor guardou, listou e baixou o arquivo — tudo
+    verde — e mesmo assim o botão "Abrir" do Grimório estava quebrado: a URL
+    assinada saía com `http://minio:9000`, que resolve dentro do compose e em
+    lugar nenhum além dele. O teste com storage dublado não podia pegar isso,
+    porque o dublê devolve a string que mandarem. Estes rodam contra a função de
+    verdade.
+    """
+
+    def test_minio_sem_endereco_publico_nao_e_alcancavel(self, settings):
+        settings.S3_ENDPOINT = "http://minio:9000"
+        settings.S3_ENDPOINT_PUBLICO = ""
+        assert armazenamento.alcancavel_pelo_navegador() is False
+
+    def test_minio_publicado_e_alcancavel(self, settings):
+        settings.S3_ENDPOINT = "http://minio:9000"
+        settings.S3_ENDPOINT_PUBLICO = "https://arquivos.exemplo.com.br"
+        assert armazenamento.alcancavel_pelo_navegador() is True
+
+    def test_na_aws_e_alcancavel_sem_configurar_nada(self, settings):
+        """A migração não deve exigir lembrar deste ajuste: sem endpoint, a URL
+        assinada já é pública."""
+        settings.S3_ENDPOINT = ""
+        settings.S3_ENDPOINT_PUBLICO = ""
+        settings.S3_USAR_AWS = True
+        assert armazenamento.alcancavel_pelo_navegador() is True
+
+    def test_sem_storage_nenhum_nao_ha_o_que_alcancar(self, settings):
+        settings.S3_ENDPOINT = ""
+        settings.S3_ENDPOINT_PUBLICO = ""
+        settings.S3_USAR_AWS = False
+        assert armazenamento.alcancavel_pelo_navegador() is False
+
+    def test_a_url_assinada_usa_o_host_publico_e_expira_em_5_minutos(self, settings):
+        """Assinatura v4 embute o host na conta: assinar contra `minio:9000` e
+        pedir noutro endereço devolve 403. Por isso a assinatura é feita contra
+        o endereço público, não traduzida depois."""
+        settings.S3_ENDPOINT = "http://minio:9000"
+        settings.S3_ENDPOINT_PUBLICO = "https://arquivos.exemplo.com.br"
+        settings.S3_ACCESS_KEY = "chave"
+        settings.S3_SECRET_KEY = "segredo"
+
+        url = armazenamento.url_temporaria("magicbi-teste", "1/2026/08/nota.pdf")
+
+        assert url.startswith("https://arquivos.exemplo.com.br/magicbi-teste/")
+        assert "X-Amz-Expires=300" in url
+        assert "X-Amz-Signature=" in url
 
 
 # ---------------------------------------------------------------------------
@@ -292,6 +350,22 @@ class TestRevisao:
 
         assert resposta.status_code == 302
         assert resposta["Location"].startswith("https://storage.test/")
+
+    def test_storage_sem_endereco_publico_serve_o_arquivo_pelo_django(
+        self, client, contador, documento, monkeypatch
+    ):
+        """O caso do servidor de hoje: o MinIO não publica porta, e a URL
+        assinada apontaria para `http://minio:9000` — um host que só existe
+        dentro da rede do compose. Redirecionar para lá entrega ao contador um
+        botão que não abre. Servir pelo Django custa banda; é o preço certo."""
+        monkeypatch.setattr(armazenamento, "alcancavel_pelo_navegador", lambda: False)
+        client.force_login(contador)
+
+        resposta = client.get(f"/grimorio/revisao/{documento.pk}/arquivo/")
+
+        assert resposta.status_code == 200
+        assert resposta.content == CONTEUDO
+        assert "inline" in resposta["Content-Disposition"]
 
     def test_nao_revisa_documento_de_outro_escritorio(
         self, client, contador, storage, escritorio

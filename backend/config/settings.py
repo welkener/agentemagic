@@ -294,8 +294,16 @@ RETENCAO_DISPENSA_ATE = env("RETENCAO_DISPENSA_ATE", default="10.00")
 # Sem `S3_ENDPOINT` e sem `S3_USAR_AWS`, o recebimento de documento é RECUSADO
 # com aviso — nunca aceito e perdido. Quem manda a nota e ouve "recebi" precisa
 # que isso seja verdade.
+#
+# `S3_ENDPOINT_PUBLICO` existe porque endereço de storage tem DOIS lados quando
+# ele mora em contêiner: `http://minio:9000` só resolve dentro da rede do
+# compose, e uma URL assinada com esse host é um link morto no navegador de quem
+# clica. Enquanto não houver endereço público, o arquivo sai pelo Django —
+# ver `apps/documentos/armazenamento.py`. Na AWS o problema não existe: a URL
+# assinada já é pública, e o valor pode continuar vazio.
 # ---------------------------------------------------------------------------
 S3_ENDPOINT = env("S3_ENDPOINT", default="")
+S3_ENDPOINT_PUBLICO = env("S3_ENDPOINT_PUBLICO", default="")
 S3_USAR_AWS = env.bool("S3_USAR_AWS", default=False)
 S3_ACCESS_KEY = env("S3_ACCESS_KEY", default="")
 S3_SECRET_KEY = env("S3_SECRET_KEY", default="")

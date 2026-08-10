@@ -26,6 +26,18 @@ e a segunda é a que importa:
 por URL assinada com validade curta, gerada para quem já provou ter acesso. Um
 extrato bancário com link permanente vaza no primeiro encaminhamento de
 WhatsApp — e nunca mais é possível recolher.
+
+**O endereço do storage tem dois lados, e confundi-los produz link morto.** O
+Django alcança o MinIO por `http://minio:9000`, nome que só existe dentro da
+rede do compose; assinar uma URL com esse host e mandá-la para o navegador do
+contador entrega um endereço que a máquina dele não sabe resolver. Foi o que
+apareceu na primeira prova em produção (10/ago/2026), e não aparece em teste
+nenhum com storage dublado — o dublê devolve a string que mandarem.
+
+Daí `alcancavel_pelo_navegador()`: só quando existe endereço público — porque é
+a AWS, ou porque o MinIO foi publicado em `S3_ENDPOINT_PUBLICO` — o redirect
+vale. Enquanto não houver, a view serve o arquivo pelo Django. Mais lento e mais
+caro, e ainda assim melhor que o botão que não abre.
 """
 from __future__ import annotations
 
@@ -76,11 +88,30 @@ def habilitado() -> bool:
     return bool(_config("S3_ENDPOINT") or _config("S3_USAR_AWS"))
 
 
-def _cliente():
+def alcancavel_pelo_navegador() -> bool:
+    """A URL assinada abre na máquina de quem clica.
+
+    Verdadeiro quando o outro lado é a AWS (endpoint vazio, URL já pública) ou
+    quando o MinIO ganhou um endereço externo. Falso é o caso do servidor de
+    hoje, onde o storage não publica porta nenhuma — e aí o arquivo tem que sair
+    pelo Django, senão o botão "Abrir" leva a lugar nenhum.
+    """
+    if _config("S3_ENDPOINT_PUBLICO"):
+        return True
+    return not _config("S3_ENDPOINT") and habilitado()
+
+
+def _cliente(publico: bool = False):
+    """Cliente boto3. `publico=True` assina contra o endereço externo.
+
+    Os dois clientes existem porque assinatura e conexão olham para hosts
+    diferentes: a assinatura v4 embute o host na conta, então uma URL gerada
+    contra `minio:9000` só é válida se for pedida a `minio:9000`.
+    """
     import boto3
     from botocore.config import Config
 
-    endpoint = _config("S3_ENDPOINT")
+    endpoint = _config("S3_ENDPOINT_PUBLICO") if publico else _config("S3_ENDPOINT")
     return boto3.client(
         "s3",
         # Endpoint vazio = AWS. É exatamente aqui que a migração acontece: tirar
@@ -90,6 +121,12 @@ def _cliente():
         aws_secret_access_key=_config("S3_SECRET_KEY"),
         region_name=_config("S3_REGIAO", "us-east-1"),
         config=Config(
+            # v4 explícito. Contra endpoint customizado o botocore cai na
+            # assinatura v2 (`AWSAccessKeyId`/`Signature`) — que o MinIO aceita,
+            # e é justamente por isso que passaria despercebido: funciona aqui e
+            # quebra na Amazon, que só assina v4 nas regiões criadas depois de
+            # 2014. A migração não pode depender de alguém lembrar disto.
+            signature_version="s3v4",
             # `path` porque o MinIO não resolve bucket por subdomínio numa
             # instalação simples; a AWS aceita os dois. Deixar no padrão
             # (`virtual`) quebraria só contra o MinIO, e só em runtime.
@@ -199,11 +236,15 @@ def url_temporaria(bucket: str, chave: str, segundos: int = VALIDADE_URL_SEGUNDO
 
     Quem confere o acesso é a view que chama isto — a assinatura não substitui a
     checagem de escopo, ela só evita que o arquivo precise passar pelo Django.
+
+    Assinada contra o endereço **público**, que é o único que o navegador de
+    quem clica consegue resolver. Chamar isto sem endereço público devolve link
+    morto: use `alcancavel_pelo_navegador()` antes.
     """
     from botocore.exceptions import BotoCoreError, ClientError
 
     try:
-        return _cliente().generate_presigned_url(
+        return _cliente(publico=bool(_config("S3_ENDPOINT_PUBLICO"))).generate_presigned_url(
             "get_object", Params={"Bucket": bucket, "Key": chave}, ExpiresIn=segundos
         )
     except (ClientError, BotoCoreError) as erro:

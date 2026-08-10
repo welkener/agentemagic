@@ -80,6 +80,10 @@ services:
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       # O endpoint aponta para o serviço do compose; na AWS este valor some.
       S3_ENDPOINT: http://minio:9000
+      # No dev a porta 9000 é publicada no host, então o navegador alcança o
+      # MinIO — e o redirect com URL assinada funciona igual ao que vai
+      # acontecer na AWS. No servidor não é assim: lá este valor fica vazio.
+      S3_ENDPOINT_PUBLICO: ${S3_ENDPOINT_PUBLICO:-http://localhost:9000}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-magicbi}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-magicbi-dev-secret}
     ports:

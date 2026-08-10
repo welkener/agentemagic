@@ -40,8 +40,9 @@ de propósito, sem o mixin, para provar que a terceira camada segura sozinha.
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
-from django.http import Http404, HttpResponseRedirect
+from django.http import Http404, HttpResponse, HttpResponseRedirect
 from django.urls import reverse
+from django.utils.encoding import escape_uri_path
 from django.views import View
 from django.views.generic import TemplateView
 
@@ -725,14 +726,21 @@ class ClassificarDocumentoView(EscopoGrimorioMixin, View):
 
 
 class ArquivoDocumentoView(EscopoGrimorioMixin, View):
-    """Redireciona para uma URL assinada de validade curta.
+    """Entrega o arquivo a quem tem escopo para vê-lo.
 
-    O arquivo não passa pelo Django: o storage entrega direto. O que passa por
-    aqui é a **checagem de escopo** — a assinatura não substitui a permissão,
-    ela só evita que megabytes de PDF atravessem a aplicação.
+    Por dois caminhos, e o que decide é se o storage tem endereço que o
+    navegador alcança:
 
-    E a validade é curta de propósito: link permanente de extrato bancário vaza
-    no primeiro encaminhamento de WhatsApp, e nunca mais é possível recolher.
+    - **tem** (AWS, ou MinIO publicado): redirect para URL assinada de validade
+      curta. Megabytes de PDF não atravessam a aplicação, e a validade é curta
+      de propósito — link permanente de extrato bancário vaza no primeiro
+      encaminhamento de WhatsApp e nunca mais é possível recolher;
+    - **não tem** (o servidor de hoje, onde o MinIO não publica porta): o
+      arquivo sai por aqui. Custa banda e memória do Django, e ainda assim é o
+      certo — a alternativa é um botão "Abrir" que não abre.
+
+    Nos dois casos a permissão é conferida **antes**: assinatura não é
+    autorização, e o redirect só acontece depois do escopo bater.
     """
 
     def get(self, request, pk):
@@ -742,8 +750,20 @@ class ArquivoDocumentoView(EscopoGrimorioMixin, View):
         if documento is None:
             raise Http404("Documento não encontrado nesta carteira.")
         try:
-            url = armazenamento.url_temporaria(documento.bucket, documento.chave)
+            if armazenamento.alcancavel_pelo_navegador():
+                return HttpResponseRedirect(
+                    armazenamento.url_temporaria(documento.bucket, documento.chave)
+                )
+            resposta = HttpResponse(
+                armazenamento.baixar(documento.bucket, documento.chave),
+                content_type=documento.tipo_mime or "application/octet-stream",
+            )
+            # `inline`: o contador está conferindo, não arquivando — abrir a nota
+            # na aba e voltar para a fila é o gesto, baixar para a pasta não.
+            resposta["Content-Disposition"] = (
+                f'inline; filename="{escape_uri_path(documento.nome_arquivo)}"'
+            )
+            return resposta
         except armazenamento.ErroDeArmazenamento as erro:
             messages.error(request, f"Não consegui abrir o arquivo: {erro}")
             return HttpResponseRedirect(reverse("grimorio:revisao_documentos"))
-        return HttpResponseRedirect(url)

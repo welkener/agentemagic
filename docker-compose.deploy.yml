@@ -78,6 +78,11 @@ services:
       # Storage de documentos. Sem estes três, o recebimento de arquivo é
       # recusado com aviso — nunca aceito e perdido.
       S3_ENDPOINT: http://minio:9000
+      # Vazio de propósito: o MinIO não publica porta, então não existe endereço
+      # que o navegador do contador alcance. Com ele vazio, o arquivo sai pelo
+      # Django (ver ArquivoDocumentoView). Preencher só quando o storage ganhar
+      # um host público — e, na AWS, apagar S3_ENDPOINT em vez de preencher este.
+      S3_ENDPOINT_PUBLICO: ${S3_ENDPOINT_PUBLICO:-}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY}
       S3_SECRET_KEY: ${S3_SECRET_KEY}
     ports:
