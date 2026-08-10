@@ -379,13 +379,25 @@ confirmação em duas etapas, e a regra de que o cliente não cancela sozinho.
 
 O maior ROI do produto, e o terreno onde o concorrente mais forte já está (§8).
 
-- [ ] Storage S3-compatível: **bucket por tenant, prefixo por cliente**.
+- [x] Storage S3-compatível: **bucket por tenant, prefixo por cliente**.
+      (10/ago — MinIO em contêiner, provado no servidor; ir para a AWS é apagar
+      `S3_ENDPOINT`.)
 - [ ] OCR: chave de acesso NF-e, valor, CNPJ emitente, vencimento.
 - [ ] Classificação: nota de entrada, nota de serviço, boleto, extrato, contrato.
 - [ ] Validação determinística → confirmação com o cliente ("R$ 1.240,00 da
       Fornecedor X, vence 15/09. Confirma?") → recibo de volta no WhatsApp.
-- [ ] Tool `receber_documento(arquivo)`.
-- [ ] **Fila de revisão humana** — dentro do Grimório do S2b, na área Documentos.
+- [x] Recebimento pelo WhatsApp (foto/PDF → bucket → recibo). O nome ficou
+      `documento_fn` no pipeline do canal, e não uma tool: não há o que rotear
+      quando o cliente manda um arquivo, e gastar a escada de modelo para
+      concluir o óbvio deixaria o desfecho dependendo de uma classificação que
+      pode errar.
+- [x] **Fila de revisão humana** — no Grimório, menu "Revisão". (10/ago)
+
+**A ordem dentro do sprint foi invertida de propósito.** A fila de revisão veio
+antes do OCR, e não depois: com 100% de revisão humana o pipeline já fecha ponta
+a ponta, e o OCR, quando entrar, só REDUZ a fila. O caminho oposto — ligar o OCR
+primeiro e ir corrigindo — começaria por lançamento automático de dado não
+conferido, que é exatamente o que o gate abaixo proíbe.
 
 **Gate S4**
 - Documento com baixa confiança **nunca** vira lançamento automático, com teste
