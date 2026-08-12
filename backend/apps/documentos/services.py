@@ -153,7 +153,14 @@ def recibo(documento: Documento, novo: bool) -> str:
     contexto, no único instante em que ele está olhando.
     """
     lido = (documento.dados_extraidos or {}).get("resumo") or ""
-    frase_leitura = f"Li: {lido}.\n\n" if lido else ""
+    if not lido:
+        frase_leitura = ""
+    elif documento.classificado_por_maquina:
+        frase_leitura = f"Li: {lido}.\n\n"
+    else:
+        # Leitura sem prova recebe verbo de dúvida. O resumo já traz a ressalva
+        # dentro dele (`extracao._com_ressalva`), e "Li:" na frente desmentiria.
+        frase_leitura = f"Pelo que vi, {lido}.\n\n"
 
     if not novo:
         return (

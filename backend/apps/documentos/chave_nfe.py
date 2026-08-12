@@ -113,8 +113,17 @@ def interpretar(bruto: str) -> ChaveNFe | None:
     """A chave conferida, ou `None`.
 
     `None` cobre tudo que não passa: tamanho errado, dígito que não bate, UF que
-    não existe, mês fora de 1..12. Devolver um objeto "provavelmente certo" seria
-    empurrar a dúvida para quem chama, que é onde ela deixa de ser tratada.
+    não existe, mês fora de 1..12, modelo desconhecido. Devolver um objeto
+    "provavelmente certo" seria empurrar a dúvida para quem chama, que é onde ela
+    deixa de ser tratada.
+
+    **As quatro conferências juntas valem mais que o dígito sozinho.** O dígito
+    verificador deixa passar cerca de uma em onze sequências aleatórias — pouco
+    quando a entrada é um campo de XML, muito quando é o que uma leitora óptica
+    achou numa foto de papel. Com UF, mês e modelo somados, a chance de um número
+    qualquer se passar por chave cai para cerca de duas em dez mil. É o que
+    permite oferecer um código de barras a esta função sem saber de antemão se
+    ele é uma NF-e ou o boleto que estava grampeado na mesma folha.
     """
     chave = apenas_digitos(bruto)
     if len(chave) != 44:
@@ -128,6 +137,12 @@ def interpretar(bruto: str) -> ChaveNFe | None:
 
     ano, mes = 2000 + int(chave[2:4]), int(chave[4:6])
     if not 1 <= mes <= 12:
+        return None
+
+    # Modelo fora da tabela é documento que este sistema não sabe tratar — ou,
+    # muito mais provável, não é uma chave. Recusar manda para o humano, que é
+    # o lado seguro de errar.
+    if chave[20:22] not in MODELOS:
         return None
 
     return ChaveNFe(

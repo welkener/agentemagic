@@ -45,16 +45,22 @@ responde perante o fisco continua sendo o contador.
             {% if d.usuario %}· {{ d.usuario.nome|default:d.usuario.telefone_whatsapp }}{% endif %}
           </div>
           {% if d.dados_extraidos.resumo %}
-          <div class="pendencia__detalhe">Li: {{ d.dados_extraidos.resumo }}</div>
+          {% comment %}
+          Sem "Li:" na frente: o que aparece aqui é sempre leitura que NÃO se
+          provou — a que se prova já saiu desta lista. O próprio resumo vem com
+          a ressalva embutida (ver `extracao._com_ressalva`), e um verbo
+          afirmativo na frente a desmentiria.
+          {% endcomment %}
+          <div class="pendencia__detalhe">{{ d.dados_extraidos.resumo }}</div>
           {% endif %}
           <div class="pendencia__detalhe">
             {{ d.protocolo }} · recebido em {{ d.criado_em|date:"d/m H:i" }} ·
             {{ d.tamanho|filesizeformat }}
             {% comment %}
-            A confiança aparece mesmo valendo zero — e vale zero na maioria dos
-            itens desta lista, porque é exatamente por isso que eles estão aqui.
-            Zero significa "ninguém provou nada sobre este arquivo", não "o
-            sistema não tentou".
+            A confiança aparece mesmo abaixo do limiar — é justamente por estar
+            abaixo dele que o item está nesta lista. Zero significa "ninguém
+            provou nada sobre este arquivo"; 85 significa "o OCR achou algo que
+            fecha na conta, e isso ainda não basta".
             {% endcomment %}
             · confiança {{ d.confianca }}%
           </div>

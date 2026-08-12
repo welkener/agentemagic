@@ -19,7 +19,10 @@ django-sesame  # Magic Link de login do painel/Grimório (contador) — caso dif
 Pillow  # upload de logo do escritório no painel (apps/painel) — SaaS multi-tenant, nada de marca hardcoded
 django-unfold  # tema moderno do admin (Tailwind) — feedback "restilizar o admin", ver config/settings.py UNFOLD
 boto3  # cliente S3 — fala com MinIO (auto-hospedado) e com a AWS pela MESMA API; a troca é de variável de ambiente, não de código
-pypdf  # camada de texto do PDF (apps/documentos/extracao.py) — leitura pura, sem binário de OCR no servidor compartilhado
+pypdf  # camada de texto do PDF (apps/documentos/extracao.py) — leitura exata quando o PDF veio de sistema
+pypdfium2  # rasteriza o PDF que saiu do scanner (é uma foto embrulhada) — wheel, sem pacote de sistema
+pyzbar  # código de barras e QR da imagem: DECODIFICA (falha em vez de errar) — precisa de libzbar0, ver Dockerfile
+pytesseract  # OCR, o degrau que fica ABAIXO do limiar de propósito — precisa de tesseract-ocr, ver Dockerfile
 pytest
 pytest-django
 sentry-sdk  # captura de exceção — só ativa com SENTRY_DSN (ver apps/observabilidade/sentry.py)

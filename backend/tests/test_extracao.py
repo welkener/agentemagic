@@ -24,6 +24,7 @@ import pytest
 
 from apps.documentos import boleto as boleto_mod
 from apps.documentos import chave_nfe, extracao
+from apps.documentos import imagem as imagem_mod
 
 # Padaria Estrela (CNPJ 12345678000190) — a mesma da fixture `cliente`. Emitida
 # em SP (35), competência 08/2026, modelo 55, série 1, número 447.
@@ -84,6 +85,53 @@ def pdf_com_texto(*linhas: str) -> bytes:
     )
     return saida.getvalue()
 
+
+# Intercalado 2 de 5 — o código de barras que o boleto brasileiro imprime, e que
+# o DANFE também aceita. Cinco barras por dígito, largura larga ou estreita; os
+# dígitos entram intercalados, um nas barras e o seguinte nos espaços. É simples
+# o bastante para caber aqui, e gerar o símbolo de verdade é o que torna o teste
+# uma prova: o zbar decodifica pixels, não a intenção de quem escreveu o teste.
+I25_PADROES = {
+    "0": "NNWWN", "1": "WNNNW", "2": "NWNNW", "3": "WWNNN", "4": "NNWNW",
+    "5": "WNWNN", "6": "NWWNN", "7": "NNNWW", "8": "WNNWN", "9": "NWNWN",
+}
+
+
+def codigo_de_barras(digitos: str, estreito: int = 3, altura: int = 160,
+                     margem: int = 40):
+    """A imagem do símbolo. `margem` é a zona de silêncio, sem a qual não lê."""
+    from PIL import Image, ImageDraw
+
+    if len(digitos) % 2:
+        digitos = "0" + digitos
+
+    barras = [(estreito, True), (estreito, False), (estreito, True), (estreito, False)]
+    for i in range(0, len(digitos), 2):
+        primeiro, segundo = I25_PADROES[digitos[i]], I25_PADROES[digitos[i + 1]]
+        for j in range(5):
+            barras.append((estreito * (3 if primeiro[j] == "W" else 1), True))
+            barras.append((estreito * (3 if segundo[j] == "W" else 1), False))
+    barras += [(estreito * 3, True), (estreito, False), (estreito, True)]
+
+    largura = sum(w for w, _ in barras) + 2 * margem
+    imagem = Image.new("L", (largura, altura + 2 * margem), 255)
+    desenho = ImageDraw.Draw(imagem)
+    x = margem
+    for espessura, e_barra in barras:
+        if e_barra:
+            desenho.rectangle([x, margem, x + espessura - 1, margem + altura], fill=0)
+        x += espessura
+    return imagem
+
+
+def como_png(imagem) -> bytes:
+    saida = io.BytesIO()
+    imagem.save(saida, format="PNG")
+    return saida.getvalue()
+
+
+# Código de barras do boleto: banco(3) moeda(1) DV(1) fator(4) valor(10) livre(25)
+BARRA_BOLETO = "34193153900001240001234567890123456789012345"
 
 XML_NFE = """<?xml version="1.0" encoding="UTF-8"?>
 <nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
@@ -414,14 +462,10 @@ class TestExtrair:
 
         assert lido == extracao.NADA
 
-    def test_foto_de_nota_nao_e_lida_e_isso_e_a_decisao_do_sprint(self, cliente):
-        """Imagem não tem degrau nesta escada — de propósito.
-
-        Ler a foto exigiria OCR, e o que sai de um OCR chega sem prova: pode
-        estar certo, pode ter trocado 4 por 6, e não há como distinguir depois.
-        Enquanto isso for verdade, quem resolve é gente.
-        """
-        assert extracao.extrair(b"\xff\xd8\xff\xe0jpeg", "nota.jpg", "image/jpeg", cliente) == extracao.NADA
+    def test_arquivo_que_nem_abre_como_imagem_vai_para_a_fila(self, cliente):
+        assert extracao.extrair(
+            b"\xff\xd8\xff\xe0nem e jpeg de verdade", "nota.jpg", "image/jpeg", cliente
+        ) == extracao.NADA
 
     def test_leitura_que_estoura_por_dentro_ainda_devolve_nada(self, cliente, monkeypatch):
         """O contrato de `extrair` é não levantar nunca — o arquivo já está
@@ -432,3 +476,244 @@ class TestExtrair:
         monkeypatch.setattr(extracao, "_do_xml", explode)
 
         assert extracao.extrair(b"<x/>", "nfe.xml", "text/xml", cliente) == extracao.NADA
+
+
+# ---------------------------------------------------------------------------
+# Imagem: o que decodifica e o que adivinha
+# ---------------------------------------------------------------------------
+def tem_tesseract() -> bool:
+    try:
+        import pytesseract
+
+        pytesseract.get_tesseract_version()
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _pdf_com_imagem(imagem) -> bytes:
+    """Embrulha uma imagem num PDF, como faz qualquer aplicativo de digitalizar."""
+    import pypdfium2 as pdfium
+
+    largura, altura = imagem.size
+    documento = pdfium.PdfDocument.new()
+    pagina = documento.new_page(largura, altura)
+    objeto = pdfium.PdfImage.new(documento)
+    objeto.set_bitmap(pdfium.PdfBitmap.from_pil(imagem.convert("RGB")))
+    objeto.set_matrix(pdfium.PdfMatrix().scale(largura, altura))
+    pagina.insert_obj(objeto)
+    pagina.gen_content()
+    saida = io.BytesIO()
+    documento.save(saida)
+    return saida.getvalue()
+
+
+@pytest.mark.django_db
+class TestCodigoDeBarras:
+    """Degrau 3 — e a diferença entre decodificar e adivinhar.
+
+    Os símbolos aqui são desenhados pixel a pixel e lidos pelo zbar de verdade.
+    Dublar a leitura provaria só que o resto do código chama a função certa; o
+    que precisa estar sob prova é que um símbolo real, com zona de silêncio e
+    barras de largura certa, atravessa a escada inteira até virar documento
+    classificado.
+    """
+
+    def test_a_chave_da_nfe_em_barras_dispensa_revisao(self, cliente):
+        png = como_png(codigo_de_barras(CHAVE_DE_TERCEIRO))
+
+        lido = extracao.extrair(png, "foto-danfe.png", "image/png", cliente)
+
+        assert lido.metodo == "codigo_de_barras"
+        assert lido.confianca == extracao.CONFIANCA_CODIGO
+        assert lido.dispensa_revisao is True
+        assert lido.tipo == "nota_entrada"
+        assert lido.dados["chave_acesso"] == CHAVE_DE_TERCEIRO
+
+    def test_a_barra_do_boleto_traz_valor_e_vencimento(self, cliente):
+        """Os 44 dígitos da barra não são a linha digitável — são os mesmos
+        dados em outra ordem, com um verificador só."""
+        png = como_png(codigo_de_barras(BARRA_BOLETO))
+
+        lido = extracao.extrair(png, "foto-boleto.jpg", "image/jpeg", cliente)
+
+        assert lido.tipo == "boleto"
+        assert lido.confianca == extracao.CONFIANCA_CODIGO
+        assert lido.dados["valor"] == "1240.00"
+        assert lido.dados["vencimento"] == "2026-08-15"
+
+    def test_a_barra_e_a_linha_produzem_a_mesma_string(self):
+        """O cliente que manda a foto e depois o PDF do mesmo boleto não pode
+        gerar dois títulos diferentes — e o reconhecimento de duplicata compara
+        exatamente esse campo."""
+        pela_barra = boleto_mod.interpretar_barra(BARRA_BOLETO, hoje=HOJE)
+        pela_linha = boleto_mod.interpretar(pela_barra.linha, hoje=HOJE)
+
+        assert pela_linha is not None
+        assert pela_linha.linha == pela_barra.linha
+        assert pela_linha.valor == pela_barra.valor
+        assert pela_linha.vencimento == pela_barra.vencimento
+
+    def test_barra_com_um_digito_errado_nao_vira_boleto(self):
+        for posicao in range(44):
+            assert boleto_mod.interpretar_barra(
+                trocar(BARRA_BOLETO, posicao), hoje=HOJE
+            ) is None
+
+    def test_codigo_de_propaganda_na_mesma_folha_nao_confunde(self, cliente):
+        """Não se pergunta ao símbolo o que ele é: tenta-se cada leitura e vale
+        a que a aritmética aprovar. O que não passa em nenhuma é ignorado."""
+        lido = extracao._do_codigos(
+            ["https://promo.exemplo.com.br/cupom/1234567890", "0123456789"], cliente
+        )
+
+        assert lido == extracao.NADA
+
+    def test_qr_da_nfce_traz_a_chave_dentro_da_url(self, cliente):
+        """A NFC-e não imprime os 44 dígitos soltos: imprime um QR com a URL de
+        consulta, e a chave é um parâmetro dela."""
+        url = (
+            "http://www.fazenda.sp.gov.br/nfce/qrcode?p="
+            f"{CHAVE_DE_TERCEIRO}|2|1|1|abcdef0123456789"
+        )
+
+        lido = extracao._do_codigos([url], cliente)
+
+        assert lido.metodo == "codigo_de_barras"
+        assert lido.dados["chave_acesso"] == CHAVE_DE_TERCEIRO
+
+    def test_pdf_digitalizado_e_uma_foto_embrulhada(self, cliente):
+        """O PDF do aplicativo de scanner não tem camada de texto nenhuma. Vale
+        a mesma escada da foto — rasteriza e procura o símbolo."""
+        pdf = _pdf_com_imagem(codigo_de_barras(CHAVE_DE_TERCEIRO))
+
+        lido = extracao.extrair(pdf, "digitalizado.pdf", "application/pdf", cliente)
+
+        assert lido.metodo == "codigo_de_barras"
+        assert lido.dados["chave_acesso"] == CHAVE_DE_TERCEIRO
+
+
+@pytest.mark.django_db
+class TestOcr:
+    """Degrau 4 — o que sempre devolve alguma coisa, e por isso não decide nada."""
+
+    def test_o_que_o_ocr_le_nao_tira_ninguem_da_fila(self, cliente, monkeypatch):
+        """Mesmo achando uma chave que fecha no dígito verificador.
+
+        O módulo 11 pega erro de um dígito e troca de posição. Erro múltiplo ele
+        deixa passar em cerca de uma leitura em onze — e o OCR erra em rajada,
+        porque a sombra que derruba um algarismo derruba o vizinho. Uma em onze é
+        alta demais para virar lançamento sozinha.
+        """
+        monkeypatch.setattr(extracao.imagem_mod, "codigos", lambda _imagem: [])
+        monkeypatch.setattr(
+            extracao.imagem_mod, "texto_por_ocr",
+            lambda _imagem: f"DANFE\nCHAVE DE ACESSO\n{CHAVE_DE_TERCEIRO}\n",
+        )
+
+        lido = extracao.extrair(
+            como_png(codigo_de_barras(CHAVE_DE_TERCEIRO)), "foto.jpg", "image/jpeg", cliente
+        )
+
+        assert lido.confianca == extracao.CONFIANCA_OCR
+        assert lido.dispensa_revisao is False
+        assert lido.metodo == "chave_no_texto_ocr"
+        # A leitura é guardada: vira contexto para quem revisa, não decisão.
+        assert lido.dados["chave_acesso"] == CHAVE_DE_TERCEIRO
+
+    def test_o_resumo_avisa_que_e_palpite(self, cliente, monkeypatch):
+        """Quem lê o resumo — o contador na fila, o cliente no WhatsApp — não vê
+        o número da confiança do lado. A ressalva tem que estar na frase."""
+        monkeypatch.setattr(extracao.imagem_mod, "codigos", lambda _i: [])
+        monkeypatch.setattr(
+            extracao.imagem_mod, "texto_por_ocr", lambda _i: LINHA_DIGITAVEL
+        )
+
+        lido = extracao.extrair(
+            como_png(codigo_de_barras(BARRA_BOLETO)), "foto.jpg", "image/jpeg", cliente
+        )
+
+        assert lido.resumo.startswith("parece ")
+        assert "ainda não confirmado" in lido.resumo
+
+    def test_o_codigo_de_barras_tem_precedencia_sobre_o_ocr(self, cliente, monkeypatch):
+        """Economia e correção na mesma decisão: o zbar custa milissegundos e
+        devolve prova; o tesseract custa segundos e devolve palpite."""
+        chamou_ocr = []
+        monkeypatch.setattr(
+            extracao.imagem_mod, "texto_por_ocr",
+            lambda _i: chamou_ocr.append(1) or "",
+        )
+
+        lido = extracao.extrair(
+            como_png(codigo_de_barras(CHAVE_DE_TERCEIRO)), "foto.png", "image/png", cliente
+        )
+
+        assert lido.metodo == "codigo_de_barras"
+        assert chamou_ocr == []
+
+    def test_sem_tesseract_instalado_o_documento_so_vai_para_a_fila(
+        self, cliente, monkeypatch
+    ):
+        """A ausência do binário é degradação, não falha: o produto continua
+        funcionando exatamente como funcionava antes deste degrau existir."""
+        monkeypatch.setattr(extracao.imagem_mod, "codigos", lambda _i: [])
+        monkeypatch.setattr(extracao.imagem_mod, "texto_por_ocr", lambda _i: "")
+
+        lido = extracao.extrair(
+            como_png(codigo_de_barras(CHAVE_DE_TERCEIRO)), "foto.png", "image/png", cliente
+        )
+
+        assert lido == extracao.NADA
+
+    @pytest.mark.skipif(not tem_tesseract(), reason="tesseract não instalado aqui")
+    def test_o_tesseract_de_verdade_le_a_chave_impressa(self, cliente):
+        """Roda onde o binário existe — no contêiner, e no servidor."""
+        from PIL import Image, ImageDraw
+
+        imagem = Image.new("L", (1400, 200), 255)
+        ImageDraw.Draw(imagem).text((20, 80), CHAVE_DE_TERCEIRO, fill=0)
+        imagem = imagem.resize((2800, 400), Image.LANCZOS)
+
+        texto = extracao.imagem_mod.texto_por_ocr(imagem)
+
+        assert chave_nfe.procurar_no_texto(texto) is not None
+
+
+class TestImagemHostil:
+    """A imagem chega pelo WhatsApp, de quem qualquer um pode ser."""
+
+    def test_png_que_declara_60000x60000_nao_e_aberto(self):
+        """Bomba de descompressão: 40 KB de arquivo, 10 GB de RAM ao abrir — num
+        contêiner que divide o servidor com os outros projetos do usuário."""
+        assert imagem_mod.abrir(_png_gigante()) is None
+
+    def test_imagem_grande_e_reduzida_antes_de_qualquer_leitura(self):
+        from PIL import Image
+
+        grande = como_png(Image.new("L", (4000, 3000), 255))
+
+        aberta = imagem_mod.abrir(grande)
+
+        assert max(aberta.size) == imagem_mod.LADO_MAXIMO
+
+    def test_lixo_nao_derruba_nada(self):
+        assert imagem_mod.abrir(b"") is None
+        assert imagem_mod.abrir(b"nao sou imagem") is None
+        assert imagem_mod.paginas_do_pdf(b"nao sou pdf") == []
+
+
+def _png_gigante() -> bytes:
+    """Um PNG cujo cabeçalho declara 60000x60000. Só o cabeçalho: o ataque age
+    antes de existir um pixel, e a defesa também precisa agir antes."""
+    import struct
+    import zlib
+
+    def chunk(tipo: bytes, dados: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(dados)) + tipo + dados
+            + struct.pack(">I", zlib.crc32(tipo + dados) & 0xFFFFFFFF)
+        )
+
+    ihdr = struct.pack(">IIBBBBB", 60000, 60000, 8, 0, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IEND", b"")

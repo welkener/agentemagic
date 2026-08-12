@@ -4,32 +4,44 @@ O que dá para saber de um documento sem perguntar a ninguém.
 **A escada, do mais confiável para o menos** — e o critério de ordem não é
 sofisticação, é *verificabilidade*:
 
-1. **XML da NF-e.** O documento fiscal em si, assinado digitalmente pela SEFAZ.
-   Não há leitura: há campo. Confiança 100.
-2. **Chave de acesso ou linha digitável no texto do PDF.** Números com dígito
-   verificador — quem lê errado é reprovado pela aritmética, não pela sorte.
-   Confiança 95.
-3. **Nada.** Foto, PDF escaneado sem camada de texto, documento que não é nem
-   nota nem boleto. Confiança 0, e vai para a fila do contador.
+1. **XML da NF-e** (100). O documento fiscal em si, assinado digitalmente pela
+   SEFAZ. Não há leitura: há campo.
+2. **Chave de acesso ou linha digitável na camada de texto do PDF** (95). Os
+   dígitos são bytes exatos, e ainda passam pelo verificador.
+3. **Código de barras ou QR Code na imagem** (95). O DANFE imprime a chave em
+   barras, o boleto imprime os 44 dígitos em Intercalado 2 de 5, a NFC-e traz um
+   QR. Não é adivinhação: um borrão faz a decodificação *falhar*, não devolver
+   outro número — e depois disso o dígito verificador ainda confere.
+4. **OCR da imagem** (85 — **abaixo do limiar, de propósito**). Ver adiante.
+5. **Nada** (0). Vai para a fila do contador.
 
-O degrau que costuma vir primeiro em produtos assim — "o modelo lê a imagem e
-diz o que viu" — não está aqui, e a ausência é o assunto do módulo. Um valor lido
-por OCR ou por LLM chega sem prova: pode estar certo, pode ter trocado 4 por 6, e
-não há como distinguir os dois casos depois. Os degraus acima chegam com prova.
-Enquanto houver documento que caia no degrau 3, quem resolve é gente — e é por
-isso que a fila de revisão foi construída antes desta extração, e não depois.
+**Por que o OCR fica abaixo da linha, mesmo achando um número que confere.** O
+módulo 11 pega todo erro de um dígito e toda troca de posição — é para isso que
+ele existe. O que ele não pega é erro múltiplo: quando dois ou mais dígitos saem
+errados, cerca de uma em onze sequências ainda fecha a conta. Para digitação
+humana isso é irrelevante, porque errar dois dígitos é raro. Para OCR não é: o
+OCR erra em rajada — a mesma sombra que derruba o 8 derruba o 3 ao lado. Uma
+chance em onze de aprovar uma chave errada é alta demais para virar lançamento
+sozinha, e baixa o suficiente para valer como palpite bem-educado. Então o
+resultado do OCR fica guardado, aparece na fila como contexto para quem revisa, e
+**não** preenche o tipo do documento nem tira ninguém da fila.
+
+Isso também é o que separa este degrau do anterior. Código de barras não
+adivinha; OCR sempre devolve alguma coisa.
 
 **O que este módulo se recusa a extrair:** o valor de uma nota a partir do texto
 do DANFE. Ele está impresso lá, e um regex em "VALOR TOTAL DA NOTA" acertaria na
 maioria dos layouts. "Maioria" é o problema: o erro não avisa, e valor errado em
 lançamento contábil vira imposto errado. Do PDF sai o que a aritmética confirma —
-chave, emitente, competência, número. O valor vem do XML ou vem do humano.
+chave, emitente, competência, número. O valor vem do XML, do código de barras do
+boleto, ou do humano.
 
 **XML é entrada hostil.** O arquivo chega de fora, por WhatsApp, de quem
 qualquer um pode ser. Um parser XML no padrão resolve entidades externas e
 expande entidades aninhadas — o que transforma um anexo de 1 KB em leitura de
 arquivo do servidor ou em estouro de memória. O parser daqui vem com isso
-desligado explicitamente.
+desligado explicitamente. Imagem tem o problema equivalente, tratado em
+`imagem.py`.
 """
 from __future__ import annotations
 
@@ -40,14 +52,23 @@ from decimal import Decimal, InvalidOperation
 import structlog
 
 from apps.documentos import boleto as boleto_mod
-from apps.documentos import chave_nfe
+from apps.documentos import chave_nfe, imagem as imagem_mod
 
 logger = structlog.get_logger(__name__)
 
 # Acima deste ponto o documento não precisa passar pela fila. O número é alto de
 # propósito: só chegam aqui leituras conferidas por assinatura ou por dígito
-# verificador. Não é "muito provável" — é "confere".
+# verificador sobre dígitos que ninguém adivinhou. Não é "muito provável" — é
+# "confere".
 LIMIAR_SEM_REVISAO = 90
+
+CONFIANCA_XML = 100
+CONFIANCA_TEXTO = 95
+CONFIANCA_CODIGO = 95
+# Um ponto abaixo do limiar seria arbitrário; 85 diz que a leitura é boa e não
+# é prova. O que importa é o lado da linha, e ele é o mesmo desde o primeiro
+# commit da fase 2: sem prova, quem decide é gente.
+CONFIANCA_OCR = 85
 
 
 @dataclass(frozen=True)
@@ -165,7 +186,7 @@ def _do_xml(conteudo: bytes, cliente) -> Extracao:
     }
     return Extracao(
         tipo=_tipo_da_nota(chave, cliente),
-        confianca=100,
+        confianca=CONFIANCA_XML,
         metodo="xml_nfe",
         dados=dados,
         resumo=_resumo_da_nota(chave, cliente, emitente, valor),
@@ -205,17 +226,27 @@ def _resumo_da_nota(chave, cliente, emitente: str, valor: Decimal | None) -> str
     return frase
 
 
-def _do_texto(texto: str, cliente) -> Extracao:
+def _do_texto(
+    texto: str, cliente, confianca: int = CONFIANCA_TEXTO, sufixo: str = ""
+) -> Extracao:
+    """Procura no texto o que se confere sozinho.
+
+    `confianca` e `sufixo` existem porque o mesmo texto pode ter vindo da camada
+    de texto do PDF (dígitos exatos) ou do OCR (dígitos adivinhados). A busca é a
+    mesma; o peso do resultado não pode ser.
+    """
     chave = chave_nfe.procurar_no_texto(texto)
     if chave is not None:
         return Extracao(
             tipo=_tipo_da_nota(chave, cliente),
-            confianca=95,
-            metodo="chave_no_texto",
+            confianca=confianca,
+            metodo=f"chave_no_texto{sufixo}",
             # Sem valor: ele não está na chave, e o texto do DANFE não confere
             # nada. Ver a docstring do módulo.
             dados=chave.como_dados(),
-            resumo=_resumo_da_nota(chave, cliente, "", None),
+            resumo=_com_ressalva(
+                _resumo_da_nota(chave, cliente, "", None), confianca
+            ),
         )
 
     try:
@@ -225,13 +256,25 @@ def _do_texto(texto: str, cliente) -> Extracao:
     if titulo is not None:
         return Extracao(
             tipo="boleto",
-            confianca=95,
-            metodo="linha_digitavel",
+            confianca=confianca,
+            metodo=f"linha_digitavel{sufixo}",
             dados=titulo.como_dados(),
-            resumo=_resumo_do_boleto(titulo),
+            resumo=_com_ressalva(_resumo_do_boleto(titulo), confianca),
         )
 
     return NADA
+
+
+def _com_ressalva(frase: str, confianca: int) -> str:
+    """Leitura que não dispensa revisão diz isso na própria frase.
+
+    O resumo é lido por gente — na fila do contador e no WhatsApp do cliente — e
+    quem lê não vê o número da confiança do lado. Uma frase afirmativa sobre um
+    palpite é o começo de todo lançamento errado que ninguém questionou.
+    """
+    if confianca >= LIMIAR_SEM_REVISAO:
+        return frase
+    return f"parece {frase} — lido da imagem, ainda não confirmado"
 
 
 def _resumo_do_boleto(titulo) -> str:
@@ -241,6 +284,69 @@ def _resumo_do_boleto(titulo) -> str:
     if titulo.vencimento is not None:
         partes.append(f"com vencimento em {titulo.vencimento:%d/%m/%Y}")
     return " ".join(partes)
+
+
+def _do_codigos(payloads: list[str], cliente) -> Extracao:
+    """O que os símbolos decodificados na imagem provam.
+
+    O payload chega cru e pode ser qualquer coisa: 44 dígitos secos do DANFE, a
+    URL de consulta da NFC-e com a chave no meio, o código de barras do boleto.
+    Não se pergunta ao símbolo o que ele é — tenta-se cada leitura e vale a que
+    a aritmética aprovar. Um QR de propaganda impresso na mesma folha
+    simplesmente não passa em nenhuma.
+    """
+    for payload in payloads:
+        chave = chave_nfe.procurar_no_texto(payload)
+        if chave is not None:
+            return Extracao(
+                tipo=_tipo_da_nota(chave, cliente),
+                confianca=CONFIANCA_CODIGO,
+                metodo="codigo_de_barras",
+                dados=chave.como_dados(),
+                resumo=_resumo_da_nota(chave, cliente, "", None),
+            )
+
+    for payload in payloads:
+        digitos = boleto_mod.apenas_digitos(payload)
+        titulo = boleto_mod.interpretar_barra(digitos)
+        if titulo is None:
+            titulo = boleto_mod.interpretar(digitos) if len(digitos) == 47 else None
+        if titulo is not None:
+            return Extracao(
+                tipo="boleto",
+                confianca=CONFIANCA_CODIGO,
+                metodo="codigo_de_barras",
+                dados=titulo.como_dados(),
+                resumo=_resumo_do_boleto(titulo),
+            )
+
+    return NADA
+
+
+def _de_imagens(imagens: list, cliente) -> Extracao:
+    """Códigos de barras primeiro, OCR só se eles falharem.
+
+    A ordem é economia e é correção ao mesmo tempo: o zbar custa milissegundos e
+    devolve prova; o tesseract custa segundos e devolve palpite. Rodar o caro
+    para chegar ao resultado pior seria errado nas duas contas.
+    """
+    for imagem in imagens:
+        lido = _do_codigos(imagem_mod.codigos(imagem), cliente)
+        if lido is not NADA:
+            return lido
+
+    # Só a primeira página vai para o OCR. A chave de acesso e a linha digitável
+    # estão na frente do documento, e cada página a mais é mais um segundo com o
+    # cliente esperando o recibo — num servidor que não é só nosso.
+    for imagem in imagens[:1]:
+        lido = _do_texto(
+            imagem_mod.texto_por_ocr(imagem), cliente,
+            confianca=CONFIANCA_OCR, sufixo="_ocr",
+        )
+        if lido is not NADA:
+            return lido
+
+    return NADA
 
 
 def _texto_do_pdf(conteudo: bytes) -> str:
@@ -261,6 +367,23 @@ def _texto_do_pdf(conteudo: bytes) -> str:
         return ""
 
 
+EXTENSOES_DE_IMAGEM = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".heic")
+
+
+def _do_pdf(conteudo: bytes, cliente) -> Extracao:
+    """Camada de texto primeiro; se não houver, rasteriza e trata como imagem.
+
+    Os dois casos existem de verdade e são bem diferentes. O PDF emitido por
+    sistema traz o texto dentro, e ler é exato. O PDF que saiu do scanner ou do
+    aplicativo de digitalizar do celular é uma foto embrulhada — e aí vale a
+    mesma escada da foto, com o mesmo teto de confiança.
+    """
+    lido = _do_texto(_texto_do_pdf(conteudo), cliente)
+    if lido is not NADA:
+        return lido
+    return _de_imagens(imagem_mod.paginas_do_pdf(conteudo), cliente)
+
+
 def extrair(conteudo: bytes, nome_arquivo: str, tipo_mime: str, cliente) -> Extracao:
     """O degrau mais alto que este documento alcança.
 
@@ -275,7 +398,10 @@ def extrair(conteudo: bytes, nome_arquivo: str, tipo_mime: str, cliente) -> Extr
         if nome.endswith(".xml") or "xml" in mime:
             return _do_xml(conteudo, cliente)
         if nome.endswith(".pdf") or "pdf" in mime:
-            return _do_texto(_texto_do_pdf(conteudo), cliente)
+            return _do_pdf(conteudo, cliente)
+        if nome.endswith(EXTENSOES_DE_IMAGEM) or mime.startswith("image/"):
+            aberta = imagem_mod.abrir(conteudo)
+            return _de_imagens([aberta] if aberta is not None else [], cliente)
     except Exception as erro:  # noqa: BLE001
         logger.warning("extracao_falhou", arquivo=nome, erro=str(erro))
 

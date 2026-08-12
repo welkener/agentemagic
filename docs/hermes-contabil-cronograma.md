@@ -385,9 +385,12 @@ O maior ROI do produto, e o terreno onde o concorrente mais forte já está (§8
 - [x] Leitura: chave de acesso NF-e, CNPJ emitente, competência; valor e
       vencimento do boleto pela linha digitável. (12/ago — `apps/documentos/`:
       `chave_nfe.py`, `boleto.py`, `extracao.py`.)
-- [ ] **OCR de imagem** — foto de nota continua indo para a fila. Ver a nota
-      abaixo: a escolha do motor tem custo no servidor compartilhado e é decisão
-      do usuário, não minha.
+- [x] **Leitura de imagem**, em dois degraus diferentes de propósito (12/ago,
+      `apps/documentos/imagem.py`): **código de barras e QR** (zbar) dispensam
+      revisão como o texto exato, porque decodificam em vez de adivinhar; o
+      **OCR local** (tesseract) fica **abaixo do limiar** e só entrega o
+      documento pré-lido para o contador. Motor local, escolhido pelo usuário —
+      nenhuma imagem de documento sai do servidor.
 - [x] Classificação: nota de **entrada** e de **saída** (quem emitiu está dentro
       da chave — é a diferença entre despesa e receita, resolvida por comparação
       de CNPJ) e **boleto**.
@@ -415,11 +418,19 @@ a leitura primeiro e ir corrigindo — começaria por lançamento automático de
 não conferido, que é exatamente o que o gate abaixo proíbe.
 
 **E a escada foi ordenada por verificabilidade, não por sofisticação.** XML
-assinado pela SEFAZ (100) → número com dígito verificador (95) → nada (0). O
-degrau que costuma vir primeiro em produtos assim — "o modelo lê a imagem e diz
-o que viu" — está de fora porque o que sai dele chega sem prova: pode estar
-certo, pode ter trocado 4 por 6, e não há como distinguir os dois casos depois.
-Valor de nota não é extraído nem do texto do DANFE, onde um regex acertaria na
+assinado pela SEFAZ (100) → dígitos exatos com verificador, na camada de texto do
+PDF (95) → código de barras e QR na imagem (95) → OCR (85) → nada (0).
+
+A linha que importa passa entre 95 e 85, e a razão é aritmética. O módulo 11 pega
+todo erro de um dígito e toda troca de posição; o que ele não pega é erro
+múltiplo, que passa em cerca de uma sequência em onze. Para digitação humana isso
+é irrelevante — errar dois dígitos é raro. Para OCR não é: ele erra em rajada,
+porque a sombra que derruba um algarismo derruba o vizinho. Uma chance em onze de
+aprovar uma chave errada é alta demais para virar lançamento sozinha. Código de
+barras não tem esse problema porque *decodifica*: borrão faz a leitura falhar, não
+faz devolver outro número.
+
+Valor de nota também não é extraído do texto do DANFE, onde um regex acertaria na
 maioria dos layouts: "maioria" é o problema, porque o erro não avisa e valor
 errado vira imposto errado.
 
@@ -429,8 +440,10 @@ errado vira imposto errado.
   contra `aplicar_extracao`, para valer também para degraus futuros);
 - [ ] ≥ 80% dos documentos de alta confiança percorrem foto → recibo sem humano.
   **Não medido, e não mede sem tráfego real** — depende de reconectar o WhatsApp.
-  Vale registrar a expectativa: "foto" não vai passar; XML e PDF com camada de
-  texto passam. O número honesto vem do uso, não daqui.
+  A expectativa registrada antes de medir: passam o XML, o PDF com camada de
+  texto e a foto em que o código de barras sai legível; não passa a foto tremida,
+  a de papel amassado e a que corta o símbolo. A taxa depende de como o cliente
+  fotografa, e é isso que o número vai medir de verdade.
 
 ---
 

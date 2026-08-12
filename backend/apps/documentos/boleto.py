@@ -159,6 +159,50 @@ def interpretar(bruto: str, hoje: date | None = None) -> Boleto | None:
     )
 
 
+def interpretar_barra(bruto: str, hoje: date | None = None) -> Boleto | None:
+    """Os 44 dígitos do código de barras — que **não** são a linha digitável.
+
+    São os mesmos dados em outra ordem, e é por isso que existem os dois: a linha
+    digitável foi desenhada para ser lida por gente (campos curtos, um dígito
+    verificador por campo, para o caixa perceber o erro de digitação na hora), e
+    o código de barras para ser lido por máquina (um verificador só, sobre tudo).
+
+    A leitora óptica devolve esta forma. Convertê-la para a linha digitável antes
+    de conferir seria dar uma volta para chegar ao mesmo lugar — o verificador
+    geral é calculado exatamente sobre estes 44 dígitos.
+
+    Layout: banco(3) moeda(1) **DV(1)** fator(4) valor(10) campo livre(25).
+    """
+    barra = apenas_digitos(bruto)
+    if len(barra) != 44:
+        return None
+
+    if _mod11_barra(barra[0:4] + barra[5:]) != int(barra[4]):
+        return None
+
+    centavos = int(barra[9:19])
+    return Boleto(
+        linha=_linha_da_barra(barra),
+        banco=barra[0:3],
+        valor=Decimal(centavos).scaleb(-2) if centavos else None,
+        vencimento=data_do_fator(int(barra[5:9]), hoje=hoje),
+    )
+
+
+def _linha_da_barra(barra: str) -> str:
+    """Remonta a linha digitável a partir do código de barras.
+
+    Não é conferência — a conferência já aconteceu no verificador geral. É para
+    que o documento guarde sempre o mesmo formato, venha de onde vier: o mesmo
+    boleto lido do papel e lido do código de barras precisa produzir a mesma
+    string, senão o reconhecimento de duplicata deixa de funcionar justamente
+    quando o cliente manda a foto e o PDF do mesmo título.
+    """
+    livre = barra[19:44]
+    campos = [barra[0:4] + livre[0:5], livre[5:15], livre[15:25]]
+    return "".join(c + str(_mod10(c)) for c in campos) + barra[4] + barra[5:19]
+
+
 def procurar_no_texto(texto: str, hoje: date | None = None) -> Boleto | None:
     """A primeira linha digitável válida do texto.
 
