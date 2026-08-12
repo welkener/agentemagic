@@ -8,9 +8,10 @@ ouve "recebi" e o arquivo fica num bucket que ninguém abre — a promessa mais
 fácil de quebrar do produto, e a mais cara, porque ele para de cobrar achando
 que está resolvido.
 
-Tudo passa por aqui enquanto não há OCR, e essa é a ordem certa: o OCR, quando
-entrar, REDUZ esta fila. O caminho inverso começaria por lançamento automático
-de dado não conferido.
+Duas listas. Em cima o que espera humano; embaixo o que a leitura automática
+resolveu sozinha. A segunda existe por causa da primeira: classificação que
+ninguém consegue listar é classificação que ninguém consegue auditar, e quem
+responde perante o fisco continua sendo o contador.
 {% endcomment %}
 
 {% block conteudo %}
@@ -28,7 +29,7 @@ de dado não conferido.
 </div>
 
 {% if documentos %}
-<div class="cartao">
+<div class="cartao" style="margin-bottom:18px">
   <div class="cartao__cabeca">
     <h2>Aguardando classificação</h2>
     <span class="etiqueta">{{ documentos|length }}</span>
@@ -43,14 +44,17 @@ de dado não conferido.
             {{ d.cliente.nome }}
             {% if d.usuario %}· {{ d.usuario.nome|default:d.usuario.telefone_whatsapp }}{% endif %}
           </div>
+          {% if d.dados_extraidos.resumo %}
+          <div class="pendencia__detalhe">Li: {{ d.dados_extraidos.resumo }}</div>
+          {% endif %}
           <div class="pendencia__detalhe">
             {{ d.protocolo }} · recebido em {{ d.criado_em|date:"d/m H:i" }} ·
             {{ d.tamanho|filesizeformat }}
             {% comment %}
-            A confiança aparece mesmo valendo zero: é ela que vai separar o que
-            o OCR resolve sozinho do que continua vindo para cá, e mostrar o
-            campo desde já evita que ele apareça um dia sem ninguém entender o
-            que significa.
+            A confiança aparece mesmo valendo zero — e vale zero na maioria dos
+            itens desta lista, porque é exatamente por isso que eles estão aqui.
+            Zero significa "ninguém provou nada sobre este arquivo", não "o
+            sistema não tentou".
             {% endcomment %}
             · confiança {{ d.confianca }}%
           </div>
@@ -78,12 +82,62 @@ de dado não conferido.
   </div>
 </div>
 {% else %}
-<div class="cartao">
+<div class="cartao" style="margin-bottom:18px">
   <div class="cartao__corpo">
     <div class="vazio">
       <div class="vazio__titulo">Nenhum documento aguardando</div>
       Quando um cliente mandar uma foto ou um PDF pelo WhatsApp, ele aparece
       aqui para você classificar.
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if lidos %}
+<div class="cartao">
+  <div class="cartao__cabeca">
+    <h2>Lidos sozinhos</h2>
+    <span class="etiqueta">{{ lidos|length }}</span>
+  </div>
+  <div class="cartao__corpo">
+    <p class="cartao__nota">
+      Estes saíram da fila sem passar por você porque a leitura se confere
+      sozinha — XML assinado pela SEFAZ, chave de acesso ou linha digitável com
+      dígito verificador. Estão aqui para conferência por amostragem: se algum
+      estiver errado, é só reclassificar.
+    </p>
+    <div class="fila">
+      {% for d in lidos %}
+      <div class="pendencia">
+        <div class="pendencia__texto">
+          <div class="pendencia__titulo">{{ d.nome_arquivo }}</div>
+          <div class="pendencia__empresa">
+            {{ d.cliente.nome }} · {{ d.get_tipo_display }}
+          </div>
+          {% if d.dados_extraidos.resumo %}
+          <div class="pendencia__detalhe">{{ d.dados_extraidos.resumo }}</div>
+          {% endif %}
+          <div class="pendencia__detalhe">
+            {{ d.protocolo }} · {{ d.criado_em|date:"d/m H:i" }} ·
+            confiança {{ d.confianca }}%
+          </div>
+        </div>
+        <div class="acoes">
+          <a class="botao" href="{% url 'grimorio:arquivo_documento' d.pk %}" target="_blank" rel="noopener">Abrir</a>
+          <form method="post" action="{% url 'grimorio:classificar_documento' d.pk %}" class="acoes">
+            {% csrf_token %}
+            <select name="tipo" aria-label="Corrigir tipo do documento">
+              {% for valor, rotulo in tipos %}
+                {% if valor != "desconhecido" %}
+                <option value="{{ valor }}" {% if valor == d.tipo %}selected{% endif %}>{{ rotulo }}</option>
+                {% endif %}
+              {% endfor %}
+            </select>
+            <button class="botao" type="submit" name="acao" value="classificar">Corrigir</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
     </div>
   </div>
 </div>

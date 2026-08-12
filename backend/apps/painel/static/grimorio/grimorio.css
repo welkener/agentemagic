@@ -122,6 +122,11 @@ a:hover { text-decoration: underline; }
 }
 .cartao__cabeca h2 { margin: 0; font-size: 15px; font-weight: 620; }
 .cartao__corpo { padding: 18px; }
+/* Explicação curta no topo de uma lista — usada onde o contador precisa saber
+   por que aqueles itens estão ali antes de olhar item por item. */
+.cartao__nota {
+  margin: 0 0 13px; font-size: 12.5px; line-height: 1.55; color: var(--texto-suave);
+}
 
 .indicadores {
   display: grid; gap: 14px; margin-bottom: 24px;

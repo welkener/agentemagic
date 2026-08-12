@@ -382,27 +382,55 @@ O maior ROI do produto, e o terreno onde o concorrente mais forte já está (§8
 - [x] Storage S3-compatível: **bucket por tenant, prefixo por cliente**.
       (10/ago — MinIO em contêiner, provado no servidor; ir para a AWS é apagar
       `S3_ENDPOINT`.)
-- [ ] OCR: chave de acesso NF-e, valor, CNPJ emitente, vencimento.
-- [ ] Classificação: nota de entrada, nota de serviço, boleto, extrato, contrato.
-- [ ] Validação determinística → confirmação com o cliente ("R$ 1.240,00 da
-      Fornecedor X, vence 15/09. Confirma?") → recibo de volta no WhatsApp.
+- [x] Leitura: chave de acesso NF-e, CNPJ emitente, competência; valor e
+      vencimento do boleto pela linha digitável. (12/ago — `apps/documentos/`:
+      `chave_nfe.py`, `boleto.py`, `extracao.py`.)
+- [ ] **OCR de imagem** — foto de nota continua indo para a fila. Ver a nota
+      abaixo: a escolha do motor tem custo no servidor compartilhado e é decisão
+      do usuário, não minha.
+- [x] Classificação: nota de **entrada** e de **saída** (quem emitiu está dentro
+      da chave — é a diferença entre despesa e receita, resolvida por comparação
+      de CNPJ) e **boleto**.
+- [ ] Nota de serviço, extrato e contrato: continuam com o humano. Nenhum dos
+      três traz número autoverificável, e classificar por palavra-chave seria
+      chute com cara de leitura.
+- [x] Validação determinística → o recibo diz o que foi entendido ("Li: NF-e
+      1234 de Distribuidora Norte, R$ 1.240,00"). (12/ago)
+- [ ] Confirmação de volta ("Confirma?") com espera de resposta do cliente. Hoje
+      o recibo afirma e convida a corrigir; falta o laço que bloqueia até ele
+      responder.
 - [x] Recebimento pelo WhatsApp (foto/PDF → bucket → recibo). O nome ficou
       `documento_fn` no pipeline do canal, e não uma tool: não há o que rotear
       quando o cliente manda um arquivo, e gastar a escada de modelo para
       concluir o óbvio deixaria o desfecho dependendo de uma classificação que
       pode errar.
 - [x] **Fila de revisão humana** — no Grimório, menu "Revisão". (10/ago)
+- [x] **Lista "Lidos sozinhos"**, no mesmo lugar: o que saiu da fila sem humano
+      fica visível e reclassificável, e a discordância entra na trilha. (12/ago)
 
 **A ordem dentro do sprint foi invertida de propósito.** A fila de revisão veio
-antes do OCR, e não depois: com 100% de revisão humana o pipeline já fecha ponta
-a ponta, e o OCR, quando entrar, só REDUZ a fila. O caminho oposto — ligar o OCR
-primeiro e ir corrigindo — começaria por lançamento automático de dado não
-conferido, que é exatamente o que o gate abaixo proíbe.
+antes da leitura, e não depois: com 100% de revisão humana o pipeline já fechava
+ponta a ponta, e cada degrau de leitura só REDUZ a fila. O caminho oposto — ligar
+a leitura primeiro e ir corrigindo — começaria por lançamento automático de dado
+não conferido, que é exatamente o que o gate abaixo proíbe.
+
+**E a escada foi ordenada por verificabilidade, não por sofisticação.** XML
+assinado pela SEFAZ (100) → número com dígito verificador (95) → nada (0). O
+degrau que costuma vir primeiro em produtos assim — "o modelo lê a imagem e diz
+o que viu" — está de fora porque o que sai dele chega sem prova: pode estar
+certo, pode ter trocado 4 por 6, e não há como distinguir os dois casos depois.
+Valor de nota não é extraído nem do texto do DANFE, onde um regex acertaria na
+maioria dos layouts: "maioria" é o problema, porque o erro não avisa e valor
+errado vira imposto errado.
 
 **Gate S4**
-- Documento com baixa confiança **nunca** vira lançamento automático, com teste
-  que force o caminho;
-- ≥ 80% dos documentos de alta confiança percorrem foto → recibo sem humano.
+- [x] Documento com baixa confiança **nunca** vira lançamento automático, com
+  teste que force o caminho (`tests/test_documentos.py::TestOGate` — exercido
+  contra `aplicar_extracao`, para valer também para degraus futuros);
+- [ ] ≥ 80% dos documentos de alta confiança percorrem foto → recibo sem humano.
+  **Não medido, e não mede sem tráfego real** — depende de reconectar o WhatsApp.
+  Vale registrar a expectativa: "foto" não vai passar; XML e PDF com camada de
+  texto passam. O número honesto vem do uso, não daqui.
 
 ---
 

@@ -15,6 +15,13 @@ escolha é fácil.
 mesma foto duas vezes — porque não viu o recibo, porque o WhatsApp reenviou —
 não pode encher a fila do contador com duplicata. O `hash_sha256` reconhece,
 e a resposta diz que já estava lá.
+
+**A leitura vem depois do registro, e nunca derruba o recebimento.** O documento
+existe assim que a linha nasce; o que `extracao` consegue provar sobre ele é
+melhoria em cima disso. Se a leitura falhar — PDF corrompido, XML malformado,
+biblioteca com bug —, o pior desfecho é um documento na fila do contador, que é
+exatamente onde ele estaria se a fase 2 não existisse. Falhar aqui e devolver
+erro ao cliente seria perder o que já está guardado por causa de um extra.
 """
 from __future__ import annotations
 
@@ -24,7 +31,7 @@ import structlog
 from django.db import IntegrityError
 
 from apps.audit.services import registrar
-from apps.documentos import armazenamento
+from apps.documentos import armazenamento, extracao
 from apps.documentos.models import Documento
 
 logger = structlog.get_logger(__name__)
@@ -106,12 +113,21 @@ def receber(
     else:  # pragma: no cover - cinco colisões de protocolo não é caminho previsto
         raise ErroDeRecebimento("Não consegui registrar o documento. Tente de novo.")
 
+    lido = extracao.extrair(conteudo, nome_arquivo, tipo_mime, ctx.cliente)
+    documento.aplicar_extracao(lido)
+
     registrar(
         "documento_recebido",
         {
             "protocolo": documento.protocolo,
             "tamanho": guardado.tamanho,
             "tipo_mime": tipo_mime,
+            # Como foi lido e com quanta certeza entram na trilha porque é a
+            # pergunta que aparece quando um lançamento sai errado: quem decidiu
+            # o tipo deste documento, a máquina ou alguém?
+            "metodo_leitura": lido.metodo,
+            "confianca": lido.confianca,
+            "tipo": documento.tipo,
             # O nome do arquivo pode conter dado do titular ("extrato-joao.pdf"),
             # e por isso vai como `mensagem` — campo que a trilha cifra por
             # titular (ver `audit/conteudo.CAMPOS_PESSOAIS`).
@@ -129,16 +145,37 @@ def recibo(documento: Documento, novo: bool) -> str:
     Diz o que aconteceu e o que NÃO aconteceu: o documento foi guardado, e ainda
     não foi lançado. Prometer lançamento aqui seria prometer o que só acontece
     depois da revisão — e o cliente que acredita nisso para de cobrar.
+
+    **Repetir a leitura em voz alta é uma conferência, não enfeite.** Quando a
+    chave de acesso foi lida, o cliente vê "NF-e 4471 de Distribuidora X,
+    R$ 1.240,00" — e é ele, não o contador, quem sabe na hora se mandou o
+    arquivo errado. É a checagem mais barata do sistema, feita por quem tem o
+    contexto, no único instante em que ele está olhando.
     """
+    lido = (documento.dados_extraidos or {}).get("resumo") or ""
+    frase_leitura = f"Li: {lido}.\n\n" if lido else ""
+
     if not novo:
         return (
             f"Esse arquivo eu já tinha recebido 👍\n"
             f"Protocolo: {documento.protocolo}\n\n"
-            "Está na fila do seu contador."
+            f"{frase_leitura}"
+            "Já está com o seu contador."
         )
+
+    if documento.classificado_por_maquina:
+        return (
+            "Recebi seu documento 📎\n"
+            f"Protocolo: {documento.protocolo}\n\n"
+            f"{frase_leitura}"
+            f"Já registrei como {documento.get_tipo_display().lower()}. "
+            "Se não for isso, me avise que seu contador corrige."
+        )
+
     return (
         "Recebi seu documento 📎\n"
         f"Protocolo: {documento.protocolo}\n\n"
+        f"{frase_leitura}"
         "Seu contador vai conferir e classificar. Te aviso se faltar alguma coisa."
     )
 

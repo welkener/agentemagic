@@ -1,18 +1,18 @@
 """
 Documentos que o cliente manda pela conversa — nota, boleto, extrato, contrato.
 
-**O que este modelo assume, e é a decisão do sprint:** todo documento entra
-para **revisão humana**. Não há OCR ainda, e a ordem é deliberada — o pipeline
-funciona ponta a ponta com 100% de revisão, e o OCR, quando entrar, reduz o
-volume que precisa de gente. O inverso (ligar o OCR primeiro e ir "acertando")
-começaria com lançamento automático de dado não conferido, que é exatamente o
-que o gate do Sprint 4 proíbe: *documento com baixa confiança nunca vira
-lançamento automático*.
+**Quem sai da fila sem humano, e por quê.** O padrão continua sendo
+`AGUARDANDO_REVISAO` com `confianca` zero — é onde cai todo documento cuja
+leitura ninguém consegue provar. Sobem acima do limiar apenas os que trazem
+prova junto: XML assinado pela SEFAZ, chave de acesso ou linha digitável, todos
+conferidos por dígito verificador (ver `extracao.py`). Não é "o sistema achou
+provável"; é "a conta fecha".
 
-Por isso `confianca` já existe, começa em zero e o estado inicial é
-`AGUARDANDO_REVISAO`. Quando o OCR chegar, ele preenche os dois — e o caminho
-que leva um documento a ser aceito sem humano continua sendo o mesmo, com um
-limiar explícito no meio.
+A ordem em que isso foi construído é a decisão que este modelo carrega: a fila
+de revisão veio **antes** da extração. Com ela de pé, cada degrau de leitura que
+entra apenas encurta a fila. Na ordem oposta, o primeiro lançamento automático
+aconteceria antes de existir quem conferisse — que é o que o gate do Sprint 4
+proíbe: *documento com baixa confiança nunca vira lançamento automático*.
 
 **O arquivo mora no storage; aqui fica o ponteiro.** `bucket` e `chave` são o
 endereço; `hash_sha256` é o que responde "é o mesmo arquivo?" e o que permite
@@ -31,9 +31,13 @@ class Documento(models.Model):
     """Um arquivo recebido do cliente, e o que se sabe sobre ele."""
 
     class Tipo(models.TextChoices):
-        # Ainda não classificado — o estado de quase tudo enquanto não há OCR.
+        # Ainda não classificado — o estado de tudo que chegou sem prova junto.
         DESCONHECIDO = "desconhecido", "A classificar"
         NOTA_ENTRADA = "nota_entrada", "Nota de entrada"
+        # Entrada e saída são a diferença entre despesa e receita, e a chave de
+        # acesso responde qual é sem ninguém opinar: quem emitiu está dentro dos
+        # 44 dígitos. Se foi o próprio cliente, ele vendeu.
+        NOTA_SAIDA = "nota_saida", "Nota de saída"
         NOTA_SERVICO = "nota_servico", "Nota de serviço"
         BOLETO = "boleto", "Boleto"
         EXTRATO = "extrato", "Extrato bancário"
@@ -80,17 +84,22 @@ class Documento(models.Model):
         help_text="Identifica o arquivo sem baixá-lo — é como reenvio do mesmo documento é reconhecido.",
     )
 
-    # --- o que o OCR vai preencher (Sprint 4, fase 2) ---------------------
+    # --- o que a leitura provou (ver documentos/extracao.py) --------------
     dados_extraidos = models.JSONField(
         default=dict,
         blank=True,
-        help_text="Chave de acesso, valor, CNPJ emitente, vencimento. Vazio enquanto não há OCR.",
+        help_text=(
+            "Chave de acesso, CNPJ emitente, competência, linha digitável, "
+            "valor, vencimento — mais o método que leu. Vazio quando ninguém "
+            "conseguiu provar nada sobre o arquivo."
+        ),
     )
     confianca = models.PositiveSmallIntegerField(
         default=0,
         help_text=(
-            "0 a 100. Começa em zero e assim permanece sem OCR — e zero nunca "
-            "vira lançamento automático, que é o gate do sprint."
+            "0 a 100. Só passa do limiar o que se confere sozinho: XML assinado "
+            "ou número com dígito verificador. Abaixo dele o documento espera "
+            "humano — é o gate do Sprint 4."
         ),
     )
 
@@ -125,6 +134,44 @@ class Documento(models.Model):
     @property
     def aguardando(self) -> bool:
         return self.situacao == self.Situacao.AGUARDANDO_REVISAO
+
+    @property
+    def classificado_por_maquina(self) -> bool:
+        """Classificado sem ninguém clicar — e portanto passível de contestação.
+
+        Não é um estado à parte: é `CLASSIFICADO` com `revisado_por` vazio. A
+        distinção existe para que o contador consiga achar exatamente o que saiu
+        da fila sozinho. Leitura automática que ninguém consegue listar depois é
+        leitura que ninguém consegue auditar.
+        """
+        return self.situacao == self.Situacao.CLASSIFICADO and self.revisado_por_id is None
+
+    def aplicar_extracao(self, extracao) -> None:
+        """Grava o que a leitura provou — e só tira da fila quando ela se prova.
+
+        **O gate do Sprint 4 está nesta função, em uma condição.** `dispensa_revisao`
+        é o único caminho para `CLASSIFICADO` sem humano, e ele exige confiança
+        acima do limiar, que por sua vez só é alcançada por assinatura da SEFAZ ou
+        por dígito verificador. Não há parâmetro para forçar, nem argumento de
+        conveniência: quem quiser classificar sem prova chama `classificar()` e
+        assina com o próprio usuário.
+
+        O `tipo` também só é gravado dentro dessa condição. Preencher o campo com
+        um palpite de baixa confiança pareceria ajuda e seria armadilha: o
+        contador que revisa cem documentos aceita o que já vem preenchido, e um
+        chute exibido em campo de formulário é um chute vestido de fato.
+        """
+        campos = ["dados_extraidos", "confianca"]
+        self.dados_extraidos = extracao.como_dados()
+        self.confianca = extracao.confianca
+
+        if extracao.dispensa_revisao and extracao.tipo in self.Tipo.values:
+            self.tipo = extracao.tipo
+            self.situacao = self.Situacao.CLASSIFICADO
+            self.revisado_em = timezone.now()
+            campos += ["tipo", "situacao", "revisado_em"]
+
+        self.save(update_fields=campos)
 
     def classificar(self, tipo: str, por=None, observacao: str = "") -> None:
         self.tipo = tipo

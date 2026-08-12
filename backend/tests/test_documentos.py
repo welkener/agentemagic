@@ -1,11 +1,16 @@
 """
-Recebimento e revisão de documento — Sprint 4, primeira fase.
+Recebimento e revisão de documento — Sprint 4.
 
-**A ordem escolhida é o assunto deste arquivo.** Não há OCR: todo documento vai
-para revisão humana. O caminho inverso — ligar o OCR primeiro e ir corrigindo —
-começaria por lançamento automático de dado não conferido, que é exatamente o
-que o gate do sprint proíbe. Aqui o pipeline já funciona ponta a ponta com 100%
-de revisão, e o OCR, quando entrar, só reduz o volume da fila.
+**A ordem escolhida é o assunto deste arquivo.** A fila de revisão foi construída
+antes da leitura automática, e o pipeline funcionou ponta a ponta com 100% de
+revisão humana antes de qualquer documento sair dela sozinho. Com a fase 2, o que
+traz prova junto encurta a fila; o resto continua exatamente onde estava. O
+caminho inverso — ligar a leitura primeiro e ir corrigindo — começaria por
+lançamento automático de dado não conferido, que é o que o gate do sprint proíbe.
+
+A leitura em si está sob teste em `test_extracao.py`. O que se prova aqui é o
+gate: nada abaixo do limiar sai da fila, e o que sai continua visível e
+contestável.
 
 O storage é dublado. Testar contra um MinIO de verdade tornaria a suíte
 dependente de um contêiner de pé — e o que precisa estar sob teste é a lógica de
@@ -201,6 +206,64 @@ class TestRecebimento:
         with rls.escopo_irrestrito():
             assert not Documento.objects.filter(cliente=cliente).exists()
 
+    def test_o_xml_da_nfe_sai_da_fila_e_o_recibo_diz_o_que_foi_lido(
+        self, cliente, storage
+    ):
+        """O caminho completo da fase 2: chega XML, sai documento classificado.
+
+        E o cliente é informado do que foi entendido — é ele, não o contador,
+        quem sabe na hora se mandou o arquivo errado."""
+        from tests.test_extracao import CHAVE_DE_TERCEIRO, xml_de
+
+        documento, novo = services.receber(
+            ctx=ctx_de(cliente),
+            conteudo=xml_de(CHAVE_DE_TERCEIRO, "99887766000155"),
+            nome_arquivo="nfe.xml",
+            tipo_mime="text/xml",
+        )
+
+        assert documento.situacao == Documento.Situacao.CLASSIFICADO
+        assert documento.tipo == Documento.Tipo.NOTA_ENTRADA
+        assert documento.confianca == 100
+        assert documento.classificado_por_maquina is True
+        # Ninguém revisou — e o campo continua vazio, que é o que permite achar
+        # depois o que a máquina decidiu sozinha.
+        assert documento.revisado_por_id is None
+
+        recibo = services.recibo(documento, novo)
+        assert "Distribuidora Norte" in recibo
+        assert "R$ 1.240,00" in recibo
+        assert "nota de entrada" in recibo.lower()
+
+    def test_arquivo_ilegivel_continua_esperando_humano(self, cliente, storage):
+        """O caso mais comum, e o que a fase 2 não muda."""
+        documento, _ = services.receber(
+            ctx=ctx_de(cliente), conteudo=b"\xff\xd8\xff\xe0jpeg", nome_arquivo="nota.jpg",
+            tipo_mime="image/jpeg",
+        )
+
+        assert documento.situacao == Documento.Situacao.AGUARDANDO_REVISAO
+        assert documento.confianca == 0
+        # Registra que tentou e não conseguiu — diferente de nunca ter tentado.
+        assert documento.dados_extraidos["metodo"] == "nenhum"
+
+    def test_a_trilha_guarda_quem_decidiu_o_tipo(self, cliente, storage):
+        """Pergunta que aparece quando um lançamento sai errado: foi a máquina
+        ou foi alguém? Só se responde se for gravado na hora."""
+        from apps.audit.models import Auditoria
+        from tests.test_extracao import CHAVE_DE_TERCEIRO, xml_de
+
+        services.receber(
+            ctx=ctx_de(cliente),
+            conteudo=xml_de(CHAVE_DE_TERCEIRO, "99887766000155"),
+            nome_arquivo="nfe.xml", tipo_mime="text/xml",
+        )
+
+        with rls.escopo_irrestrito():
+            evento = Auditoria.objects.get(evento="documento_recebido")
+        assert evento.dados["metodo_leitura"] == "xml_nfe"
+        assert evento.dados["confianca"] == 100
+
     def test_o_nome_do_arquivo_entra_cifrado_na_trilha(self, cliente, storage):
         """"extrato-joao-silva.pdf" é dado do titular. A trilha cifra o campo
         `mensagem` por titular — é por isso que o nome vai por ele."""
@@ -213,6 +276,85 @@ class TestRecebimento:
         with rls.escopo_irrestrito():
             evento = Auditoria.objects.get(evento="documento_recebido")
         assert "extrato-joao.pdf" not in str(evento.dados)
+
+
+# ---------------------------------------------------------------------------
+# O gate do Sprint 4
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+class TestOGate:
+    """*Documento com baixa confiança nunca vira lançamento automático.*
+
+    O gate do sprint, exercido diretamente contra `aplicar_extracao` em vez de
+    por um caminho de integração. É de propósito: se um dia alguém acrescentar
+    um degrau novo à escada — OCR, modelo de visão, o que for —, ele vai passar
+    por esta função, e é aqui que a regra precisa continuar valendo, mesmo que
+    nenhum teste de integração cubra o degrau novo.
+    """
+
+    @pytest.fixture
+    def documento(self, cliente, storage):
+        doc, _ = services.receber(
+            ctx=ctx_de(cliente), conteudo=CONTEUDO, nome_arquivo="qualquer.pdf"
+        )
+        return doc
+
+    def test_um_ponto_abaixo_do_limiar_nao_sai_da_fila(self, documento):
+        from apps.documentos.extracao import LIMIAR_SEM_REVISAO, Extracao
+
+        documento.aplicar_extracao(
+            Extracao(
+                tipo="boleto",
+                confianca=LIMIAR_SEM_REVISAO - 1,
+                metodo="algum_degrau_futuro",
+                dados={"valor": "9999.00"},
+                resumo="boleto de R$ 9.999,00",
+            )
+        )
+
+        documento.refresh_from_db()
+        assert documento.situacao == Documento.Situacao.AGUARDANDO_REVISAO
+        # O tipo também não é preenchido: campo já respondido é campo que o
+        # contador de plantão aceita sem olhar, e um chute exibido em formulário
+        # é um chute vestido de fato.
+        assert documento.tipo == Documento.Tipo.DESCONHECIDO
+        # O que foi lido fica guardado — vira contexto para quem revisa, não
+        # decisão. É a diferença entre informar e concluir.
+        assert documento.dados_extraidos["valor"] == "9999.00"
+        assert documento.confianca == LIMIAR_SEM_REVISAO - 1
+
+    def test_exatamente_no_limiar_sai(self, documento):
+        from apps.documentos.extracao import LIMIAR_SEM_REVISAO, Extracao
+
+        documento.aplicar_extracao(
+            Extracao(tipo="boleto", confianca=LIMIAR_SEM_REVISAO, metodo="linha_digitavel")
+        )
+
+        documento.refresh_from_db()
+        assert documento.situacao == Documento.Situacao.CLASSIFICADO
+        assert documento.tipo == Documento.Tipo.BOLETO
+
+    def test_tipo_que_nao_existe_no_cadastro_nao_classifica(self, documento):
+        """Confiança alta com tipo inventado não abre a porta: a escada e o
+        modelo precisam concordar sobre o vocabulário, e quando não concordam
+        quem decide é o humano."""
+        from apps.documentos.extracao import Extracao
+
+        documento.aplicar_extracao(
+            Extracao(tipo="nota_fiscal_de_servico_municipal", confianca=100, metodo="x")
+        )
+
+        documento.refresh_from_db()
+        assert documento.situacao == Documento.Situacao.AGUARDANDO_REVISAO
+
+    def test_nada_lido_nao_mexe_na_situacao(self, documento):
+        from apps.documentos.extracao import NADA
+
+        documento.aplicar_extracao(NADA)
+
+        documento.refresh_from_db()
+        assert documento.aguardando
+        assert documento.confianca == 0
 
 
 # ---------------------------------------------------------------------------
@@ -366,6 +508,79 @@ class TestRevisao:
         assert resposta.status_code == 200
         assert resposta.content == CONTEUDO
         assert "inline" in resposta["Content-Disposition"]
+
+    def test_o_que_a_maquina_leu_aparece_para_conferencia(
+        self, client, contador, cliente, storage
+    ):
+        """Classificação automática que ninguém consegue listar é classificação
+        que ninguém consegue auditar — e quem responde perante o fisco continua
+        sendo o contador."""
+        from tests.test_extracao import CHAVE_DE_TERCEIRO, xml_de
+
+        lido, _ = services.receber(
+            ctx=ctx_de(cliente), conteudo=xml_de(CHAVE_DE_TERCEIRO, "99887766000155"),
+            nome_arquivo="nfe.xml", tipo_mime="text/xml",
+        )
+        client.force_login(contador)
+        corpo = client.get("/grimorio/revisao/").content.decode()
+
+        assert "Lidos sozinhos" in corpo
+        assert lido.protocolo in corpo
+        assert "Distribuidora Norte" in corpo
+
+    def test_o_contador_pode_discordar_da_maquina(
+        self, client, contador, cliente, storage
+    ):
+        """O documento classificado por máquina nunca teve ninguém discordando
+        dele, e a primeira pessoa a olhar precisa poder."""
+        from apps.audit.models import Auditoria
+        from tests.test_extracao import CHAVE_DE_TERCEIRO, xml_de
+
+        lido, _ = services.receber(
+            ctx=ctx_de(cliente), conteudo=xml_de(CHAVE_DE_TERCEIRO, "99887766000155"),
+            nome_arquivo="nfe.xml", tipo_mime="text/xml",
+        )
+        client.force_login(contador)
+
+        client.post(
+            f"/grimorio/revisao/{lido.pk}/classificar/",
+            {"acao": "classificar", "tipo": Documento.Tipo.OUTRO},
+        )
+
+        lido.refresh_from_db()
+        assert lido.tipo == Documento.Tipo.OUTRO
+        assert lido.revisado_por_id == contador.pk
+        # Deixa de ser da máquina: já tem autor, e some da lista de conferência.
+        assert lido.classificado_por_maquina is False
+
+        with rls.escopo_irrestrito():
+            evento = Auditoria.objects.get(evento="documento_classificado")
+        # A taxa de discordância é o que diz se a fase 2 pode crescer ou precisa
+        # encolher — e ela só existe se for gravada quando acontece.
+        assert evento.dados["corrigiu_leitura_automatica"] is True
+        assert evento.dados["tipo_anterior"] == Documento.Tipo.NOTA_ENTRADA
+
+    def test_decisao_de_outro_humano_nao_se_desfaz_pela_lista(
+        self, client, contador, documento
+    ):
+        """A permissão de corrigir é da leitura automática, não de tudo: o que
+        outro contador decidiu tem autor, hora e trilha, e desfazer isso por um
+        formulário de lista apagaria uma decisão sem ninguém saber que existiu."""
+        client.force_login(contador)
+        client.post(
+            f"/grimorio/revisao/{documento.pk}/classificar/",
+            {"acao": "classificar", "tipo": Documento.Tipo.NOTA_ENTRADA},
+        )
+
+        resposta = client.post(
+            f"/grimorio/revisao/{documento.pk}/classificar/",
+            {"acao": "classificar", "tipo": Documento.Tipo.CONTRATO},
+            follow=True,
+        )
+
+        documento.refresh_from_db()
+        assert documento.tipo == Documento.Tipo.NOTA_ENTRADA
+        assert "já foi revisado" in resposta.content.decode()
 
     def test_nao_revisa_documento_de_outro_escritorio(
         self, client, contador, storage, escritorio

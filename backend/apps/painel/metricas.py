@@ -454,6 +454,31 @@ def documentos_para_revisar(usuario, limite: int = 100) -> list:
     )
 
 
+def documentos_lidos_pela_maquina(usuario, limite: int = 20) -> list:
+    """O que saiu da fila sozinho — a contrapartida obrigatória da extração.
+
+    Classificação automática que ninguém consegue listar é classificação que
+    ninguém consegue auditar, e o contador continua respondendo por ela perante
+    o fisco. Esta lista é onde ele confere por amostragem e discorda quando
+    precisa; sem ela, o ganho de tempo da fase 2 seria pago em confiança cega.
+
+    Os mais recentes primeiro, ao contrário da fila: aqui não há nada a esvaziar,
+    e o que interessa é o que a máquina acabou de decidir.
+    """
+    from apps.documentos.models import Documento
+
+    return list(
+        _escopar(
+            Documento.objects.filter(
+                situacao=Documento.Situacao.CLASSIFICADO, revisado_por__isnull=True
+            ),
+            usuario,
+        )
+        .select_related("cliente", "usuario")
+        .order_by("-criado_em")[:limite]
+    )
+
+
 def documento_no_escopo(usuario, pk: int):
     """Um documento, se ele é da carteira deste contador. Senão, None."""
     from apps.documentos.models import Documento

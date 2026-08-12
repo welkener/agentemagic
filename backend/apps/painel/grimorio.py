@@ -659,10 +659,15 @@ class RevisaoDocumentosView(EscopoGrimorioMixin, TemplateView):
     que ninguém abre. É a promessa mais fácil de quebrar do produto inteiro, e
     a mais cara: o cliente para de cobrar porque acha que está resolvido.
 
-    **Tudo passa por aqui, e é a ordem certa.** Não há OCR ainda, então 100% dos
-    documentos exigem humano. Quando o OCR entrar, ele reduz o volume desta fila
-    — o inverso, ligar o OCR primeiro e ir corrigindo, começaria por lançamento
-    automático de dado não conferido, que é o que o gate do sprint proíbe.
+    **Duas listas, e a segunda existe por causa da primeira.** Em cima, o que
+    espera humano. Embaixo, o que a leitura automática resolveu sozinha — visível
+    justamente porque ninguém o revisou. A extração da fase 2 encurta a fila de
+    cima; a lista de baixo é o preço de encurtá-la sem pedir fé, e é onde o
+    contador confere por amostragem e discorda quando precisa.
+
+    A ordem em que isso foi construído é a decisão: a fila veio antes da leitura.
+    O caminho inverso — ligar a leitura primeiro e ir corrigindo — começaria por
+    lançamento automático de dado não conferido, que é o que o gate proíbe.
     """
 
     template_name = "grimorio/documentos_revisao.html"
@@ -673,16 +678,24 @@ class RevisaoDocumentosView(EscopoGrimorioMixin, TemplateView):
 
         contexto = super().get_context_data(**kwargs)
         contexto["documentos"] = metricas.documentos_para_revisar(self.request.user)
+        contexto["lidos"] = metricas.documentos_lidos_pela_maquina(self.request.user)
         contexto["tipos"] = Documento.Tipo.choices
         return contexto
 
 
 class ClassificarDocumentoView(EscopoGrimorioMixin, View):
-    """Classifica ou recusa um documento da fila.
+    """Classifica ou recusa um documento da fila — ou corrige o que a máquina leu.
 
     Mesmas três regras das outras escritas do Grimório: só POST muda estado, o
     objeto vem do escopo e não do id da URL, e o ato entra na trilha com quem
     clicou.
+
+    **Quem já passou por humano fica como está; o que a máquina classificou,
+    não.** A diferença não é hierarquia entre pessoa e programa: é que o
+    documento classificado por máquina nunca teve ninguém discordando dele, e a
+    primeira pessoa a olhar precisa poder. Já o que outro contador decidiu tem
+    autor, hora e trilha — desfazer isso por um formulário de lista seria apagar
+    uma decisão sem que ninguém soubesse que ela existiu.
     """
 
     def post(self, request, pk):
@@ -693,11 +706,14 @@ class ClassificarDocumentoView(EscopoGrimorioMixin, View):
             raise Http404("Documento não encontrado nesta carteira.")
 
         destino = reverse("grimorio:revisao_documentos")
-        if not documento.aguardando:
+        corrigindo_maquina = documento.classificado_por_maquina
+        if not documento.aguardando and not corrigindo_maquina:
             messages.info(
                 request, f"O documento {documento.protocolo} já foi revisado."
             )
             return HttpResponseRedirect(destino)
+
+        tipo_anterior = documento.tipo
 
         if request.POST.get("acao") == "recusar":
             motivo = (request.POST.get("motivo") or "").strip()
@@ -718,9 +734,17 @@ class ClassificarDocumentoView(EscopoGrimorioMixin, View):
                 "tipo": documento.tipo,
                 "por": request.user.get_username(),
                 "origem": "grimorio",
+                # Discordância do humano com a leitura automática é a métrica que
+                # diz se a fase 2 pode crescer ou precisa encolher. Ela só existe
+                # se for gravada no momento em que acontece.
+                "corrigiu_leitura_automatica": corrigindo_maquina,
+                "tipo_anterior": tipo_anterior if corrigindo_maquina else "",
             },
             cliente=documento.cliente,
         )
+        if corrigindo_maquina:
+            messages.success(request, f"{documento.protocolo}: corrigido para {rotulo}.")
+            return HttpResponseRedirect(destino)
         messages.success(request, f"{documento.protocolo}: {rotulo}.")
         return HttpResponseRedirect(destino)
 
