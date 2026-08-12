@@ -19,6 +19,7 @@ São três regras, e cada teste abaixo existe para uma delas:
    diz que ninguém respondeu.
 """
 import pytest
+from django.urls import reverse
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.utils import timezone
@@ -334,20 +335,32 @@ class TestVincularCertificado:
         with rls.escopo_irrestrito():
             assert not Credencial.objects.filter(cliente=cliente_beta).exists()
 
-    def test_a_fila_do_hoje_aponta_para_o_grimorio_e_nao_para_o_admin(
+    def test_a_fila_leva_a_ficha_da_empresa_ja_escolhida(
         self, client, dois_escritorios_com_chamado
     ):
-        """Era o botão mais frequente da fila — uma linha por empresa sem
-        certificado — e cada clique custava uma viagem ao admin, onde ainda era
-        preciso escolher o cliente na mão. Escolher errado vincula o certificado
-        de uma empresa a outra."""
+        """O botão mais frequente da fila — uma linha por empresa sem
+        certificado. O que ele nunca pode fazer é largar o contador numa tela
+        onde ele precise escolher o cliente na mão: escolher errado vincula o
+        certificado de uma empresa a outra.
+
+        **A decisão de PARA ONDE ele leva mudou em 12/ago/2026** e este teste
+        mudou junto. Antes apontava para a ficha do Grimório e afirmava, aqui
+        mesmo, que NÃO devia ir ao admin. Com a fusão pedida pelo usuário —
+        uma superfície só — o destino certo passou a ser a ficha do admin. O
+        que continua valendo, e é o que o teste protege de verdade, é que o
+        link chega com a empresa já resolvida.
+        """
         escritorio, cliente, _ = dois_escritorios_com_chamado["alfa"]
         client.force_login(_contador(escritorio, "contador.alfa"))
 
-        corpo = client.get("/grimorio/").content.decode()
+        corpo = client.get(reverse("admin:index")).content.decode()
 
-        assert f"/grimorio/empresa/{cliente.pk}/certificado/" in corpo
-        assert "/admin/credentials/credencial/add/" not in corpo
+        assert f"/admin/clients/cliente/{cliente.pk}/change/" in corpo
+        # A asserção-espelho ("não aparece /credencial/add/") foi retirada, e
+        # não por conveniência: o índice do admin lista "Adicionar" para todo
+        # model, então procurá-la na página inteira deixou de dizer qualquer
+        # coisa sobre o botão da fila. Um teste que sempre falha por um motivo
+        # que não é o testado é pior que teste nenhum — some com o sinal.
 
 
 # ---------------------------------------------------------------------------
@@ -469,16 +482,17 @@ class TestCadastroFiscal:
         cliente.refresh_from_db()
         assert cliente.cnpj == original
 
-    def test_a_fila_do_hoje_aponta_para_o_grimorio(
+    def test_a_fila_leva_ao_cadastro_da_empresa_certa(
         self, client, dois_escritorios_com_chamado
     ):
+        """Mesma inversão de 12/ago/2026: o destino agora é o admin. O que o
+        teste guarda é o invariante — a empresa vai resolvida no link."""
         escritorio, cliente, _ = dois_escritorios_com_chamado["alfa"]
         client.force_login(_contador(escritorio, "contador.alfa"))
 
-        corpo = client.get("/grimorio/").content.decode()
+        corpo = client.get(reverse("admin:index")).content.decode()
 
-        assert f"/grimorio/empresa/{cliente.pk}/cadastro/" in corpo
-        assert f"/admin/clients/cliente/{cliente.pk}/change/" not in corpo
+        assert f"/admin/clients/cliente/{cliente.pk}/change/" in corpo
 
 
 # ---------------------------------------------------------------------------
@@ -511,17 +525,18 @@ def nota_pendente(dois_escritorios_com_chamado):
 
 @pytest.mark.django_db
 class TestDecidirNota:
-    def test_a_fila_leva_a_tela_de_conferencia_e_nao_ao_admin(
+    def test_a_fila_leva_a_nota_exata_que_espera_decisao(
         self, client, dois_escritorios_com_chamado, nota_pendente
     ):
+        """Mesma inversão de 12/ago/2026. O invariante que sobrevive: o link
+        abre A nota parada, não uma listagem onde ela precisa ser procurada."""
         escritorio, _, _ = dois_escritorios_com_chamado["alfa"]
         nota = nota_pendente["alfa"]
         client.force_login(_contador(escritorio, "contador.alfa"))
 
-        corpo = client.get("/grimorio/").content.decode()
+        corpo = client.get(reverse("admin:index")).content.decode()
 
-        assert f"/grimorio/notas/{nota.pk}/" in corpo
-        assert f"/admin/agente_nf/intencao/{nota.pk}/change/" not in corpo
+        assert f"/admin/agente_nf/intencao/{nota.pk}/change/" in corpo
 
     def test_a_tela_mostra_o_que_sera_emitido(
         self, client, dois_escritorios_com_chamado, nota_pendente

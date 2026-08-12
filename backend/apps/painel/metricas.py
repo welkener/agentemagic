@@ -19,6 +19,7 @@ from decimal import Decimal
 
 from django.db.models import Count, DecimalField, Max, Q, Sum
 from django.db.models.functions import Coalesce, TruncMonth
+from django.urls import reverse
 from django.utils import timezone
 
 from apps.agents.agente_nf.models import Intencao
@@ -791,7 +792,7 @@ def pendencias(usuario) -> list[Pendencia]:
                 detalhe=apresentacao.resumo_da_intencao(intencao),
                 cliente=intencao.cliente,
                 acao_rotulo="Analisar",
-                acao_url=f"/grimorio/notas/{intencao.pk}/",
+                acao_url=reverse("admin:agente_nf_intencao_change", args=[intencao.pk]),
             )
         )
 
@@ -810,7 +811,7 @@ def pendencias(usuario) -> list[Pendencia]:
                 detalhe=apresentacao.resumo_da_intencao(intencao),
                 cliente=intencao.cliente,
                 acao_rotulo="Ver motivo",
-                acao_url=f"/grimorio/notas/{intencao.pk}/",
+                acao_url=reverse("admin:agente_nf_intencao_change", args=[intencao.pk]),
             )
         )
 
@@ -832,7 +833,7 @@ def pendencias(usuario) -> list[Pendencia]:
                     # `/admin/credentials/credencial/add/`, onde o contador
                     # ainda tinha que escolher o cliente na mão — e escolher
                     # errado vincula o certificado de uma empresa a outra.
-                    acao_url=f"/grimorio/empresa/{linha.cliente.pk}/certificado/",
+                    acao_url=reverse("admin:clients_cliente_change", args=[linha.cliente.pk]),
                 )
             )
         elif dias is not None and dias < 0:
@@ -844,7 +845,7 @@ def pendencias(usuario) -> list[Pendencia]:
                     detalhe=f"Venceu há {abs(dias)} dia(s). A emissão está parada.",
                     cliente=linha.cliente,
                     acao_rotulo="Renovar",
-                    acao_url=f"/grimorio/empresa/{linha.cliente.pk}/certificado/",
+                    acao_url=reverse("admin:clients_cliente_change", args=[linha.cliente.pk]),
                 )
             )
         elif dias is not None and dias <= DIAS_ALERTA_CERTIFICADO:
@@ -856,7 +857,7 @@ def pendencias(usuario) -> list[Pendencia]:
                     detalhe=f"Faltam {dias} dia(s).",
                     cliente=linha.cliente,
                     acao_rotulo="Renovar",
-                    acao_url=f"/grimorio/empresa/{linha.cliente.pk}/certificado/",
+                    acao_url=reverse("admin:clients_cliente_change", args=[linha.cliente.pk]),
                 )
             )
 
@@ -886,7 +887,7 @@ def pendencias(usuario) -> list[Pendencia]:
                     ),
                     cliente=linha.cliente,
                     acao_rotulo="Ver empresa",
-                    acao_url=f"/grimorio/empresa/{linha.cliente.pk}/",
+                    acao_url=reverse("admin:clients_cliente_change", args=[linha.cliente.pk]),
                 )
             )
         if linha.cadastro_faltante:
@@ -902,7 +903,7 @@ def pendencias(usuario) -> list[Pendencia]:
                     # impedem a emissão. O formulário do admin tem trinta campos
                     # e não diz quais três são o bloqueio — a informação existia,
                     # mas ficava a duas telas de distância de quem precisava dela.
-                    acao_url=f"/grimorio/empresa/{linha.cliente.pk}/cadastro/",
+                    acao_url=reverse("admin:clients_cliente_change", args=[linha.cliente.pk]),
                 )
             )
         if not linha.sessao_ativa:
@@ -914,7 +915,7 @@ def pendencias(usuario) -> list[Pendencia]:
                     detalhe="O cliente não consegue falar com o agente até validar o número.",
                     cliente=linha.cliente,
                     acao_rotulo="Ver empresa",
-                    acao_url=f"/grimorio/empresa/{linha.cliente.pk}/",
+                    acao_url=reverse("admin:clients_cliente_change", args=[linha.cliente.pk]),
                 )
             )
 

@@ -1,0 +1,180 @@
+{% extends "unfold/layouts/base_simple.html" %}
+{% load i18n unfold %}
+
+{% comment %}
+A fila de revisão, agora dentro do admin (12/ago/2026 — pedido do usuário: uma
+superfície só). Era `/grimorio/revisao/`, com casca e CSS próprios.
+
+**Só classes que existem no bundle compilado do Unfold.** O CSS dele é
+pré-compilado, e classe ausente é SILENCIOSAMENTE inerte — foi assim que
+`sm:grid-cols-*` quebrou um layout sem quebrar teste nenhum (27/jul/2026).
+Nenhuma variante responsiva de `flex-row` existe no bundle: por isso o
+alinhamento usa `flex-wrap`, que quebra sozinho em tela estreita sem precisar
+de breakpoint.
+
+Duas listas. Em cima o que espera humano; embaixo o que a leitura automática
+resolveu sozinha. A segunda existe por causa da primeira: classificação que
+ninguém consegue listar é classificação que ninguém consegue auditar, e quem
+responde perante o fisco continua sendo o contador.
+{% endcomment %}
+
+{% block content %}
+<div class="flex flex-col gap-8">
+
+    {# base_simple estende `skeleton`, não `admin/base` — o bloco de mensagens
+       não vem de graça, e é por `messages` que as ações desta tela respondem. #}
+    {% include "unfold/helpers/messages.html" %}
+
+    {# --------------------------------------------------------------- envio #}
+    {% comment %}
+    Sempre visível, inclusive com a fila vazia: é a única porta de documento que
+    não depende do WhatsApp do cliente, e o caso mais banal do escritório passa
+    por ela — a nota que chegou por e-mail, o boleto entregue impresso, o XML
+    baixado do portal da SEFAZ.
+    {% endcomment %}
+    <div class="border border-base-200 p-4 rounded-default dark:border-base-800">
+        <h2 class="font-semibold mb-1 text-font-important-light dark:text-font-important-dark">Enviar um documento</h2>
+        <p class="leading-relaxed mb-4 text-sm text-font-subtle-light dark:text-font-subtle-dark">
+            XML de NF-e e PDF com texto são lidos e classificados sozinhos; foto de
+            nota ou boleto também, quando o código de barras sai legível. O que não
+            der para conferir cai na fila abaixo, para você. Até {{ tamanho_maximo_mb }} MB.
+        </p>
+        <form method="post" action="{% url 'admin:painel_revisao_enviar' %}"
+              enctype="multipart/form-data" class="flex flex-wrap gap-3 items-center">
+            {% csrf_token %}
+            <select name="cliente" required aria-label="Empresa"
+                    class="border border-base-200 bg-white font-medium min-w-20 rounded-default shadow-xs text-font-default-light text-sm px-3 py-2 focus:outline-2 focus:-outline-offset-2 focus:outline-primary-600 dark:bg-base-900 dark:border-base-700 dark:text-font-default-dark">
+                <option value="">Escolha a empresa…</option>
+                {% for c in clientes %}
+                <option value="{{ c.pk }}">{{ c.nome }}</option>
+                {% endfor %}
+            </select>
+            <input type="file" name="arquivo" required aria-label="Arquivo"
+                   accept=".xml,.pdf,.jpg,.jpeg,.png,.webp,.tif,.tiff,image/*,application/pdf,text/xml"
+                   class="border border-base-200 bg-white font-medium min-w-20 rounded-default shadow-xs text-font-default-light text-sm px-3 py-2 dark:bg-base-900 dark:border-base-700 dark:text-font-default-dark">
+            {% component "unfold/components/button.html" with submit=1 %}Enviar{% endcomponent %}
+        </form>
+    </div>
+
+    {# ---------------------------------------------------- aguardando humano #}
+    <div class="flex flex-col gap-4">
+        <div class="flex flex-wrap gap-3 items-center justify-between">
+            <h2 class="font-semibold text-lg text-font-important-light dark:text-font-important-dark">
+                Aguardando classificação
+            </h2>
+            <span class="text-sm text-font-subtle-light dark:text-font-subtle-dark">
+                {% if documentos %}
+                    {{ documentos|length }} na fila · do mais antigo para o mais novo
+                {% else %}
+                    nada aguardando você
+                {% endif %}
+            </span>
+        </div>
+
+        {% if documentos %}
+        <div class="border border-base-200 rounded-default dark:border-base-800">
+            {% for d in documentos %}
+            <div class="border-b border-base-200 flex flex-wrap gap-4 items-center justify-between p-4 dark:border-base-800">
+                <div class="flex flex-col grow min-w-0">
+                    <span class="font-medium text-font-important-light dark:text-font-important-dark">{{ d.nome_arquivo }}</span>
+                    <span class="text-sm text-font-subtle-light dark:text-font-subtle-dark">
+                        {{ d.cliente.nome }}
+                        {% if d.usuario %}· {{ d.usuario.nome|default:d.usuario.telefone_whatsapp }}{% endif %}
+                    </span>
+                    {% if d.dados_extraidos.resumo %}
+                    {% comment %}
+                    Sem "Li:" na frente: o que aparece aqui é sempre leitura que NÃO
+                    se provou — a que se prova já saiu desta lista. O resumo vem com
+                    a ressalva embutida (`extracao._com_ressalva`), e um verbo
+                    afirmativo na frente a desmentiria.
+                    {% endcomment %}
+                    <span class="mt-1 text-sm text-orange-600 dark:text-orange-400">{{ d.dados_extraidos.resumo }}</span>
+                    {% endif %}
+                    <span class="mt-1 text-xs text-font-subtle-light dark:text-font-subtle-dark">
+                        <span class="font-mono">{{ d.protocolo }}</span> ·
+                        {{ d.criado_em|date:"d/m H:i" }} · {{ d.tamanho|filesizeformat }} ·
+                        {% comment %}
+                        A confiança aparece mesmo abaixo do limiar — é por estar
+                        abaixo dele que o item está aqui. Zero significa "ninguém
+                        provou nada sobre este arquivo"; 85 significa "o OCR achou
+                        algo que fecha na conta, e isso ainda não basta".
+                        {% endcomment %}
+                        confiança {{ d.confianca }}%
+                    </span>
+                </div>
+                <div class="flex flex-wrap gap-2 items-center shrink-0">
+                    {% url 'admin:painel_revisao_arquivo' d.pk as url_arquivo %}
+                    {% component "unfold/components/button.html" with href=url_arquivo variant="default" attrs='target="_blank" rel="noopener"' %}Abrir{% endcomponent %}
+                    <form method="post" action="{% url 'admin:painel_revisao_classificar' d.pk %}" class="flex flex-wrap gap-2 items-center">
+                        {% csrf_token %}
+                        <select name="tipo" aria-label="Tipo do documento"
+                                class="border border-base-200 bg-white font-medium min-w-20 rounded-default shadow-xs text-font-default-light text-sm px-3 py-2 focus:outline-2 focus:-outline-offset-2 focus:outline-primary-600 dark:bg-base-900 dark:border-base-700 dark:text-font-default-dark">
+                            {% for valor, rotulo in tipos %}
+                            <option value="{{ valor }}">{{ rotulo }}</option>
+                            {% endfor %}
+                        </select>
+                        {% component "unfold/components/button.html" with submit=1 name="acao" value="classificar" %}Classificar{% endcomponent %}
+                        {% component "unfold/components/button.html" with submit=1 name="acao" value="recusar" variant="default" %}Recusar{% endcomponent %}
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="border border-base-200 p-4 py-8 rounded-default text-center dark:border-base-800">
+            <p class="font-medium text-font-important-light dark:text-font-important-dark">Nenhum documento aguardando</p>
+            <p class="mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">
+                Envie um arquivo acima, ou espere o cliente mandar pelo WhatsApp.
+            </p>
+        </div>
+        {% endif %}
+    </div>
+
+    {# ------------------------------------------------------ lidos sozinhos #}
+    {% if lidos %}
+    <div class="flex flex-col gap-4">
+        <div class="flex flex-wrap gap-3 items-center justify-between">
+            <h2 class="font-semibold text-lg text-font-important-light dark:text-font-important-dark">Lidos sozinhos</h2>
+            <span class="text-sm text-font-subtle-light dark:text-font-subtle-dark">{{ lidos|length }} para conferência por amostragem</span>
+        </div>
+        <p class="leading-relaxed text-sm text-font-subtle-light dark:text-font-subtle-dark">
+            Estes saíram da fila sem passar por você porque a leitura se confere
+            sozinha — XML assinado pela SEFAZ, chave de acesso ou linha digitável com
+            dígito verificador. Se algum estiver errado, é só reclassificar.
+        </p>
+        <div class="border border-base-200 rounded-default dark:border-base-800">
+            {% for d in lidos %}
+            <div class="border-b border-base-200 flex flex-wrap gap-4 items-center justify-between p-4 dark:border-base-800">
+                <div class="flex flex-col grow min-w-0">
+                    <span class="font-medium text-font-important-light dark:text-font-important-dark">{{ d.nome_arquivo }}</span>
+                    <span class="text-sm text-font-subtle-light dark:text-font-subtle-dark">{{ d.cliente.nome }} · {{ d.get_tipo_display }}</span>
+                    {% if d.dados_extraidos.resumo %}
+                    <span class="mt-1 text-sm text-green-600 dark:text-green-400">{{ d.dados_extraidos.resumo }}</span>
+                    {% endif %}
+                    <span class="mt-1 text-xs text-font-subtle-light dark:text-font-subtle-dark">
+                        <span class="font-mono">{{ d.protocolo }}</span> ·
+                        {{ d.criado_em|date:"d/m H:i" }} · confiança {{ d.confianca }}%
+                    </span>
+                </div>
+                <div class="flex flex-wrap gap-2 items-center shrink-0">
+                    {% url 'admin:painel_revisao_arquivo' d.pk as url_arquivo %}
+                    {% component "unfold/components/button.html" with href=url_arquivo variant="default" attrs='target="_blank" rel="noopener"' %}Abrir{% endcomponent %}
+                    <form method="post" action="{% url 'admin:painel_revisao_classificar' d.pk %}" class="flex flex-wrap gap-2 items-center">
+                        {% csrf_token %}
+                        <select name="tipo" aria-label="Corrigir tipo do documento"
+                                class="border border-base-200 bg-white font-medium min-w-20 rounded-default shadow-xs text-font-default-light text-sm px-3 py-2 focus:outline-2 focus:-outline-offset-2 focus:outline-primary-600 dark:bg-base-900 dark:border-base-700 dark:text-font-default-dark">
+                            {% for valor, rotulo in tipos %}
+                            <option value="{{ valor }}" {% if valor == d.tipo %}selected{% endif %}>{{ rotulo }}</option>
+                            {% endfor %}
+                        </select>
+                        {% component "unfold/components/button.html" with submit=1 name="acao" value="classificar" variant="default" %}Corrigir{% endcomponent %}
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}

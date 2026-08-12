@@ -188,8 +188,33 @@ def metricas_do_dashboard(request=None) -> dict:
 # antes do módulo `metricas.py` existir. Renomear sem alias quebraria quem
 # importa, e o alias custa uma linha.
 def dashboard_callback(request, context: dict) -> dict:
-    """Hook do django-unfold — injeta as métricas no contexto de `admin/index.html`."""
+    """Hook do django-unfold — injeta métricas E fila de trabalho no índice.
+
+    **A fila entrou aqui, e não numa página "Hoje" à parte** (12/ago/2026, na
+    fusão com o admin). Ela existia no Grimório porque changelist nenhuma
+    responde "o que exige você agora"; mas abrir uma página só para isso, ao
+    lado de um dashboard que o contador já vê primeiro, seria recriar em outro
+    lugar a separação que a fusão veio desfazer.
+
+    Os números do dashboard continuam onde estavam, **abaixo** da fila. É a
+    mesma ordem que o Grimório defendia e pela mesma razão: número que não pede
+    ação não disputa o topo da tela. O contador com 200 empresas abre o sistema
+    para saber o que travou, não quantas notas saíram.
+    """
     context.update(metricas_do_dashboard(request))
+    pendentes = metricas.pendencias(request.user)
+    context.update(
+        {
+            "pendencias": pendentes,
+            "criticas": [p for p in pendentes if p.critica],
+            "atencoes": [p for p in pendentes if not p.critica],
+            # Chamados abertos pela conversa: a única fila em que há alguém do
+            # outro lado esperando resposta. O cliente ouviu "a equipe já está
+            # vendo" quando abriu — fila que não aparece transforma isso em
+            # mentira que ele descobre pelo silêncio.
+            "solicitacoes": metricas.solicitacoes_abertas(request.user),
+        }
+    )
     return context
 
 

@@ -20,6 +20,7 @@ a eliminação por LGPD.
 import hashlib
 
 import pytest
+from django.urls import reverse
 from django.utils import timezone
 
 from apps.agents.contexto import SessionContext
@@ -440,7 +441,7 @@ class TestRevisao:
 
     def test_a_fila_mostra_o_que_espera(self, client, contador, documento):
         client.force_login(contador)
-        corpo = client.get("/grimorio/revisao/").content.decode()
+        corpo = client.get(reverse("admin:painel_revisao")).content.decode()
 
         assert documento.protocolo in corpo
         assert "nota.pdf" in corpo
@@ -449,7 +450,7 @@ class TestRevisao:
         client.force_login(contador)
 
         client.post(
-            f"/grimorio/revisao/{documento.pk}/classificar/",
+            reverse("admin:painel_revisao_classificar", args=[documento.pk]),
             {"acao": "classificar", "tipo": Documento.Tipo.NOTA_ENTRADA},
         )
 
@@ -458,15 +459,13 @@ class TestRevisao:
         assert documento.revisado_por_id == contador.pk
         # A fila fica vazia. Procurar o protocolo no HTML seria enganoso — ele
         # aparece na mensagem de confirmação, que é o comportamento certo.
-        assert "Nenhum documento aguardando" in client.get(
-            "/grimorio/revisao/"
-        ).content.decode()
+        assert "Nenhum documento aguardando" in client.get(reverse("admin:painel_revisao")).content.decode()
 
     def test_recusar_registra_o_motivo(self, client, contador, documento):
         client.force_login(contador)
 
         client.post(
-            f"/grimorio/revisao/{documento.pk}/classificar/",
+            reverse("admin:painel_revisao_classificar", args=[documento.pk]),
             {"acao": "recusar", "motivo": "foto ilegível"},
         )
 
@@ -476,7 +475,7 @@ class TestRevisao:
 
     def test_get_nao_classifica(self, client, contador, documento):
         client.force_login(contador)
-        resposta = client.get(f"/grimorio/revisao/{documento.pk}/classificar/")
+        resposta = client.get(reverse("admin:painel_revisao_classificar", args=[documento.pk]))
 
         assert resposta.status_code == 405
         documento.refresh_from_db()
@@ -488,7 +487,7 @@ class TestRevisao:
         """Megabytes de PDF não atravessam a aplicação — o que passa por aqui é
         a checagem de escopo, não o arquivo."""
         client.force_login(contador)
-        resposta = client.get(f"/grimorio/revisao/{documento.pk}/arquivo/")
+        resposta = client.get(reverse("admin:painel_revisao_arquivo", args=[documento.pk]))
 
         assert resposta.status_code == 302
         assert resposta["Location"].startswith("https://storage.test/")
@@ -503,7 +502,7 @@ class TestRevisao:
         monkeypatch.setattr(armazenamento, "alcancavel_pelo_navegador", lambda: False)
         client.force_login(contador)
 
-        resposta = client.get(f"/grimorio/revisao/{documento.pk}/arquivo/")
+        resposta = client.get(reverse("admin:painel_revisao_arquivo", args=[documento.pk]))
 
         assert resposta.status_code == 200
         assert resposta.content == CONTEUDO
@@ -522,7 +521,7 @@ class TestRevisao:
             nome_arquivo="nfe.xml", tipo_mime="text/xml",
         )
         client.force_login(contador)
-        corpo = client.get("/grimorio/revisao/").content.decode()
+        corpo = client.get(reverse("admin:painel_revisao")).content.decode()
 
         assert "Lidos sozinhos" in corpo
         assert lido.protocolo in corpo
@@ -543,7 +542,7 @@ class TestRevisao:
         client.force_login(contador)
 
         client.post(
-            f"/grimorio/revisao/{lido.pk}/classificar/",
+            reverse("admin:painel_revisao_classificar", args=[lido.pk]),
             {"acao": "classificar", "tipo": Documento.Tipo.OUTRO},
         )
 
@@ -568,12 +567,12 @@ class TestRevisao:
         formulário de lista apagaria uma decisão sem ninguém saber que existiu."""
         client.force_login(contador)
         client.post(
-            f"/grimorio/revisao/{documento.pk}/classificar/",
+            reverse("admin:painel_revisao_classificar", args=[documento.pk]),
             {"acao": "classificar", "tipo": Documento.Tipo.NOTA_ENTRADA},
         )
 
         resposta = client.post(
-            f"/grimorio/revisao/{documento.pk}/classificar/",
+            reverse("admin:painel_revisao_classificar", args=[documento.pk]),
             {"acao": "classificar", "tipo": Documento.Tipo.CONTRATO},
             follow=True,
         )
@@ -602,7 +601,7 @@ class TestRevisao:
         )
 
         resposta = client.post(
-            "/grimorio/revisao/enviar/",
+            reverse("admin:painel_revisao_enviar"),
             {"cliente": cliente.pk, "arquivo": arquivo},
             follow=True,
         )
@@ -626,7 +625,7 @@ class TestRevisao:
 
         client.force_login(contador)
         resposta = client.post(
-            "/grimorio/revisao/enviar/",
+            reverse("admin:painel_revisao_enviar"),
             {
                 "cliente": cliente.pk,
                 "arquivo": SimpleUploadedFile("scan.jpg", b"nada", content_type="image/jpeg"),
@@ -658,7 +657,7 @@ class TestRevisao:
         client.force_login(contador)
 
         client.post(
-            "/grimorio/revisao/enviar/",
+            reverse("admin:painel_revisao_enviar"),
             {
                 "cliente": alheio.pk,
                 "arquivo": SimpleUploadedFile("x.pdf", CONTEUDO, content_type="application/pdf"),
@@ -675,7 +674,7 @@ class TestRevisao:
 
         client.force_login(contador)
         resposta = client.post(
-            "/grimorio/revisao/enviar/",
+            reverse("admin:painel_revisao_enviar"),
             {
                 "cliente": "banana",
                 "arquivo": SimpleUploadedFile("x.pdf", CONTEUDO, content_type="application/pdf"),
@@ -689,7 +688,7 @@ class TestRevisao:
     def test_get_no_envio_nao_cria_nada(self, client, contador):
         client.force_login(contador)
 
-        assert client.get("/grimorio/revisao/enviar/").status_code == 405
+        assert client.get(reverse("admin:painel_revisao_enviar")).status_code == 405
 
     def test_nao_revisa_documento_de_outro_escritorio(
         self, client, contador, storage, escritorio
@@ -710,9 +709,9 @@ class TestRevisao:
         client.force_login(contador)
 
         assert client.post(
-            f"/grimorio/revisao/{doc.pk}/classificar/", {"acao": "recusar"}
+            reverse("admin:painel_revisao_classificar", args=[doc.pk]), {"acao": "recusar"}
         ).status_code == 404
-        assert client.get(f"/grimorio/revisao/{doc.pk}/arquivo/").status_code == 404
+        assert client.get(reverse("admin:painel_revisao_arquivo", args=[doc.pk])).status_code == 404
         doc.refresh_from_db()
         assert doc.aguardando
 

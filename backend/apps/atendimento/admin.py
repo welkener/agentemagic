@@ -1,5 +1,12 @@
-"""Backoffice das solicitações. A fila de trabalho mesmo fica no Grimório."""
+"""
+Backoffice das solicitações — e a ação de resolver, usada direto da fila.
+
+A changelist responde "onde está o chamado X"; a fila no dashboard responde "o
+que exige você agora". A ação de fechar pendura aqui para que o contador não
+precise abrir o registro só para marcar resolvido.
+"""
 from django.contrib import admin
+from django.urls import path
 from unfold.admin import ModelAdmin
 
 from apps.atendimento.models import Solicitacao
@@ -24,3 +31,19 @@ class SolicitacaoAdmin(EscopoEscritorioMixin, ModelAdmin):
     def marcar_resolvida(self, request, queryset):
         for solicitacao in queryset:
             solicitacao.resolver()
+
+    def get_urls(self):
+        """Resolver chamado, chamado da fila do dashboard.
+
+        Antes de `super()`: a lista do ModelAdmin termina num catch-all
+        `<path:object_id>/`, que engoliria a rota abaixo.
+        """
+        from apps.painel.chamados import ResolverSolicitacaoView
+
+        return [
+            path(
+                "<int:pk>/resolver/",
+                self.admin_site.admin_view(ResolverSolicitacaoView.as_view()),
+                name="painel_resolver_chamado",
+            ),
+        ] + super().get_urls()

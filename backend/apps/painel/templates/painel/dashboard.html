@@ -10,6 +10,99 @@
 {% block content %}
 <div class="flex flex-col gap-8 mb-8">
 
+    {% include "unfold/helpers/messages.html" %}
+
+    {% comment %}
+    A fila vem ANTES dos números, e a ordem é decisão de produto, não estética:
+    número que não pede ação não disputa o topo da tela. O contador com 200
+    empresas abre o sistema para saber o que travou, não quantas notas saíram.
+
+    Ela chegou aqui na fusão com o admin (12/ago/2026). Morava numa página
+    "Hoje" do Grimório; abrir uma página só para ela, ao lado de um dashboard
+    que o contador já vê primeiro, recriaria em outro lugar a separação que a
+    fusão veio desfazer.
+    {% endcomment %}
+    {% if criticas %}
+    <div class="flex flex-col gap-4">
+        <div class="flex flex-wrap gap-3 items-center justify-between">
+            <h2 class="font-semibold text-lg text-font-important-light dark:text-font-important-dark">Exige você agora</h2>
+            <span class="text-sm text-red-600 dark:text-red-400">{{ criticas|length }} ite{{ criticas|length|pluralize:"m,ns" }}</span>
+        </div>
+        <div class="border border-base-200 rounded-default dark:border-base-800">
+            {% for p in criticas %}
+            <div class="border-b border-base-200 flex flex-wrap gap-4 items-center justify-between p-4 dark:border-base-800">
+                <div class="flex flex-col grow min-w-0">
+                    <span class="font-medium text-font-important-light dark:text-font-important-dark">{{ p.titulo }}</span>
+                    {% if p.cliente %}<span class="text-sm text-font-subtle-light dark:text-font-subtle-dark">{{ p.cliente.nome }}</span>{% endif %}
+                    <span class="mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">{{ p.detalhe }}</span>
+                </div>
+                {% component "unfold/components/button.html" with href=p.acao_url %}{{ p.acao_rotulo }}{% endcomponent %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% comment %}
+    Chamados logo abaixo do crítico e ACIMA de "para acompanhar". Do outro lado
+    de cada linha daqui há uma pessoa esperando resposta, enquanto "sem
+    certificado digital" repetido cinco vezes é aviso de sistema que espera sem
+    reclamar. Na tela renderizada do Grimório eles tinham caído embaixo dessa
+    lista — invisíveis na prática, que é o mesmo que não existir.
+    {% endcomment %}
+    {% if solicitacoes %}
+    <div class="flex flex-col gap-4">
+        <div class="flex flex-wrap gap-3 items-center justify-between">
+            <h2 class="font-semibold text-lg text-font-important-light dark:text-font-important-dark">Pedidos dos clientes no WhatsApp</h2>
+            <span class="text-sm text-font-subtle-light dark:text-font-subtle-dark">{{ solicitacoes|length }} em aberto</span>
+        </div>
+        <div class="border border-base-200 rounded-default dark:border-base-800">
+            {% for s in solicitacoes %}
+            <div class="border-b border-base-200 flex flex-wrap gap-4 items-center justify-between p-4 dark:border-base-800">
+                <div class="flex flex-col grow min-w-0">
+                    <span class="font-medium text-font-important-light dark:text-font-important-dark">{{ s.assunto }}</span>
+                    <span class="text-sm text-font-subtle-light dark:text-font-subtle-dark">
+                        {{ s.cliente.nome }}
+                        {% if s.usuario %}· {{ s.usuario.nome|default:s.usuario.telefone_whatsapp }}{% endif %}
+                    </span>
+                    <span class="mt-1 text-xs text-font-subtle-light dark:text-font-subtle-dark">
+                        {{ s.get_tipo_display }} <span class="font-mono">{{ s.protocolo }}</span> ·
+                        aberto em {{ s.criado_em|date:"d/m H:i" }}
+                        {% if s.preferencia_data %}· prefere {{ s.preferencia_data|date:"d/m" }}{% endif %}
+                    </span>
+                </div>
+                <form method="post" action="{% url 'admin:painel_resolver_chamado' s.pk %}" class="flex flex-wrap gap-2 items-center shrink-0">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    {% url 'admin:atendimento_solicitacao_change' s.pk as url_chamado %}
+                    {% component "unfold/components/button.html" with href=url_chamado variant="default" %}Ver detalhe{% endcomponent %}
+                    {% component "unfold/components/button.html" with submit=1 %}Resolver{% endcomponent %}
+                </form>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if atencoes %}
+    <div class="flex flex-col gap-4">
+        <h2 class="font-semibold text-lg text-font-important-light dark:text-font-important-dark">Para acompanhar</h2>
+        <div class="border border-base-200 rounded-default dark:border-base-800">
+            {% for p in atencoes %}
+            <div class="border-b border-base-200 flex flex-wrap gap-4 items-center justify-between p-4 dark:border-base-800">
+                <div class="flex flex-col grow min-w-0">
+                    <span class="font-medium text-font-important-light dark:text-font-important-dark">{{ p.titulo }}</span>
+                    {% if p.cliente %}<span class="text-sm text-font-subtle-light dark:text-font-subtle-dark">{{ p.cliente.nome }}</span>{% endif %}
+                    <span class="mt-1 text-sm text-font-subtle-light dark:text-font-subtle-dark">{{ p.detalhe }}</span>
+                </div>
+                {% component "unfold/components/button.html" with href=p.acao_url variant="default" %}{{ p.acao_rotulo }}{% endcomponent %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+
     {# ------------------------------------------------------------------ #}
     {# Números do dia                                                     #}
     {# ------------------------------------------------------------------ #}

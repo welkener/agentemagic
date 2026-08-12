@@ -477,6 +477,15 @@ UNFOLD = {
                         "link": _reverse_lazy("admin:agente_nf_intencao_changelist"),
                     },
                     {
+                        # A fila de trabalho de documento — o que o cliente
+                        # mandou e ainda ninguém conferiu. Vizinha da fila de
+                        # aprovação de propósito: são as duas telas onde o
+                        # contador é o gargalo, e ele procura as duas juntas.
+                        "title": "Revisão de documentos",
+                        "icon": "inbox",
+                        "link": _reverse_lazy("admin:painel_revisao"),
+                    },
+                    {
                         "title": "Documentos fiscais",
                         "icon": "description",
                         "link": _reverse_lazy("admin:painel_documentos"),
