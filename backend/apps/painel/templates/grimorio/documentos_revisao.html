@@ -28,6 +28,39 @@ responde perante o fisco continua sendo o contador.
   </div>
 </div>
 
+{% comment %}
+O formulário fica no topo e sempre visível, inclusive com a fila vazia: é a
+única porta de entrada de documento que não depende do WhatsApp do cliente, e o
+caso mais banal do escritório passa por ela — a nota que chegou por e-mail, o
+boleto entregue impresso, o XML baixado do portal da SEFAZ.
+{% endcomment %}
+<div class="cartao" style="margin-bottom:18px">
+  <div class="cartao__cabeca">
+    <h2>Enviar um documento</h2>
+  </div>
+  <div class="cartao__corpo">
+    <p class="cartao__nota">
+      Chegou por e-mail ou em papel? Envie por aqui. XML de NF-e e PDF com texto
+      são lidos e classificados sozinhos; foto de nota ou boleto também, quando o
+      código de barras sai legível. O que não der para conferir cai na fila
+      abaixo, para você. Até {{ tamanho_maximo_mb }} MB.
+    </p>
+    <form method="post" action="{% url 'grimorio:enviar_documento' %}"
+          enctype="multipart/form-data" class="acoes">
+      {% csrf_token %}
+      <select name="cliente" aria-label="Empresa" required>
+        <option value="">Escolha a empresa…</option>
+        {% for c in clientes %}
+        <option value="{{ c.pk }}">{{ c.nome }}</option>
+        {% endfor %}
+      </select>
+      <input type="file" name="arquivo" aria-label="Arquivo" required
+             accept=".xml,.pdf,.jpg,.jpeg,.png,.webp,.tif,.tiff,image/*,application/pdf,text/xml">
+      <button class="botao botao--principal" type="submit">Enviar</button>
+    </form>
+  </div>
+</div>
+
 {% if documentos %}
 <div class="cartao" style="margin-bottom:18px">
   <div class="cartao__cabeca">

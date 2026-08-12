@@ -46,7 +46,10 @@ from django.utils.encoding import escape_uri_path
 from django.views import View
 from django.views.generic import TemplateView
 
+from apps.agents.contexto import SessionContext
 from apps.audit.services import registrar
+from apps.documentos import services as documentos_services
+from apps.documentos.models import Documento
 from apps.observabilidade import orcamento
 from apps.painel import apresentacao, branding, metricas
 from apps.tenants.escopo import escopo_do_usuario
@@ -674,13 +677,104 @@ class RevisaoDocumentosView(EscopoGrimorioMixin, TemplateView):
     secao = "revisao"
 
     def get_context_data(self, **kwargs):
-        from apps.documentos.models import Documento
-
         contexto = super().get_context_data(**kwargs)
         contexto["documentos"] = metricas.documentos_para_revisar(self.request.user)
         contexto["lidos"] = metricas.documentos_lidos_pela_maquina(self.request.user)
         contexto["tipos"] = Documento.Tipo.choices
+        contexto["clientes"] = metricas.clientes_para_escolher(self.request.user)
+        contexto["tamanho_maximo_mb"] = documentos_services.TAMANHO_MAXIMO // (1024 * 1024)
         return contexto
+
+
+class EnviarDocumentoView(EscopoGrimorioMixin, View):
+    """O contador põe um arquivo no sistema pela própria tela.
+
+    **Existia um buraco no formato de U.** O modelo já previa `Origem.PAINEL`
+    desde o primeiro dia, e nada preenchia esse valor: a única porta de entrada
+    era o WhatsApp do cliente. Enquanto o número não está conectado, o produto
+    inteiro fica sem como receber um documento — e mesmo com ele conectado, o
+    caso mais banal do escritório não tinha caminho: a nota que chegou por
+    e-mail, o boleto que o cliente entregou impresso, o XML que o contador
+    baixou do portal da SEFAZ.
+
+    Passa exatamente pelo mesmo `services.receber` do WhatsApp — mesma leitura,
+    mesmo gate, mesma trilha, mesmo reconhecimento de duplicata. Uma segunda
+    implementação "só para o painel" seria o começo de dois comportamentos
+    diferentes para o mesmo ato, e a divergência apareceria justamente onde
+    ninguém procura: no arquivo que entrou pelo caminho menos usado.
+    """
+
+    def post(self, request):
+        destino = reverse("grimorio:revisao_documentos")
+
+        # O id vem de um `<select>`, mas quem posta o formulário decide o que
+        # manda. `filter(pk="banana")` levanta ValueError, e um 500 aqui seria
+        # relatado como "o painel quebrou ao enviar nota".
+        try:
+            cliente_id = int(request.POST.get("cliente") or 0)
+        except (TypeError, ValueError):
+            cliente_id = 0
+
+        cliente = metricas.cliente_no_escopo(request.user, cliente_id)
+        if cliente is None:
+            messages.error(request, "Escolha uma empresa da sua carteira.")
+            return HttpResponseRedirect(destino)
+
+        arquivo = request.FILES.get("arquivo")
+        if arquivo is None:
+            messages.error(request, "Nenhum arquivo veio junto.")
+            return HttpResponseRedirect(destino)
+
+        try:
+            documento, novo = documentos_services.receber(
+                ctx=SessionContext.da_conversa(cliente=cliente, canal="painel"),
+                conteudo=arquivo.read(),
+                nome_arquivo=arquivo.name,
+                tipo_mime=arquivo.content_type or "",
+                origem=Documento.Origem.PAINEL,
+            )
+        except documentos_services.ErroDeRecebimento as erro:
+            messages.error(request, str(erro))
+            return HttpResponseRedirect(destino)
+
+        registrar(
+            "documento_recebido_no_painel",
+            {
+                "protocolo": documento.protocolo,
+                "por": request.user.get_username(),
+                "metodo_leitura": (documento.dados_extraidos or {}).get("metodo", ""),
+                "confianca": documento.confianca,
+            },
+            cliente=cliente,
+        )
+
+        if not novo:
+            messages.info(
+                request,
+                f"Esse arquivo já estava aqui: {documento.protocolo}.",
+            )
+        else:
+            messages.success(request, _recado_do_envio(documento))
+        return HttpResponseRedirect(destino)
+
+
+def _recado_do_envio(documento) -> str:
+    """O que a tela responde depois do upload.
+
+    Diz o que a leitura conseguiu e o que ela não conseguiu, na mesma frase. O
+    contador que sobe um arquivo e lê só "enviado" não sabe se precisa voltar
+    para classificar — e é justamente essa dúvida que a fila existe para não
+    criar.
+    """
+    resumo = (documento.dados_extraidos or {}).get("resumo") or ""
+    if documento.classificado_por_maquina:
+        return (
+            f"{documento.protocolo}: {resumo or documento.get_tipo_display()} — "
+            "li sozinho e já classifiquei."
+        )
+    if resumo:
+        return f"{documento.protocolo}: {resumo}. Está na fila para você conferir."
+    return f"{documento.protocolo}: recebido. Não consegui ler — está na fila."
 
 
 class ClassificarDocumentoView(EscopoGrimorioMixin, View):
@@ -699,8 +793,6 @@ class ClassificarDocumentoView(EscopoGrimorioMixin, View):
     """
 
     def post(self, request, pk):
-        from apps.documentos.models import Documento
-
         documento = metricas.documento_no_escopo(request.user, pk)
         if documento is None:
             raise Http404("Documento não encontrado nesta carteira.")

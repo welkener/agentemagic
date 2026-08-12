@@ -22,6 +22,14 @@ urlpatterns = [
     path(
         "revisao/", grimorio.RevisaoDocumentosView.as_view(), name="revisao_documentos"
     ),
+    # A porta de entrada que faltava: `Documento.Origem.PAINEL` existia no
+    # modelo desde o primeiro dia e nada a preenchia. Enquanto o WhatsApp não
+    # está conectado, é a única forma de um documento entrar no sistema.
+    path(
+        "revisao/enviar/",
+        grimorio.EnviarDocumentoView.as_view(),
+        name="enviar_documento",
+    ),
     path(
         "revisao/<int:pk>/classificar/",
         grimorio.ClassificarDocumentoView.as_view(),

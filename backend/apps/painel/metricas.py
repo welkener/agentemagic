@@ -479,6 +479,20 @@ def documentos_lidos_pela_maquina(usuario, limite: int = 20) -> list:
     )
 
 
+def clientes_para_escolher(usuario) -> list:
+    """As empresas da carteira, em ordem alfabética, para um seletor de tela.
+
+    Enxuto de propósito: `carteira()` monta faturamento, teto e série de doze
+    meses para cada linha, e um `<select>` não precisa de nada disso. Uma tela
+    que só quer nomes não deve pagar por um painel inteiro.
+    """
+    return list(
+        _escopar(Cliente.objects.filter(ativo=True), usuario, campo="escritorio")
+        .order_by("nome")
+        .only("id", "nome", "cnpj")
+    )
+
+
 def documento_no_escopo(usuario, pk: int):
     """Um documento, se ele é da carteira deste contador. Senão, None."""
     from apps.documentos.models import Documento

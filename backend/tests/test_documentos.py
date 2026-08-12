@@ -582,6 +582,115 @@ class TestRevisao:
         assert documento.tipo == Documento.Tipo.NOTA_ENTRADA
         assert "já foi revisado" in resposta.content.decode()
 
+    def test_o_contador_envia_o_arquivo_que_chegou_por_email(
+        self, client, contador, cliente, storage
+    ):
+        """A porta de entrada que faltava.
+
+        `Origem.PAINEL` existia no modelo desde o primeiro dia e nada a
+        preenchia: só o WhatsApp do cliente punha documento no sistema. Com o
+        número desconectado, isso deixava o produto sem como receber nada.
+        """
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from tests.test_extracao import CHAVE_DE_TERCEIRO, xml_de
+
+        client.force_login(contador)
+        arquivo = SimpleUploadedFile(
+            "nota-do-email.xml",
+            xml_de(CHAVE_DE_TERCEIRO, "99887766000155"),
+            content_type="text/xml",
+        )
+
+        resposta = client.post(
+            "/grimorio/revisao/enviar/",
+            {"cliente": cliente.pk, "arquivo": arquivo},
+            follow=True,
+        )
+
+        with rls.escopo_irrestrito():
+            documento = Documento.objects.get(nome_arquivo="nota-do-email.xml")
+        assert documento.origem == Documento.Origem.PAINEL
+        assert documento.cliente_id == cliente.pk
+        # Mesma leitura do WhatsApp, porque é o mesmo `receber` — uma segunda
+        # implementação "só para o painel" divergiria no caminho menos usado.
+        assert documento.confianca == 100
+        assert documento.tipo == Documento.Tipo.NOTA_ENTRADA
+        assert "Distribuidora Norte" in resposta.content.decode()
+
+    def test_o_envio_diz_quando_nao_conseguiu_ler(
+        self, client, contador, cliente, storage
+    ):
+        """Quem sobe um arquivo e lê só "enviado" não sabe se precisa voltar
+        para classificar — e é essa dúvida que a fila existe para não criar."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        client.force_login(contador)
+        resposta = client.post(
+            "/grimorio/revisao/enviar/",
+            {
+                "cliente": cliente.pk,
+                "arquivo": SimpleUploadedFile("scan.jpg", b"nada", content_type="image/jpeg"),
+            },
+            follow=True,
+        )
+
+        corpo = resposta.content.decode()
+        assert "Não consegui ler" in corpo
+        assert "está na fila" in corpo
+
+    def test_nao_envia_para_empresa_de_outra_carteira(
+        self, client, contador, storage, escritorio
+    ):
+        """Porta de escrita nova é onde escopo costuma vazar: o id do cliente
+        vem de um `<select>`, mas quem posta o formulário decide o que manda."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from apps.clients.models import Cliente, Perfil
+        from apps.tenants.models import Escritorio
+
+        with rls.escopo_irrestrito():
+            outro = Escritorio.objects.create(nome="Vizinho2", slug="vizinho2", ativo=True)
+            alheio = Cliente.objects.create(
+                escritorio=outro, cnpj="77777777000177", nome="Empresa Alheia",
+                email_contato="a@example.com", ativo=True,
+            )
+            Perfil.objects.create(cliente=alheio, tier_maximo=1)
+        client.force_login(contador)
+
+        client.post(
+            "/grimorio/revisao/enviar/",
+            {
+                "cliente": alheio.pk,
+                "arquivo": SimpleUploadedFile("x.pdf", CONTEUDO, content_type="application/pdf"),
+            },
+        )
+
+        with rls.escopo_irrestrito():
+            assert not Documento.objects.filter(cliente=alheio).exists()
+
+    def test_id_de_cliente_invalido_nao_derruba_a_tela(
+        self, client, contador, storage
+    ):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        client.force_login(contador)
+        resposta = client.post(
+            "/grimorio/revisao/enviar/",
+            {
+                "cliente": "banana",
+                "arquivo": SimpleUploadedFile("x.pdf", CONTEUDO, content_type="application/pdf"),
+            },
+            follow=True,
+        )
+
+        assert resposta.status_code == 200
+        assert "Escolha uma empresa" in resposta.content.decode()
+
+    def test_get_no_envio_nao_cria_nada(self, client, contador):
+        client.force_login(contador)
+
+        assert client.get("/grimorio/revisao/enviar/").status_code == 405
+
     def test_nao_revisa_documento_de_outro_escritorio(
         self, client, contador, storage, escritorio
     ):
