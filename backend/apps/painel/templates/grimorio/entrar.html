@@ -1,0 +1,71 @@
+{% load static %}<!DOCTYPE html>
+{% comment %}
+A porta da frente do Grimório.
+
+Não estende `base.html` de propósito: a casca traz o menu lateral inteiro, e
+menu para quem ainda não entrou é lista de portas trancadas. A marca continua
+vindo do tenant, como em toda tela — nada de cor ou nome escrito aqui.
+{% endcomment %}
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Entrar — {{ marca.nome }}</title>
+  <link rel="stylesheet" href="{% static 'grimorio/grimorio.css' %}">
+</head>
+<body style="--marca-primaria: {{ marca.cor_primaria }}; --marca-acento: {{ marca.cor_acento }};">
+
+<main class="entrada">
+  <div class="entrada__caixa">
+    <div class="entrada__marca">
+      <div class="marca__brasao">
+        {% if marca.logo %}<img src="{{ marca.logo }}" alt="">{% else %}{{ marca.sigla }}{% endif %}
+      </div>
+      <div>
+        <div class="marca__nome">{{ marca.nome }}</div>
+        <div class="marca__plataforma">Grimório · Magic BI</div>
+      </div>
+    </div>
+
+    {% if messages %}
+    <div class="avisos">
+      {% for m in messages %}
+      <div class="aviso aviso--{{ m.level_tag }}">{{ m }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" class="entrada__form">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next }}">
+      <label class="entrada__rotulo" for="usuario">Usuário ou e-mail</label>
+      <input id="usuario" name="usuario" autocomplete="username" autofocus required>
+
+      <label class="entrada__rotulo" for="senha">Senha</label>
+      <input id="senha" name="senha" type="password" autocomplete="current-password">
+
+      <button class="botao botao--principal entrada__botao" type="submit" name="acao" value="senha">
+        Entrar
+      </button>
+
+      {% comment %}
+      O Magic Link não some quando falta SMTP — some a promessa. Um botão que
+      responde "enviei" sem enviar é pior que um botão explicado, porque o
+      contador fica esperando um e-mail que não vem.
+      {% endcomment %}
+      {% if email_configurado %}
+      <button class="botao entrada__botao" type="submit" name="acao" value="link">
+        Prefiro receber um link por e-mail
+      </button>
+      {% else %}
+      <p class="entrada__nota">
+        O envio de e-mail ainda não está configurado neste servidor, então o
+        acesso por link não funciona por enquanto.
+      </p>
+      {% endif %}
+    </form>
+  </div>
+</main>
+
+</body>
+</html>

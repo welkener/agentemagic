@@ -388,7 +388,12 @@ AUTHENTICATION_BACKENDS = [
     "sesame.backends.ModelBackend",
 ]
 SESAME_MAX_AGE = MAGICLINK_TTL_MINUTOS * 60  # segundos — mesmo TTL do Magic Link do wa_id
-LOGIN_REDIRECT_URL = "/admin/"  # o índice do admin É o dashboard do Grimório
+# Para onde vai quem entrou sem `?next=`. Era `/admin/`, de quando o índice do
+# admin fazia as vezes de dashboard; desde a DEC-12 a aplicação do contador é o
+# Grimório, e mandá-lo para o backoffice logo depois de entrar era justamente o
+# que o Sprint 2b queria acabar.
+LOGIN_REDIRECT_URL = "/grimorio/"
+LOGIN_URL = "/entrar/"
 
 # ---------------------------------------------------------------------------
 # Teto do MEI — configurável de propósito. O valor está congelado em R$ 81.000

@@ -4,7 +4,8 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import RedirectView
-from sesame.views import LoginView
+
+from apps.painel.entrada import EntrarView
 
 # SITE_HEADER/SITE_TITLE ficam no dict UNFOLD (settings.py) — django-unfold lê de lá.
 admin.site.index_title = "Visão geral"
@@ -30,8 +31,12 @@ urlpatterns = [
     path("webhook/evolution", include("apps.channel_evolution.urls")),
     # Vínculo de sessão wa_id↔CNPJ — validação do Magic Link (apps/security)
     path("security/", include("apps.security.urls")),
-    # Login do painel (contador) por Magic Link — django-sesame, ver settings.py
-    path("entrar/", LoginView.as_view(), name="painel_login"),
+    # Porta de entrada do Grimório. Era a `LoginView` do django-sesame direto, e
+    # ela responde **403 a quem chega sem token** — o que transformava o endereço
+    # do painel num beco para todo contador cuja sessão expirou, com a única
+    # saída dependendo de um e-mail. Agora `EntrarView` atende gente e delega ao
+    # sesame quando há token: o Magic Link não mudou em nada.
+    path("entrar/", EntrarView.as_view(), name="painel_login"),
 ]
 
 if settings.DEBUG:

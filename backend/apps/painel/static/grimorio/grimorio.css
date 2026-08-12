@@ -435,3 +435,33 @@ table.tabela tbody tr:hover { background: #fafbfe; }
   /* Aparelho estreito: um indicador por linha, senão o valor quebra no meio. */
   .indicadores { grid-template-columns: 1fr; }
 }
+
+/* ---------------------------------------------------------------- entrada */
+/* A porta da frente. Sem menu lateral: lista de portas trancadas para quem
+ * ainda não entrou. Centralizada e estreita porque só há uma decisão a tomar
+ * aqui, e a tela inteira deve dizer isso. */
+.entrada {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: var(--fundo); padding: 24px;
+}
+.entrada__caixa {
+  width: 100%; max-width: 380px; background: var(--superficie);
+  border: 1px solid var(--borda); border-radius: var(--raio);
+  box-shadow: var(--sombra); padding: 28px;
+}
+.entrada__marca { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+.entrada__form { display: flex; flex-direction: column; }
+.entrada__rotulo {
+  font-size: 12.5px; color: var(--texto-suave); margin: 12px 0 5px;
+}
+.entrada__form input {
+  padding: 9px 11px; border: 1px solid var(--borda); border-radius: 7px;
+  font: inherit; font-size: 14px; background: var(--superficie); color: inherit;
+}
+.entrada__form input:focus {
+  outline: 2px solid var(--marca-acento); outline-offset: 1px; border-color: transparent;
+}
+.entrada__botao { margin-top: 14px; justify-content: center; text-align: center; }
+.entrada__nota {
+  margin: 14px 0 0; font-size: 12px; line-height: 1.5; color: var(--texto-fraco);
+}
